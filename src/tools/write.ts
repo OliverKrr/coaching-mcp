@@ -8,7 +8,7 @@ export function registerWriteTools(server: McpServer, db: Database.Database): vo
     "update_section",
     {
       description:
-        "Update or create a skill knowledge section. Use 'main' for the primary SKILL.md content. Creates the section if it does not exist.",
+        "Update or create a coaching knowledge section. Use 'main' for the primary SKILL.md content. Creates the section if it does not exist.",
       inputSchema: {
         name: z.string().min(1).describe("Section name — use 'main' for SKILL.md"),
         content: z.string().min(1).describe("Full replacement content"),
@@ -28,7 +28,7 @@ export function registerWriteTools(server: McpServer, db: Database.Database): vo
     "update_reference",
     {
       description:
-        "Update or create a reference document (e.g. zones, strength, workout-construction, patterns, lifestyle).",
+        "Update or create a coaching reference document (e.g. zones, strength, workout-construction, patterns, lifestyle).",
       inputSchema: {
         name: z.string().min(1).describe("Reference name without .md extension"),
         content: z.string().min(1).describe("Full replacement content"),
@@ -48,7 +48,7 @@ export function registerWriteTools(server: McpServer, db: Database.Database): vo
     "append_journal",
     {
       description:
-        "Append a session journal entry. Call at the end of every session to log decisions made, data changed, and observations for future sessions.",
+        "Append a coaching journal entry. Call at the end of every coaching session to log decisions made, data changed, and observations for future sessions.",
       inputSchema: {
         entry: z.string().min(1).describe("Journal entry text"),
       },

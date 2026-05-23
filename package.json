@@ -1,17 +1,17 @@
 {
-  "name": "skill-mcp",
+  "name": "coaching-mcp",
   "version": "1.0.0",
-  "description": "Serve any Claude .skill file as a remote MCP server backed by SQLite+FTS5",
+  "description": "Personal coaching MCP server backed by SQLite+FTS5 — serves SKILL.md knowledge to Claude AI",
   "keywords": [
     "claude",
+    "coaching",
     "fts5",
     "mcp",
-    "skill",
     "sqlite"
   ],
   "license": "MIT",
   "bin": {
-    "skill-mcp": "dist/index.js"
+    "coaching-mcp": "dist/index.js"
   },
   "files": [
     "dist",

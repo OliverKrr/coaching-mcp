@@ -6,7 +6,7 @@ import { registerWriteTools } from "./tools/write.js";
 
 async function main(): Promise<void> {
   const db = openDatabase();
-  const server = new McpServer({ name: "skill-mcp", version: "1.0.0" });
+  const server = new McpServer({ name: "coaching-mcp", version: "1.0.0" });
   registerReadTools(server, db);
   registerWriteTools(server, db);
   const transport = new StdioServerTransport();

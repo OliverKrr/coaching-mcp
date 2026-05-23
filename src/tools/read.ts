@@ -6,17 +6,17 @@ import { toolText, withErrorHandling } from "../utils/errors.js";
 
 export function registerReadTools(server: McpServer, db: Database.Database): void {
   server.registerTool(
-    "get_skill_context",
+    "get_coaching_context",
     {
       description:
-        "Get the main skill context (SKILL.md). Call at the start of every session to load current goals, rules, and background.",
+        "Get the full coaching context (SKILL.md). Call at the start of every coaching session.",
       inputSchema: {},
     },
     () => {
       const row = db.prepare("SELECT content FROM sections WHERE name = 'main'").get() as
         | Section
         | undefined;
-      return toolText(row?.content ?? "No skill context found. Database may not be seeded.");
+      return toolText(row?.content ?? "No coaching context found. Database may not be seeded.");
     },
   );
 
@@ -24,7 +24,7 @@ export function registerReadTools(server: McpServer, db: Database.Database): voi
     "search_knowledge",
     {
       description:
-        "Full-text search across all skill knowledge: sections, references, and session journal entries.",
+        "Full-text search across all coaching knowledge: sections, references, and coaching journal entries.",
       inputSchema: {
         query: z.string().min(1).describe("Search terms"),
         limit: z
@@ -79,7 +79,7 @@ export function registerReadTools(server: McpServer, db: Database.Database): voi
     "get_reference",
     {
       description:
-        "Get a full reference document by name. Use search_knowledge first to discover available reference names.",
+        "Get a full coaching reference document by name (e.g. zones, strength, workout-construction, patterns, lifestyle).",
       inputSchema: {
         name: z.string().describe("Reference name without .md extension"),
       },
@@ -105,7 +105,7 @@ export function registerReadTools(server: McpServer, db: Database.Database): voi
     "get_journal",
     {
       description:
-        "Get recent session journal entries — decisions, updates, and observations from past sessions.",
+        "Get recent coaching journal entries — decisions, updates, and observations from past coaching sessions.",
       inputSchema: {
         limit: z.number().int().min(1).max(50).default(10),
       },

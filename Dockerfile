@@ -23,4 +23,4 @@ VOLUME ["/data", "/seed"]
 ENV DATA_DIR=/data
 ENV SEED_DIR=/seed
 EXPOSE 8000
-CMD ["supergateway", "--stdio", "skill-mcp", "--outputTransport", "streamableHttp", "--port", "8000"]
+CMD ["supergateway", "--stdio", "coaching-mcp", "--outputTransport", "streamableHttp", "--port", "8000"]
