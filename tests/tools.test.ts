@@ -46,10 +46,10 @@ async function callTool(
   return internal.executeToolHandler(tool, validatedArgs, {});
 }
 
-describe("get_coaching_context", () => {
+describe("get_skill_context", () => {
   it("returns main section content", async () => {
     const { server } = makeServer();
-    const result = await callTool(server, "get_coaching_context", {});
+    const result = await callTool(server, "get_skill_context", {});
     expect(result.content[0].text).toContain("FTP 414W");
   });
 });
