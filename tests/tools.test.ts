@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 import { createSchema } from "../src/db.js";
 import { registerReadTools } from "../src/tools/read.js";
 import { registerWriteTools } from "../src/tools/write.js";
-import type { Section, Reference, JournalEntry } from "../src/db.js";
 
 type ToolResult = { content: Array<{ type: string; text: string }> };
 type RegisteredTool = { handler: (args: unknown) => Promise<ToolResult>; inputSchema: unknown };

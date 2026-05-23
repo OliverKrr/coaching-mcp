@@ -28,43 +28,54 @@ export function registerReadTools(server: McpServer, db: Database.Database): voi
 		"Full-text search across all coaching content: sections, references, and journal entries.",
 		{
 			query: z.string().min(1).describe("Search terms"),
-			limit: z.number().int().min(1).max(20).default(5),
+			limit: z.number().int().min(1).max(20).default(5).describe("Max results per table (sections, refs, journal)"),
 		},
 		({ query, limit }) => {
-			const sections = db
-				.prepare(
-					"SELECT name, snippet(sections_fts, 1, '**', '**', '...', 32) as snippet FROM sections_fts WHERE sections_fts MATCH ? LIMIT ?",
-				)
-				.all(query, limit) as Array<{ name: string; snippet: string }>;
+			try {
+				const sections = db
+					.prepare(
+						"SELECT name, snippet(sections_fts, 1, '**', '**', '...', 32) as snippet FROM sections_fts WHERE sections_fts MATCH ? LIMIT ?",
+					)
+					.all(query, limit) as Array<{ name: string; snippet: string }>;
 
-			const refs = db
-				.prepare(
-					"SELECT name, snippet(refs_fts, 1, '**', '**', '...', 32) as snippet FROM refs_fts WHERE refs_fts MATCH ? LIMIT ?",
-				)
-				.all(query, limit) as Array<{ name: string; snippet: string }>;
+				const refs = db
+					.prepare(
+						"SELECT name, snippet(refs_fts, 1, '**', '**', '...', 32) as snippet FROM refs_fts WHERE refs_fts MATCH ? LIMIT ?",
+					)
+					.all(query, limit) as Array<{ name: string; snippet: string }>;
 
-			const journal = db
-				.prepare(
-					"SELECT rowid as id, snippet(journal_fts, 0, '**', '**', '...', 32) as snippet FROM journal_fts WHERE journal_fts MATCH ? LIMIT ?",
-				)
-				.all(query, limit) as Array<{ id: number; snippet: string }>;
+				const journal = db
+					.prepare(
+						"SELECT rowid as id, snippet(journal_fts, 0, '**', '**', '...', 32) as snippet FROM journal_fts WHERE journal_fts MATCH ? LIMIT ?",
+					)
+					.all(query, limit) as Array<{ id: number; snippet: string }>;
 
-			const parts: string[] = [];
-			if (sections.length > 0)
-				parts.push("**Sections:**\n" + sections.map((r) => `[${r.name}]: ${r.snippet}`).join("\n"));
-			if (refs.length > 0)
-				parts.push("**References:**\n" + refs.map((r) => `[${r.name}]: ${r.snippet}`).join("\n"));
-			if (journal.length > 0)
-				parts.push("**Journal:**\n" + journal.map((r) => `[#${r.id}]: ${r.snippet}`).join("\n"));
+				const parts: string[] = [];
+				if (sections.length > 0)
+					parts.push("**Sections:**\n" + sections.map((r) => `[${r.name}]: ${r.snippet}`).join("\n"));
+				if (refs.length > 0)
+					parts.push("**References:**\n" + refs.map((r) => `[${r.name}]: ${r.snippet}`).join("\n"));
+				if (journal.length > 0)
+					parts.push("**Journal:**\n" + journal.map((r) => `[#${r.id}]: ${r.snippet}`).join("\n"));
 
-			return {
-				content: [
-					{
-						type: "text" as const,
-						text: parts.length > 0 ? parts.join("\n\n") : `No results found for: ${query}`,
-					},
-				],
-			};
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: parts.length > 0 ? parts.join("\n\n") : `No results found for: ${query}`,
+						},
+					],
+				};
+			} catch {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: "Search failed — try simpler terms (avoid special characters like quotes or parentheses).",
+						},
+					],
+				};
+			}
 		},
 	);
 
