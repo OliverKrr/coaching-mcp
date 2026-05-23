@@ -100,3 +100,60 @@ describe("get_journal", () => {
 		expect(text.indexOf("Session 2")).toBeLessThan(text.indexOf("Session 1"));
 	});
 });
+
+describe("update_section", () => {
+	it("updates existing section content", async () => {
+		const { server, db } = makeServer();
+		await callTool(server, "update_section", { name: "main", content: "Updated FTP 420W." });
+		const row = db.prepare("SELECT content FROM sections WHERE name='main'").get() as { content: string };
+		expect(row.content).toBe("Updated FTP 420W.");
+	});
+
+	it("creates a new section if name does not exist", async () => {
+		const { server, db } = makeServer();
+		await callTool(server, "update_section", { name: "notes", content: "Extra notes." });
+		const row = db.prepare("SELECT content FROM sections WHERE name='notes'").get() as { content: string };
+		expect(row.content).toBe("Extra notes.");
+	});
+
+	it("updated content is searchable via FTS", async () => {
+		const { server } = makeServer();
+		await callTool(server, "update_section", { name: "main", content: "xyzunique999 special." });
+		const result = await callTool(server, "search_knowledge", { query: "xyzunique999", limit: 5 });
+		expect(result.content[0].text).toContain("xyzunique999");
+	});
+});
+
+describe("update_reference", () => {
+	it("updates existing reference", async () => {
+		const { server, db } = makeServer();
+		await callTool(server, "update_reference", { name: "zones", content: "Z1: 105–125 bpm updated." });
+		const row = db.prepare("SELECT content FROM refs WHERE name='zones'").get() as { content: string };
+		expect(row.content).toContain("105–125");
+	});
+
+	it("creates new reference if not exists", async () => {
+		const { server, db } = makeServer();
+		await callTool(server, "update_reference", { name: "nutrition", content: "Carb periodization." });
+		const row = db.prepare("SELECT content FROM refs WHERE name='nutrition'").get() as { content: string };
+		expect(row.content).toContain("Carb");
+	});
+});
+
+describe("append_journal", () => {
+	it("adds a journal entry", async () => {
+		const { server, db } = makeServer();
+		await callTool(server, "append_journal", { entry: "Updated FTP to 420W after test." });
+		const rows = db
+			.prepare("SELECT entry FROM journal ORDER BY id DESC LIMIT 1")
+			.all() as Array<{ entry: string }>;
+		expect(rows[0].entry).toContain("Updated FTP to 420W");
+	});
+
+	it("journal entry is searchable", async () => {
+		const { server } = makeServer();
+		await callTool(server, "append_journal", { entry: "Athlete races better with 3-day taper." });
+		const result = await callTool(server, "search_knowledge", { query: "taper", limit: 5 });
+		expect(result.content[0].text).toContain("taper");
+	});
+});
