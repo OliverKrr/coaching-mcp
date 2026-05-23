@@ -1,0 +1,9 @@
+node_modules/
+dist/
+tests/
+*.test.ts
+.git/
+*.db
+*.db-wal
+*.db-shm
+README.md
