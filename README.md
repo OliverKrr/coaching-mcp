@@ -10,22 +10,22 @@ assistants to read and update coaching (or any other) context over a persistent 
 
 ## Tools
 
-| Tool | Description |
-|------|-------------|
-| `get_coaching_context` | Returns the full `SKILL.md` content |
-| `search_knowledge` | FTS5 full-text search across sections, references, and journal |
-| `get_reference` | Returns a reference document by name |
-| `get_journal` | Returns recent journal entries newest-first |
-| `update_section` | Upserts a knowledge section |
-| `update_reference` | Upserts a reference document |
-| `append_journal` | Appends a journal entry |
+| Tool                   | Description                                                    |
+| ---------------------- | -------------------------------------------------------------- |
+| `get_coaching_context` | Returns the full `SKILL.md` content                            |
+| `search_knowledge`     | FTS5 full-text search across sections, references, and journal |
+| `get_reference`        | Returns a reference document by name                           |
+| `get_journal`          | Returns recent journal entries newest-first                    |
+| `update_section`       | Upserts a knowledge section                                    |
+| `update_reference`     | Upserts a reference document                                   |
+| `append_journal`       | Appends a journal entry                                        |
 
 ## Quick start (Docker Compose)
 
 ```yaml
 services:
   skill_mcp:
-    build: .   # or: image: ghcr.io/your-username/skill-mcp:latest
+    build: . # or: image: ghcr.io/your-username/skill-mcp:latest
     volumes:
       - skill_data:/data
       - ./my-skill/data:/seed:ro
@@ -49,10 +49,10 @@ After that, all writes go through the MCP tools — the seed mount is only read 
 
 ## Environment variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
+| Variable   | Default | Description                                                 |
+| ---------- | ------- | ----------------------------------------------------------- |
 | `DATA_DIR` | `/data` | Where `skill.db` is stored (mount a persistent volume here) |
-| `SEED_DIR` | `/seed` | Where seed markdown files are mounted (read-only) |
+| `SEED_DIR` | `/seed` | Where seed markdown files are mounted (read-only)           |
 
 ## Adding a second skill (same Pi, different path)
 

@@ -10,19 +10,19 @@ const DEFAULT_DATA_DIR = "/data";
 const DEFAULT_SEED_DIR = "/seed";
 
 export function openDatabase(): Database.Database {
-	const dataDir = process.env.DATA_DIR ?? DEFAULT_DATA_DIR;
-	const seedDir = process.env.SEED_DIR ?? DEFAULT_SEED_DIR;
-	if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
-	const db = new Database(join(dataDir, "skill.db"));
-	db.pragma("journal_mode = WAL");
-	db.pragma("foreign_keys = ON");
-	createSchema(db);
-	seedFromDirectory(db, seedDir);
-	return db;
+  const dataDir = process.env.DATA_DIR ?? DEFAULT_DATA_DIR;
+  const seedDir = process.env.SEED_DIR ?? DEFAULT_SEED_DIR;
+  if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
+  const db = new Database(join(dataDir, "skill.db"));
+  db.pragma("journal_mode = WAL");
+  db.pragma("foreign_keys = ON");
+  createSchema(db);
+  seedFromDirectory(db, seedDir);
+  return db;
 }
 
 export function createSchema(db: Database.Database): void {
-	db.exec(`
+  db.exec(`
 		CREATE TABLE IF NOT EXISTS sections (
 			name TEXT PRIMARY KEY,
 			content TEXT NOT NULL,
@@ -85,25 +85,27 @@ export function createSchema(db: Database.Database): void {
 }
 
 export function seedFromDirectory(db: Database.Database, seedDir: string): void {
-	if (!existsSync(seedDir)) return;
-	const count = (db.prepare("SELECT COUNT(*) as n FROM sections").get() as { n: number }).n;
-	if (count > 0) return;
+  if (!existsSync(seedDir)) return;
+  const count = (db.prepare("SELECT COUNT(*) as n FROM sections").get() as { n: number }).n;
+  if (count > 0) return;
 
-	const skillPath = join(seedDir, "SKILL.md");
-	if (!existsSync(skillPath)) return;
+  const skillPath = join(seedDir, "SKILL.md");
+  if (!existsSync(skillPath)) return;
 
-	const insertSection = db.prepare("INSERT INTO sections(name, content) VALUES (?, ?)");
-	const insertRef = db.prepare("INSERT INTO refs(name, content) VALUES (?, ?)");
+  const insertSection = db.prepare("INSERT INTO sections(name, content) VALUES (?, ?)");
+  const insertRef = db.prepare("INSERT INTO refs(name, content) VALUES (?, ?)");
 
-	const refsDir = join(seedDir, "references");
-	const refFiles = existsSync(refsDir)
-		? readdirSync(refsDir).sort().filter((f) => f.endsWith(".md"))
-		: [];
+  const refsDir = join(seedDir, "references");
+  const refFiles = existsSync(refsDir)
+    ? readdirSync(refsDir)
+        .sort()
+        .filter((f) => f.endsWith(".md"))
+    : [];
 
-	db.transaction(() => {
-		insertSection.run("main", readFileSync(skillPath, "utf-8"));
-		for (const file of refFiles) {
-			insertRef.run(file.replace(/\.md$/, ""), readFileSync(join(refsDir, file), "utf-8"));
-		}
-	})();
+  db.transaction(() => {
+    insertSection.run("main", readFileSync(skillPath, "utf-8"));
+    for (const file of refFiles) {
+      insertRef.run(file.replace(/\.md$/, ""), readFileSync(join(refsDir, file), "utf-8"));
+    }
+  })();
 }
