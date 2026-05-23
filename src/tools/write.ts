@@ -42,7 +42,7 @@ export function registerWriteTools(server: McpServer, db: Database.Database): vo
 		({ entry }) => {
 			const result = db
 				.prepare("INSERT INTO journal(entry) VALUES (?)")
-				.run(entry) as Database.RunResult;
+				.run(entry);
 			return {
 				content: [{ type: "text" as const, text: `Journal entry #${result.lastInsertRowid} saved.` }],
 			};
