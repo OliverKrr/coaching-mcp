@@ -1,0 +1,96 @@
+import Database from "better-sqlite3";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
+export type Section = { name: string; content: string; updated_at: string };
+export type Reference = { name: string; content: string; updated_at: string };
+export type JournalEntry = { id: number; entry: string; created_at: string };
+
+const DEFAULT_DATA_DIR = "/data";
+const DEFAULT_SEED_DIR = "/seed";
+
+export function openDatabase(): Database.Database {
+	const dataDir = process.env.DATA_DIR ?? DEFAULT_DATA_DIR;
+	const seedDir = process.env.SEED_DIR ?? DEFAULT_SEED_DIR;
+	if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
+	const db = new Database(join(dataDir, "skill.db"));
+	db.pragma("journal_mode = WAL");
+	db.pragma("foreign_keys = ON");
+	createSchema(db);
+	seedFromDirectory(db, seedDir);
+	return db;
+}
+
+export function createSchema(db: Database.Database): void {
+	db.exec(`
+		CREATE TABLE IF NOT EXISTS sections (
+			name TEXT PRIMARY KEY,
+			content TEXT NOT NULL,
+			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);
+		CREATE TABLE IF NOT EXISTS refs (
+			name TEXT PRIMARY KEY,
+			content TEXT NOT NULL,
+			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);
+		CREATE TABLE IF NOT EXISTS journal (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			entry TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);
+		CREATE VIRTUAL TABLE IF NOT EXISTS sections_fts USING fts5(
+			name UNINDEXED, content,
+			content=sections, content_rowid=rowid
+		);
+		CREATE VIRTUAL TABLE IF NOT EXISTS refs_fts USING fts5(
+			name UNINDEXED, content,
+			content=refs, content_rowid=rowid
+		);
+		CREATE VIRTUAL TABLE IF NOT EXISTS journal_fts USING fts5(
+			entry,
+			content=journal, content_rowid=id
+		);
+		CREATE TRIGGER IF NOT EXISTS sections_ai AFTER INSERT ON sections BEGIN
+			INSERT INTO sections_fts(rowid, name, content) VALUES (new.rowid, new.name, new.content);
+		END;
+		CREATE TRIGGER IF NOT EXISTS sections_au AFTER UPDATE ON sections BEGIN
+			INSERT INTO sections_fts(sections_fts, rowid, name, content)
+				VALUES ('delete', old.rowid, old.name, old.content);
+			INSERT INTO sections_fts(rowid, name, content) VALUES (new.rowid, new.name, new.content);
+		END;
+		CREATE TRIGGER IF NOT EXISTS refs_ai AFTER INSERT ON refs BEGIN
+			INSERT INTO refs_fts(rowid, name, content) VALUES (new.rowid, new.name, new.content);
+		END;
+		CREATE TRIGGER IF NOT EXISTS refs_au AFTER UPDATE ON refs BEGIN
+			INSERT INTO refs_fts(refs_fts, rowid, name, content)
+				VALUES ('delete', old.rowid, old.name, old.content);
+			INSERT INTO refs_fts(rowid, name, content) VALUES (new.rowid, new.name, new.content);
+		END;
+		CREATE TRIGGER IF NOT EXISTS journal_ai AFTER INSERT ON journal BEGIN
+			INSERT INTO journal_fts(rowid, entry) VALUES (new.id, new.entry);
+		END;
+	`);
+}
+
+export function seedFromDirectory(db: Database.Database, seedDir: string): void {
+	if (!existsSync(seedDir)) return;
+	const count = (db.prepare("SELECT COUNT(*) as n FROM sections").get() as { n: number }).n;
+	if (count > 0) return;
+
+	const skillPath = join(seedDir, "SKILL.md");
+	if (!existsSync(skillPath)) return;
+	db.prepare("INSERT INTO sections(name, content) VALUES (?, ?)").run(
+		"main",
+		readFileSync(skillPath, "utf-8"),
+	);
+
+	const refsDir = join(seedDir, "references");
+	if (!existsSync(refsDir)) return;
+	for (const file of readdirSync(refsDir)) {
+		if (!file.endsWith(".md")) continue;
+		db.prepare("INSERT INTO refs(name, content) VALUES (?, ?)").run(
+			file.replace(/\.md$/, ""),
+			readFileSync(join(refsDir, file), "utf-8"),
+		);
+	}
+}

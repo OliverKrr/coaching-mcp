@@ -2,14 +2,23 @@
 	"name": "skill-mcp",
 	"version": "1.0.0",
 	"description": "Serve any Claude .skill file as a remote MCP server backed by SQLite+FTS5",
-	"keywords": ["mcp", "claude", "skill", "sqlite", "fts5"],
+	"keywords": [
+		"mcp",
+		"claude",
+		"skill",
+		"sqlite",
+		"fts5"
+	],
 	"license": "MIT",
 	"type": "module",
 	"main": "dist/index.js",
 	"bin": {
 		"skill-mcp": "dist/index.js"
 	},
-	"files": ["dist", "README.md"],
+	"files": [
+		"dist",
+		"README.md"
+	],
 	"scripts": {
 		"build": "tsdown",
 		"dev": "tsx src/index.ts",
@@ -20,7 +29,7 @@
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.29.0",
-		"better-sqlite3": "^11.10.0",
+		"better-sqlite3": "^12.10.0",
 		"zod": "^4.3.6"
 	},
 	"devDependencies": {
