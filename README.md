@@ -12,7 +12,7 @@ assistants to read and update coaching (or any other) context over a persistent 
 
 | Tool                   | Description                                                    |
 | ---------------------- | -------------------------------------------------------------- |
-| `get_coaching_context` | Returns the full `SKILL.md` content                            |
+| `get_skill_context`    | Returns the full `SKILL.md` content                            |
 | `search_knowledge`     | FTS5 full-text search across sections, references, and journal |
 | `get_reference`        | Returns a reference document by name                           |
 | `get_journal`          | Returns recent journal entries newest-first                    |
