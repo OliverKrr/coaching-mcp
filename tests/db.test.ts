@@ -83,4 +83,12 @@ describe("FTS5 triggers", () => {
 		const updated = db.prepare("SELECT name FROM sections_fts WHERE sections_fts MATCH 'achilles'").all();
 		expect(updated.length).toBe(1);
 	});
+
+	it("removes section from index on delete", () => {
+		const db = makeTestDb();
+		db.prepare("INSERT INTO sections(name, content) VALUES ('main', 'calf injury rules')").run();
+		db.prepare("DELETE FROM sections WHERE name='main'").run();
+		const results = db.prepare("SELECT name FROM sections_fts WHERE sections_fts MATCH 'calf'").all();
+		expect(results.length).toBe(0);
+	});
 });

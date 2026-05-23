@@ -69,6 +69,18 @@ export function createSchema(db: Database.Database): void {
 		CREATE TRIGGER IF NOT EXISTS journal_ai AFTER INSERT ON journal BEGIN
 			INSERT INTO journal_fts(rowid, entry) VALUES (new.id, new.entry);
 		END;
+		CREATE TRIGGER IF NOT EXISTS sections_ad AFTER DELETE ON sections BEGIN
+			INSERT INTO sections_fts(sections_fts, rowid, name, content)
+				VALUES ('delete', old.rowid, old.name, old.content);
+		END;
+		CREATE TRIGGER IF NOT EXISTS refs_ad AFTER DELETE ON refs BEGIN
+			INSERT INTO refs_fts(refs_fts, rowid, name, content)
+				VALUES ('delete', old.rowid, old.name, old.content);
+		END;
+		CREATE TRIGGER IF NOT EXISTS journal_ad AFTER DELETE ON journal BEGIN
+			INSERT INTO journal_fts(journal_fts, rowid, entry)
+				VALUES ('delete', old.id, old.entry);
+		END;
 	`);
 }
 
@@ -79,18 +91,19 @@ export function seedFromDirectory(db: Database.Database, seedDir: string): void 
 
 	const skillPath = join(seedDir, "SKILL.md");
 	if (!existsSync(skillPath)) return;
-	db.prepare("INSERT INTO sections(name, content) VALUES (?, ?)").run(
-		"main",
-		readFileSync(skillPath, "utf-8"),
-	);
+
+	const insertSection = db.prepare("INSERT INTO sections(name, content) VALUES (?, ?)");
+	const insertRef = db.prepare("INSERT INTO refs(name, content) VALUES (?, ?)");
 
 	const refsDir = join(seedDir, "references");
-	if (!existsSync(refsDir)) return;
-	for (const file of readdirSync(refsDir)) {
-		if (!file.endsWith(".md")) continue;
-		db.prepare("INSERT INTO refs(name, content) VALUES (?, ?)").run(
-			file.replace(/\.md$/, ""),
-			readFileSync(join(refsDir, file), "utf-8"),
-		);
-	}
+	const refFiles = existsSync(refsDir)
+		? readdirSync(refsDir).sort().filter((f) => f.endsWith(".md"))
+		: [];
+
+	db.transaction(() => {
+		insertSection.run("main", readFileSync(skillPath, "utf-8"));
+		for (const file of refFiles) {
+			insertRef.run(file.replace(/\.md$/, ""), readFileSync(join(refsDir, file), "utf-8"));
+		}
+	})();
 }
