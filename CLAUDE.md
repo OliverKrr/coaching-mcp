@@ -59,25 +59,12 @@ After first seed, all writes go through the MCP tools. The `/seed` volume is rea
 | `update_reference`     | write     | Upsert a reference doc |
 | `append_journal`       | write     | Append a coaching journal entry |
 
-## Deployment (Raspberry Pi)
-
-Provisioned by `ponyfreude-ansible/`. The `coaching-mcp/` directory is rsync'd to `/opt/wordpress-stack/coaching-mcp/` on the Pi, then built as the `coaching_mcp` Docker image. Seed data comes from `ponyfreude-ansible/coaching-skill/data/`. The SQLite database is persisted in the `coaching_data` Docker volume.
-
-To rebuild after code changes:
-```sh
-# From WSL (ponyfreude-ansible/)
-ansible-playbook -i hosts.ini playbook.yml --vault-password-file=.vaultpw \
-  --start-at-task "Copy coaching-mcp source to Pi"
-```
-
 ## Environment variables (runtime)
 
 | Variable   | Default | Description |
 |------------|---------|-------------|
 | `DATA_DIR` | `/data` | SQLite database location (persistent volume) |
 | `SEED_DIR` | `/seed` | Seed markdown files (read-only volume) |
-
-`COACHING_MCP_AUTH_TOKEN` is set in the Docker `.env` (deployed by Ansible from `templates/stack.env.j2`), consumed by `coaching_oauth_proxy` — not by this container directly.
 
 ## Key design decisions
 
