@@ -14,7 +14,8 @@ COPY tsconfig.json ./
 RUN npm run build
 
 # Install globally so 'skill-mcp' binary is available to supergateway
-RUN npm install -g . && npm prune --omit=dev
+RUN npm prune --omit=dev
+RUN npm install -g .
 
 # /data  — SQLite database (persistent volume, survives restarts)
 # /seed  — read-only seed data mounted at runtime
