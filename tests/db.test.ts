@@ -1,4 +1,4 @@
-// skill-mcp/tests/db.test.ts
+// coaching-mcp/tests/db.test.ts
 import Database from "better-sqlite3";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

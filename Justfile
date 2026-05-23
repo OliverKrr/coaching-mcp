@@ -26,8 +26,8 @@ update-deps:
 
 # Build Docker image locally (native arch)
 docker-build:
-    docker build -t skill-mcp .
+    docker build -t coaching-mcp .
 
 # Build for arm64 (Raspberry Pi 4 / aarch64)
 docker-build-arm64:
-    docker buildx build --platform linux/arm64 -t skill-mcp:arm64 .
+    docker buildx build --platform linux/arm64 -t coaching-mcp:arm64 .

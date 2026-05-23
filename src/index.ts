@@ -11,7 +11,7 @@ async function main(): Promise<void> {
   registerWriteTools(server, db);
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  process.stderr.write("skill-mcp: started\n");
+  process.stderr.write("coaching-mcp: started\n");
   process.on("SIGINT", () => {
     db.close();
     process.exit(0);

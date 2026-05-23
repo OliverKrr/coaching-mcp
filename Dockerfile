@@ -13,7 +13,7 @@ COPY src/ ./src/
 COPY tsconfig.json ./
 RUN npm run build
 
-# Install globally so 'skill-mcp' binary is available to supergateway
+# Install globally so 'coaching-mcp' binary is available to supergateway
 RUN npm prune --omit=dev
 RUN npm install -g .
 

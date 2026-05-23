@@ -1,4 +1,4 @@
-// skill-mcp/tests/tools.test.ts
+// coaching-mcp/tests/tools.test.ts
 import Database from "better-sqlite3";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { describe, expect, it } from "vitest";
