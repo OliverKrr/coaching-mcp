@@ -32,7 +32,7 @@ npm run check:types
 ## Architecture
 
 ```
-coaching-mcp (Node 24 binary)
+coaching-mcp (Node 26 binary)
   └── src/db.ts           SQLite+FTS5 database: sections, refs, journal tables
   └── src/tools/read.ts   4 read tools (get_coaching_context, search_knowledge, get_reference, get_journal)
   └── src/tools/write.ts  3 write tools (update_section, update_reference, append_journal)

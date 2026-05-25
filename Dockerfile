@@ -1,4 +1,4 @@
-FROM node:24-slim
+FROM node:26-trixie-slim
 
 # Build tools for better-sqlite3 native module on arm64 (Pi 4 / aarch64)
 RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
