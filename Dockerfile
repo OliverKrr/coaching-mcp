@@ -8,10 +8,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# .npmrc pins min-release-age=7 — applies to every npm command run from /app
-# (npm ci respects the lockfile, but the unpinned `supergateway` install below benefits).
+# .npmrc pins min-release-age=7 — supply-chain protection that gates dep
+# UPDATES on the developer machine. The lockfile we ship is already trusted
+# (reviewed, committed), so bypass min-release-age for `npm ci` here.
+# The rule still applies to the unpinned `supergateway` install below.
 COPY .npmrc package*.json ./
-RUN npm ci --no-audit --no-fund
+RUN NPM_CONFIG_MIN_RELEASE_AGE=0 npm ci --no-audit --no-fund
 
 COPY src/ ./src/
 COPY tsconfig.json tsdown.config.ts ./
