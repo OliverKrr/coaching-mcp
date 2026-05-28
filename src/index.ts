@@ -44,7 +44,9 @@ async function main(): Promise<void> {
     process.exit(1);
   });
   process.on("unhandledRejection", (reason) => {
-    log(`unhandledRejection: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`);
+    log(
+      `unhandledRejection: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`,
+    );
     process.exit(1);
   });
 }

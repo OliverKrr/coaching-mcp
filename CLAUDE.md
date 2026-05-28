@@ -21,6 +21,7 @@ just update-deps  # ncu -u && npm install
 ```
 
 Direct npm equivalents if just is not installed:
+
 ```sh
 npm run build
 npm test
@@ -41,30 +42,32 @@ coaching-mcp (Node 26 binary)
 ```
 
 Seed data flow (first start only):
+
 ```
 /seed/SKILL.md            → sections table (name='main')
 /seed/references/*.md     → refs table (name = filename without .md)
 ```
+
 After first seed, all writes go through the MCP tools. The `/seed` volume is read-only.
 
 ## MCP tools
 
-| Tool                   | Direction | Description |
-|------------------------|-----------|-------------|
-| `get_coaching_context` | read      | Full SKILL.md — call at session start |
-| `search_knowledge`     | read      | FTS5 full-text search across all tables |
-| `get_reference`        | read      | One reference doc by name |
-| `get_journal`          | read      | Recent journal entries, newest first |
+| Tool                   | Direction | Description                                          |
+| ---------------------- | --------- | ---------------------------------------------------- |
+| `get_coaching_context` | read      | Full SKILL.md — call at session start                |
+| `search_knowledge`     | read      | FTS5 full-text search across all tables              |
+| `get_reference`        | read      | One reference doc by name                            |
+| `get_journal`          | read      | Recent journal entries, newest first                 |
 | `update_section`       | write     | Upsert a knowledge section (use `main` for SKILL.md) |
-| `update_reference`     | write     | Upsert a reference doc |
-| `append_journal`       | write     | Append a coaching journal entry |
+| `update_reference`     | write     | Upsert a reference doc                               |
+| `append_journal`       | write     | Append a coaching journal entry                      |
 
 ## Environment variables (runtime)
 
-| Variable   | Default | Description |
-|------------|---------|-------------|
+| Variable   | Default | Description                                  |
+| ---------- | ------- | -------------------------------------------- |
 | `DATA_DIR` | `/data` | SQLite database location (persistent volume) |
-| `SEED_DIR` | `/seed` | Seed markdown files (read-only volume) |
+| `SEED_DIR` | `/seed` | Seed markdown files (read-only volume)       |
 
 ## Key design decisions
 

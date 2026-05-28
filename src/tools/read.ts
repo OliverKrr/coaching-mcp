@@ -3,6 +3,7 @@ import type Database from "better-sqlite3";
 import { z } from "zod";
 import type { JournalEntry, Reference, Section } from "../db.js";
 import { toolText, withErrorHandling } from "../utils/errors.js";
+import { sanitizeFtsQuery } from "../utils/search.js";
 
 export function registerReadTools(server: McpServer, db: Database.Database): void {
   server.registerTool(
@@ -37,24 +38,25 @@ export function registerReadTools(server: McpServer, db: Database.Database): voi
       },
     },
     ({ query, limit }) => {
+      const fts = sanitizeFtsQuery(query);
       try {
         const sections = db
           .prepare(
             "SELECT name, snippet(sections_fts, 1, '**', '**', '...', 32) as snippet FROM sections_fts WHERE sections_fts MATCH ? LIMIT ?",
           )
-          .all(query, limit) as Array<{ name: string; snippet: string }>;
+          .all(fts, limit) as Array<{ name: string; snippet: string }>;
 
         const refs = db
           .prepare(
             "SELECT name, snippet(refs_fts, 1, '**', '**', '...', 32) as snippet FROM refs_fts WHERE refs_fts MATCH ? LIMIT ?",
           )
-          .all(query, limit) as Array<{ name: string; snippet: string }>;
+          .all(fts, limit) as Array<{ name: string; snippet: string }>;
 
         const journal = db
           .prepare(
             "SELECT rowid as id, snippet(journal_fts, 0, '**', '**', '...', 32) as snippet FROM journal_fts WHERE journal_fts MATCH ? LIMIT ?",
           )
-          .all(query, limit) as Array<{ id: number; snippet: string }>;
+          .all(fts, limit) as Array<{ id: number; snippet: string }>;
 
         const parts: string[] = [];
         if (sections.length > 0)

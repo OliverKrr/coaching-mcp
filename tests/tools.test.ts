@@ -81,6 +81,18 @@ describe("search_knowledge", () => {
     });
     expect(result.content[0].text).toContain("No results");
   });
+
+  it("does not crash on FTS5 special chars (parens)", async () => {
+    const { server } = makeServer();
+    const result = await callTool(server, "search_knowledge", { query: "Z2(low)", limit: 5 });
+    expect(result.content[0].text).not.toContain("Search failed");
+  });
+
+  it("does not crash on FTS5 special chars (colon)", async () => {
+    const { server } = makeServer();
+    const result = await callTool(server, "search_knowledge", { query: "name:value", limit: 5 });
+    expect(result.content[0].text).not.toContain("Search failed");
+  });
 });
 
 describe("get_reference", () => {
