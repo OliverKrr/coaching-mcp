@@ -95,6 +95,37 @@ describe("search_knowledge", () => {
   });
 });
 
+describe("list_references", () => {
+  it("returns all references with metadata", async () => {
+    const { server } = makeServer();
+    const result = await callTool(server, "list_references", {});
+    expect(result.content[0].text).toContain("zones");
+    expect(result.content[0].text).toContain("bytes");
+  });
+
+  it("returns empty message when no refs exist", async () => {
+    const db = new Database(":memory:");
+    db.pragma("journal_mode = WAL");
+    createSchema(db);
+    const server = new McpServer({ name: "test", version: "0.0.0" });
+    registerReadTools(server, db);
+    const result = await callTool(server, "list_references", {});
+    expect(result.content[0].text).toContain("No references");
+  });
+
+  it("returns sorted by name", async () => {
+    const { server, db } = makeServer();
+    db.prepare("INSERT INTO refs(name, content) VALUES (?, ?)").run("aaa", "A");
+    db.prepare("INSERT INTO refs(name, content) VALUES (?, ?)").run("mmm", "B");
+    const result = await callTool(server, "list_references", {});
+    const text = result.content[0].text;
+    const aIdx = text.indexOf("aaa");
+    const mIdx = text.indexOf("mmm");
+    expect(aIdx).toBeGreaterThan(-1);
+    expect(aIdx).toBeLessThan(mIdx);
+  });
+});
+
 describe("get_reference", () => {
   it("returns reference content by name", async () => {
     const { server } = makeServer();

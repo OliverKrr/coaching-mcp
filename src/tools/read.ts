@@ -104,6 +104,28 @@ export function registerReadTools(server: McpServer, db: Database.Database): voi
   );
 
   server.registerTool(
+    "list_references",
+    {
+      description:
+        "List all available reference documents (zones, patterns, injuries, etc.) with name, last-updated date, and size in bytes.",
+      inputSchema: {},
+    },
+    () =>
+      withErrorHandling("list_references", () => {
+        const rows = db
+          .prepare("SELECT name, updated_at, LENGTH(content) as size FROM refs ORDER BY name")
+          .all() as Array<{ name: string; updated_at: string; size: number }>;
+        if (rows.length === 0) return toolText("No references defined yet.");
+        return toolText(
+          "Available references:\n" +
+            rows
+              .map((r) => `- **${r.name}** (updated ${r.updated_at}, ${r.size} bytes)`)
+              .join("\n"),
+        );
+      }),
+  );
+
+  server.registerTool(
     "get_journal",
     {
       description:
