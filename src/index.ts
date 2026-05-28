@@ -2,6 +2,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { openDatabase } from "./db.js";
+import { registerOpsTools } from "./tools/ops.js";
 import { registerReadTools } from "./tools/read.js";
 import { registerWriteTools } from "./tools/write.js";
 
@@ -22,6 +23,7 @@ async function main(): Promise<void> {
   const server = new McpServer({ name: "coaching-mcp", version: "1.0.0" });
   registerReadTools(server, db);
   registerWriteTools(server, db);
+  registerOpsTools(server, db);
   log("tools registered");
 
   log("connecting stdio transport…");
