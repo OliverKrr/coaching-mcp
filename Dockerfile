@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       python3 make g++ \
  && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+WORKDIR /build
 
 # .npmrc pins min-release-age=7 — supply-chain protection that gates dep
 # UPDATES on the developer machine. The lockfile we ship is already trusted
@@ -19,9 +19,19 @@ COPY src/ ./src/
 COPY tsconfig.json tsdown.config.ts ./
 RUN npm run build
 
-# Install the built package globally so the `coaching-mcp` binary resolves,
-# plus the stdio→Streamable HTTP bridge.
-RUN npm install -g --no-audit --no-fund . supergateway
+# Install supergateway plus our just-built package. We pack first because
+# `npm install -g .` symlinks /usr/local/lib/node_modules/coaching-mcp into
+# /build, which dangles in the final stage. Installing from the tarball
+# extracts a real directory under /usr/local/lib/node_modules instead.
+RUN npm pack && npm install -g --no-audit --no-fund ./coaching-mcp-*.tgz supergateway
+
+# Verify builder-stage layout: bin entries are symlinks, dist/ is a real file,
+# shebang is preserved, node is v26.
+RUN test -L /usr/local/bin/coaching-mcp \
+ && test -L /usr/local/bin/supergateway \
+ && test -f /usr/local/lib/node_modules/coaching-mcp/dist/index.js \
+ && head -1 /usr/local/lib/node_modules/coaching-mcp/dist/index.js | grep -q '^#!/usr/bin/env node$' \
+ && node --version | grep -q '^v26\.'
 
 
 FROM node:26-trixie-slim
@@ -31,9 +41,23 @@ RUN groupadd --system --gid 999 nonroot \
  && mkdir -p /data /seed \
  && chown nonroot:nonroot /data /seed
 
+# Copy the WHOLE bin/ and lib/node_modules directories. Docker COPY preserves
+# symlinks that are nested inside a directory source (only top-level symlink
+# arguments are dereferenced). This keeps `coaching-mcp` and `supergateway`
+# as real symlinks into /usr/local/lib/node_modules — without that, Node's
+# ESM resolver starts from /usr/local/bin/ and fails with ERR_MODULE_NOT_FOUND
+# (e.g. supergateway → "Cannot find package 'yargs'").
 COPY --from=builder /usr/local/lib/node_modules /usr/local/lib/node_modules
-COPY --from=builder /usr/local/bin/coaching-mcp /usr/local/bin/coaching-mcp
-COPY --from=builder /usr/local/bin/supergateway /usr/local/bin/supergateway
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Re-verify in the FINAL image — the builder-stage checks passed even though
+# the multi-stage COPY was breaking the layout, so we have to check here too.
+RUN test -L /usr/local/bin/coaching-mcp \
+ && test -L /usr/local/bin/supergateway \
+ && test -f /usr/local/lib/node_modules/coaching-mcp/dist/index.js \
+ && test -f /usr/local/lib/node_modules/supergateway/package.json \
+ && head -1 /usr/local/lib/node_modules/coaching-mcp/dist/index.js | grep -q '^#!/usr/bin/env node$' \
+ && node --version | grep -q '^v26\.'
 
 # /data  — SQLite database (persistent volume, survives restarts)
 # /seed  — read-only seed data mounted at runtime
