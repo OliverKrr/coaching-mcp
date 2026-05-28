@@ -337,3 +337,16 @@ describe("append_journal", () => {
     expect(result.content[0].text).toContain("taper");
   });
 });
+
+describe("append_journal contract", () => {
+  it("stores entry verbatim; get_journal prepends timestamp exactly once", async () => {
+    const { server } = makeServer();
+    await callTool(server, "append_journal", { entry: "test entry text without date" });
+    const result = await callTool(server, "get_journal", { limit: 1 });
+    const text = result.content[0].text;
+    expect(text).toMatch(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] test entry text without date/);
+    // Exactly one bracketed timestamp at line start
+    const matches = text.match(/\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]/g) ?? [];
+    expect(matches.length).toBe(1);
+  });
+});

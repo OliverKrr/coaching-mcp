@@ -48,7 +48,7 @@ export function registerWriteTools(server: McpServer, db: Database.Database): vo
     "append_journal",
     {
       description:
-        "Append a coaching journal entry. Call at the end of every coaching session to log decisions made, data changed, and observations for future sessions.",
+        "Append a coaching journal entry. The server records the timestamp automatically — do NOT prepend a date to the entry text. Call at the end of every coaching session to log decisions made, data changed, and observations.",
       inputSchema: {
         entry: z.string().min(1).describe("Journal entry text"),
       },
