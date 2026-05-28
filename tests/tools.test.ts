@@ -236,6 +236,37 @@ describe("get_journal", () => {
   });
 });
 
+describe("list_sections", () => {
+  it("returns sections with metadata", async () => {
+    const { server } = makeServer();
+    const result = await callTool(server, "list_sections", {});
+    expect(result.content[0].text).toContain("main");
+    expect(result.content[0].text).toContain("bytes");
+  });
+});
+
+describe("get_section", () => {
+  it("returns content for existing section", async () => {
+    const { server } = makeServer();
+    const result = await callTool(server, "get_section", { name: "main" });
+    expect(result.content[0].text).toContain("FTP 414W");
+  });
+
+  it("returns 'not found' for missing section with available list", async () => {
+    const { server } = makeServer();
+    const result = await callTool(server, "get_section", { name: "nonexistent" });
+    expect(result.content[0].text).toContain("not found");
+    expect(result.content[0].text).toContain("main");
+  });
+
+  it("get_section('main') equals get_coaching_context() after trimEnd", async () => {
+    const { server } = makeServer();
+    const a = (await callTool(server, "get_section", { name: "main" })).content[0].text;
+    const b = (await callTool(server, "get_coaching_context", {})).content[0].text;
+    expect(a.trimEnd()).toBe(b.trimEnd());
+  });
+});
+
 describe("update_section", () => {
   it("updates existing section content", async () => {
     const { server, db } = makeServer();

@@ -158,6 +158,54 @@ export function registerReadTools(server: McpServer, db: Database.Database): voi
   );
 
   server.registerTool(
+    "list_sections",
+    {
+      description:
+        "List all knowledge sections (typically just 'main') with name, last-updated date, and size in bytes.",
+      inputSchema: {},
+    },
+    () =>
+      withErrorHandling("list_sections", () => {
+        const rows = db
+          .prepare("SELECT name, updated_at, LENGTH(content) as size FROM sections ORDER BY name")
+          .all() as Array<{ name: string; updated_at: string; size: number }>;
+        if (rows.length === 0) return toolText("No sections defined.");
+        return toolText(
+          "Available sections:\n" +
+            rows
+              .map((r) => `- **${r.name}** (updated ${r.updated_at}, ${r.size} bytes)`)
+              .join("\n"),
+        );
+      }),
+  );
+
+  server.registerTool(
+    "get_section",
+    {
+      description:
+        "Get a knowledge section by name. Use 'main' for the canonical SKILL.md (equivalent to get_coaching_context).",
+      inputSchema: {
+        name: z.string().min(1).describe("Section name; use 'main' for SKILL.md"),
+      },
+    },
+    ({ name }) =>
+      withErrorHandling("get_section", () => {
+        const row = db.prepare("SELECT content FROM sections WHERE name = ?").get(name) as
+          | Section
+          | undefined;
+        if (!row) {
+          const available = (
+            db.prepare("SELECT name FROM sections ORDER BY name").all() as Array<{ name: string }>
+          )
+            .map((r) => r.name)
+            .join(", ");
+          return toolText(`Section '${name}' not found. Available: ${available || "none"}`);
+        }
+        return toolText(row.content);
+      }),
+  );
+
+  server.registerTool(
     "get_journal",
     {
       description:
