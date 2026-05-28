@@ -3,7 +3,7 @@ import type Database from "better-sqlite3";
 import { z } from "zod";
 import type { JournalEntry, Reference, Section } from "../db.js";
 import { toolText, withErrorHandling } from "../utils/errors.js";
-import { sanitizeFtsQuery } from "../utils/search.js";
+import { sanitizeFtsQuery, formatSearchHits, type SearchHit } from "../utils/search.js";
 
 export function registerReadTools(server: McpServer, db: Database.Database): void {
   server.registerTool(
@@ -25,50 +25,82 @@ export function registerReadTools(server: McpServer, db: Database.Database): voi
     "search_knowledge",
     {
       description:
-        "Full-text search across all coaching knowledge: sections, references, and coaching journal entries.",
+        "Full-text search across coaching knowledge. Optional `type` scopes to one of section/reference/journal; omitted searches all three.",
       inputSchema: {
         query: z.string().min(1).describe("Search terms"),
+        type: z
+          .enum(["section", "reference", "journal"])
+          .optional()
+          .describe("Filter: search only this table. Omit to search all."),
         limit: z
           .number()
           .int()
           .min(1)
           .max(20)
           .default(5)
-          .describe("Max results per table (sections, refs, journal)"),
+          .describe("Max results per searched table"),
       },
     },
-    ({ query, limit }) => {
-      const fts = sanitizeFtsQuery(query);
+    ({ query, type, limit }) => {
       try {
-        const sections = db
-          .prepare(
-            "SELECT name, snippet(sections_fts, 1, '**', '**', '...', 32) as snippet FROM sections_fts WHERE sections_fts MATCH ? LIMIT ?",
-          )
-          .all(fts, limit) as Array<{ name: string; snippet: string }>;
+        const fts = sanitizeFtsQuery(query);
+        const hits: SearchHit[] = [];
 
-        const refs = db
-          .prepare(
-            "SELECT name, snippet(refs_fts, 1, '**', '**', '...', 32) as snippet FROM refs_fts WHERE refs_fts MATCH ? LIMIT ?",
-          )
-          .all(fts, limit) as Array<{ name: string; snippet: string }>;
+        if (type === undefined || type === "section") {
+          const rows = db
+            .prepare(
+              "SELECT s.name as name, snippet(sections_fts, 1, '**', '**', '...', 32) as snippet, s.updated_at as updated_at " +
+                "FROM sections_fts JOIN sections s ON s.rowid = sections_fts.rowid " +
+                "WHERE sections_fts MATCH ? LIMIT ?",
+            )
+            .all(fts, limit) as Array<{ name: string; snippet: string; updated_at: string }>;
+          for (const r of rows) {
+            hits.push({
+              type: "section",
+              name: r.name,
+              date: r.updated_at.slice(0, 10),
+              snippet: r.snippet,
+            });
+          }
+        }
 
-        const journal = db
-          .prepare(
-            "SELECT rowid as id, snippet(journal_fts, 0, '**', '**', '...', 32) as snippet FROM journal_fts WHERE journal_fts MATCH ? LIMIT ?",
-          )
-          .all(fts, limit) as Array<{ id: number; snippet: string }>;
+        if (type === undefined || type === "reference") {
+          const rows = db
+            .prepare(
+              "SELECT r.name as name, snippet(refs_fts, 1, '**', '**', '...', 32) as snippet, r.updated_at as updated_at " +
+                "FROM refs_fts JOIN refs r ON r.rowid = refs_fts.rowid " +
+                "WHERE refs_fts MATCH ? LIMIT ?",
+            )
+            .all(fts, limit) as Array<{ name: string; snippet: string; updated_at: string }>;
+          for (const r of rows) {
+            hits.push({
+              type: "reference",
+              name: r.name,
+              date: r.updated_at.slice(0, 10),
+              snippet: r.snippet,
+            });
+          }
+        }
 
-        const parts: string[] = [];
-        if (sections.length > 0)
-          parts.push(
-            "**Sections:**\n" + sections.map((r) => `[${r.name}]: ${r.snippet}`).join("\n"),
-          );
-        if (refs.length > 0)
-          parts.push("**References:**\n" + refs.map((r) => `[${r.name}]: ${r.snippet}`).join("\n"));
-        if (journal.length > 0)
-          parts.push("**Journal:**\n" + journal.map((r) => `[#${r.id}]: ${r.snippet}`).join("\n"));
+        if (type === undefined || type === "journal") {
+          const rows = db
+            .prepare(
+              "SELECT j.id as id, snippet(journal_fts, 0, '**', '**', '...', 32) as snippet, j.created_at as created_at " +
+                "FROM journal_fts JOIN journal j ON j.id = journal_fts.rowid " +
+                "WHERE journal_fts MATCH ? LIMIT ?",
+            )
+            .all(fts, limit) as Array<{ id: number; snippet: string; created_at: string }>;
+          for (const r of rows) {
+            hits.push({
+              type: "journal",
+              name: `#${r.id}`,
+              date: r.created_at.slice(0, 10),
+              snippet: r.snippet,
+            });
+          }
+        }
 
-        return toolText(parts.length > 0 ? parts.join("\n\n") : `No results found for: ${query}`);
+        return toolText(formatSearchHits(hits, query));
       } catch {
         return toolText(
           "Search failed — try simpler terms (avoid special characters like quotes or parentheses).",

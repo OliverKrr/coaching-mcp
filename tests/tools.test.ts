@@ -86,12 +86,60 @@ describe("search_knowledge", () => {
     const { server } = makeServer();
     const result = await callTool(server, "search_knowledge", { query: "Z2(low)", limit: 5 });
     expect(result.content[0].text).not.toContain("Search failed");
+    expect(result.content[0].text).toContain("No results");
   });
 
   it("does not crash on FTS5 special chars (colon)", async () => {
     const { server } = makeServer();
     const result = await callTool(server, "search_knowledge", { query: "name:value", limit: 5 });
     expect(result.content[0].text).not.toContain("Search failed");
+    expect(result.content[0].text).toContain("No results");
+  });
+
+  it("type filter scopes to sections only", async () => {
+    const { server } = makeServer();
+    const result = await callTool(server, "search_knowledge", {
+      query: "calf",
+      type: "section",
+      limit: 5,
+    });
+    expect(result.content[0].text).toContain("[section]");
+    expect(result.content[0].text).not.toContain("[reference]");
+    expect(result.content[0].text).not.toContain("[journal]");
+  });
+
+  it("type filter scopes to references only", async () => {
+    const { server } = makeServer();
+    const result = await callTool(server, "search_knowledge", {
+      query: "Z1",
+      type: "reference",
+      limit: 5,
+    });
+    expect(result.content[0].text).toContain("[reference]");
+    expect(result.content[0].text).not.toContain("[section]");
+  });
+
+  it("type filter scopes to journal only", async () => {
+    const { server } = makeServer();
+    const result = await callTool(server, "search_knowledge", {
+      query: "Session",
+      type: "journal",
+      limit: 5,
+    });
+    expect(result.content[0].text).toContain("[journal]");
+    expect(result.content[0].text).not.toContain("[section]");
+  });
+
+  it("searches all when type omitted", async () => {
+    const { server } = makeServer();
+    const result = await callTool(server, "search_knowledge", { query: "calf", limit: 5 });
+    expect(result.content[0].text).toContain("[section]");
+  });
+
+  it("output uses header + > snippet shape", async () => {
+    const { server } = makeServer();
+    const result = await callTool(server, "search_knowledge", { query: "calf", limit: 5 });
+    expect(result.content[0].text).toMatch(/\[section\] main \(updated \d{4}-\d{2}-\d{2}\)\n> /);
   });
 });
 

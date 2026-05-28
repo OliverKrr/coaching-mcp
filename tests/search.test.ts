@@ -1,6 +1,6 @@
 // coaching-mcp/tests/search.test.ts
 import { describe, expect, it } from "vitest";
-import { sanitizeFtsQuery } from "../src/utils/search.js";
+import { sanitizeFtsQuery, formatSearchHits, type SearchHit } from "../src/utils/search.js";
 
 describe("sanitizeFtsQuery", () => {
   it("returns plain query unchanged when no special chars", () => {
@@ -37,5 +37,38 @@ describe("sanitizeFtsQuery", () => {
 
   it("escapes internal quotes by doubling", () => {
     expect(sanitizeFtsQuery(`he said "hi"`)).toBe(`"he said ""hi"""`);
+  });
+});
+
+describe("formatSearchHits", () => {
+  it("returns no-results message when hits empty", () => {
+    expect(formatSearchHits([], "calf")).toBe("No results found for: calf");
+  });
+
+  it("emits per-block header + > snippet for section", () => {
+    const hits: SearchHit[] = [
+      { type: "section", name: "main", date: "2026-05-25", snippet: "...calf safety..." },
+    ];
+    const out = formatSearchHits(hits, "calf");
+    expect(out).toBe("[section] main (updated 2026-05-25)\n> ...calf safety...");
+  });
+
+  it("uses 'created' label for journal entries", () => {
+    const hits: SearchHit[] = [
+      { type: "journal", name: "#14", date: "2026-05-25", snippet: "session note" },
+    ];
+    const out = formatSearchHits(hits, "x");
+    expect(out).toContain("[journal] #14 (created 2026-05-25)");
+  });
+
+  it("joins multiple hits with blank-line separator", () => {
+    const hits: SearchHit[] = [
+      { type: "section", name: "main", date: "2026-05-25", snippet: "a" },
+      { type: "reference", name: "zones", date: "2026-05-25", snippet: "b" },
+    ];
+    const out = formatSearchHits(hits, "x");
+    expect(out).toBe(
+      "[section] main (updated 2026-05-25)\n> a\n\n[reference] zones (updated 2026-05-25)\n> b",
+    );
   });
 });
