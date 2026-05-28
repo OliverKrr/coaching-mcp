@@ -129,20 +129,40 @@ export function registerReadTools(server: McpServer, db: Database.Database): voi
     "get_journal",
     {
       description:
-        "Get recent coaching journal entries — decisions, updates, and observations from past coaching sessions.",
+        "Get recent coaching journal entries. Provide `since` (YYYY-MM-DD) for date-bounded queries, or `limit` for newest-N (default 10). If both are given, `since` wins and `limit` is ignored.",
       inputSchema: {
-        limit: z.number().int().min(1).max(50).default(10),
+        limit: z.number().int().min(1).max(50).optional(),
+        since: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional()
+          .describe("ISO date YYYY-MM-DD — returns entries with created_at >= this date"),
       },
     },
-    ({ limit }) =>
+    ({ limit, since }) =>
       withErrorHandling("get_journal", () => {
-        const rows = db
-          .prepare("SELECT id, entry, created_at FROM journal ORDER BY id DESC LIMIT ?")
-          .all(limit) as JournalEntry[];
+        let rows: JournalEntry[];
+        let prefix = "";
+        if (since !== undefined) {
+          if (limit !== undefined) {
+            prefix = "Note: 'limit' was ignored because 'since' was provided.\n\n";
+          }
+          rows = db
+            .prepare(
+              "SELECT id, entry, created_at FROM journal WHERE created_at >= ? ORDER BY id DESC",
+            )
+            .all(since) as JournalEntry[];
+        } else {
+          const effectiveLimit = limit ?? 10;
+          rows = db
+            .prepare("SELECT id, entry, created_at FROM journal ORDER BY id DESC LIMIT ?")
+            .all(effectiveLimit) as JournalEntry[];
+        }
+        if (rows.length === 0) {
+          return toolText(`${prefix}No journal entries${since ? ` since ${since}` : ""} yet.`);
+        }
         return toolText(
-          rows.length === 0
-            ? "No journal entries yet."
-            : rows.map((r) => `[${r.created_at}] ${r.entry}`).join("\n\n---\n\n"),
+          prefix + rows.map((r) => `[${r.created_at}] ${r.entry}`).join("\n\n---\n\n"),
         );
       }),
   );

@@ -149,6 +149,43 @@ describe("get_journal", () => {
     const text = result.content[0].text;
     expect(text.indexOf("Session 2")).toBeLessThan(text.indexOf("Session 1"));
   });
+
+  it("respects since parameter (boundary inclusive)", async () => {
+    const { server, db } = makeServer();
+    db.prepare("INSERT INTO journal(entry, created_at) VALUES (?, ?)").run(
+      "older entry",
+      "2024-01-01 00:00:00",
+    );
+    db.prepare("INSERT INTO journal(entry, created_at) VALUES (?, ?)").run(
+      "newer entry",
+      "2026-05-01 00:00:00",
+    );
+    const result = await callTool(server, "get_journal", { since: "2025-01-01" });
+    expect(result.content[0].text).toContain("newer entry");
+    expect(result.content[0].text).not.toContain("older entry");
+  });
+
+  it("includes notice line when both since and limit are set", async () => {
+    const { server } = makeServer();
+    const result = await callTool(server, "get_journal", { since: "2024-01-01", limit: 1 });
+    expect(result.content[0].text).toContain("Note:");
+    expect(result.content[0].text).toContain("limit");
+  });
+
+  it("returns dated empty message when nothing matches since", async () => {
+    const { server } = makeServer();
+    const result = await callTool(server, "get_journal", { since: "2099-01-01" });
+    expect(result.content[0].text).toContain("since 2099-01-01");
+  });
+
+  it("respects explicit limit when since omitted", async () => {
+    const { server, db } = makeServer();
+    db.prepare("INSERT INTO journal(entry) VALUES (?)").run("entry 2");
+    db.prepare("INSERT INTO journal(entry) VALUES (?)").run("entry 3");
+    const result = await callTool(server, "get_journal", { limit: 1 });
+    expect(result.content[0].text).toContain("entry 3");
+    expect(result.content[0].text).not.toContain("entry 2");
+  });
 });
 
 describe("update_section", () => {
