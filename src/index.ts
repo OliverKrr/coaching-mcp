@@ -6,7 +6,7 @@ import { registerReadTools } from "./tools/read.js";
 import { registerWriteTools } from "./tools/write.js";
 
 function log(msg: string): void {
-  process.stderr.write(`[coaching-mcp] ${msg}\n`);
+  process.stderr.write(`${new Date().toISOString()} [coaching-mcp] ${msg}\n`);
 }
 
 async function main(): Promise<void> {
