@@ -1,6 +1,6 @@
 {
   "name": "coaching-mcp",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Personal coaching MCP server backed by SQLite+FTS5 — serves SKILL.md knowledge to Claude AI",
   "keywords": [
     "claude",
