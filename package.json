@@ -11,7 +11,8 @@
   ],
   "license": "MIT",
   "bin": {
-    "coaching-mcp": "dist/index.js"
+    "coaching-mcp": "dist/index.js",
+    "coaching-mcp-snapshot": "dist/snapshot-cli.js"
   },
   "files": [
     "dist",
@@ -22,6 +23,7 @@
   "scripts": {
     "build": "tsdown",
     "dev": "tsx src/index.ts",
+    "snapshot": "node dist/snapshot-cli.js",
     "test": "vitest run",
     "check": "oxlint . && oxfmt . --check",
     "check:fix": "oxlint . && oxfmt . --write",

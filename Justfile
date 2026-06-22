@@ -31,3 +31,7 @@ docker-build:
 # Build for arm64 (Raspberry Pi 4 / aarch64)
 docker-build-arm64:
     docker buildx build --platform linux/arm64 -t coaching-mcp:arm64 .
+
+# Snapshot the local SQLite DB: lossless skill.db (recovery) + readable markdown incl. journal
+snapshot dest="snapshots": build
+    node dist/snapshot-cli.js {{dest}}
