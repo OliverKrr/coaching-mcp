@@ -48,6 +48,54 @@ The database is seeded only on first start (when `sections` is empty). After tha
 | `DATA_DIR` | `/data` | Where `skill.db` is stored (mount a persistent volume here) |
 | `SEED_DIR` | `/seed` | Where seed markdown files are mounted (read-only)           |
 
+## Snapshot & recovery
+
+`coaching-mcp-snapshot` dumps the SQLite database to a local directory — a lossless,
+WAL-safe binary copy for recovery plus human-readable markdown for inspection. It operates
+on a **local DB file path**; how you reach the file (locally, `docker exec`, etc.) is up to
+your deployment.
+
+```sh
+just snapshot                 # → ./snapshots (gitignored)
+just snapshot /path/to/out    # custom output dir
+# or directly:
+node dist/snapshot-cli.js ./snapshots --db /data/skill.db
+```
+
+Output (full mode):
+
+| File | What |
+|---|---|
+| `skill.db` | Lossless online backup — the recovery artifact (FTS, triggers, timestamps, journal). |
+| `SKILL.md` | The `main` knowledge section. |
+| `sections/<name>.md` | Other sections. |
+| `references/<name>.md` | Reference documents. |
+| `journal.md` | All journal entries, newest first, with timestamps (inspection only). |
+
+`--seed-only` emits just `SKILL.md` + `references/*.md` (the files the seed loader reads).
+
+**Recovery** (any deployment):
+
+1. Stop the server/container.
+2. Replace `${DATA_DIR}/skill.db` with the backed-up `skill.db`; delete any `skill.db-wal` /
+   `skill.db-shm` sidecars.
+3. Start the server. The index, triggers, timestamps, and journal are all intact — the
+   artifact is a byte-consistent copy.
+
+### Example: remote Docker deployment
+
+If the server runs in a container on another host, run the tool inside the container (it
+ships in the image) and copy the result out — e.g. driven by an orchestrator such as
+Ansible:
+
+```sh
+# Stage a consistent snapshot inside the container, then stream it out
+docker exec <container> coaching-mcp-snapshot /data/backup --db /data/skill.db
+docker cp <container>:/data/backup - | tar -xf - -C ./snapshots --strip-components=1
+```
+
+Adapt `<container>`, the host, and transport to your environment.
+
 ## License
 
 MIT
