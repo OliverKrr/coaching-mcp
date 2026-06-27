@@ -50,6 +50,8 @@ Seed data flow (first start only):
 
 After first seed, all writes go through the MCP tools. The `/seed` volume is read-only.
 
+`coaching-mcp-restore` (inverse of `coaching-mcp-snapshot`) upserts `sections`/`refs` from a seed dir into a live DB, so edited seed files reach an already-seeded DB; it preserves `journal` + `open_items`. It overwrites section/ref content from files — snapshot first if the live DB may have diverged.
+
 ## MCP tools
 
 | Tool                   | Direction | Description                                                                   |

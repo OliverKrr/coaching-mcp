@@ -77,6 +77,27 @@ Output (full mode):
 
 `--seed-only` emits just `SKILL.md` + `references/*.md` (the files the seed loader reads).
 
+### Apply / restore (files → DB)
+
+`coaching-mcp-restore` is the inverse of snapshot: it upserts the `sections` and `refs` tables
+from a seed directory into a **live** DB. This is how edited seed files (`SKILL.md`,
+`sections/*.md`, `references/*.md`) reach a DB that has already been seeded — `seedFromDirectory()`
+only loads when the DB is empty, so editing seed files alone never updates a running DB.
+
+```sh
+just restore                          # apply ./seed (or wherever) → DB
+node dist/restore-cli.js /seed --db /data/skill.db
+```
+
+It reads each seed file, compares it to the existing row, and upserts only when the content
+actually differs (so `updated_at` is bumped only on real changes and the FTS index stays in
+sync via triggers). The `journal` and `open_items` tables are never touched, so live coaching
+history is preserved.
+
+> **Safety:** restore overwrites section/ref content from files. If the live DB may have diverged
+> from your seed files (e.g. sections edited via the MCP tools since the last sync), run a snapshot
+> first (`just snapshot`) and review the diff before applying.
+
 **Recovery** (any deployment):
 
 1. Stop the server/container.

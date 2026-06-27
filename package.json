@@ -12,6 +12,7 @@
   "license": "MIT",
   "bin": {
     "coaching-mcp": "dist/index.js",
+    "coaching-mcp-restore": "dist/restore-cli.js",
     "coaching-mcp-snapshot": "dist/snapshot-cli.js"
   },
   "files": [
@@ -24,6 +25,7 @@
     "build": "tsdown",
     "dev": "tsx src/index.ts",
     "snapshot": "node dist/snapshot-cli.js",
+    "restore": "node dist/restore-cli.js",
     "test": "vitest run",
     "check": "oxlint . && oxfmt . --check",
     "check:fix": "oxlint . && oxfmt . --write",
