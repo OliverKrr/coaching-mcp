@@ -3,6 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { openDatabase } from "./db.js";
 import { registerDeleteTools } from "./tools/delete.js";
+import { registerOpenItemsTools } from "./tools/openitems.js";
 import { registerOpsTools } from "./tools/ops.js";
 import { registerReadTools } from "./tools/read.js";
 import { registerWriteTools } from "./tools/write.js";
@@ -26,6 +27,7 @@ async function main(): Promise<void> {
   registerWriteTools(server, db);
   registerOpsTools(server, db);
   registerDeleteTools(server, db);
+  registerOpenItemsTools(server, db);
   log("tools registered");
 
   log("connecting stdio transport…");
