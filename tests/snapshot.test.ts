@@ -59,6 +59,23 @@ describe("runSnapshot", () => {
     expect(existsSync(join(out, "sections"))).toBe(false);
   });
 
+  it("writes open-items.md in full mode and omits it in seed-only", async () => {
+    const src = makeSourceDb();
+    const db = new Database(src);
+    db.prepare(
+      "INSERT INTO open_items(kind, content) VALUES ('commitment', 'tue-threshold-marker')",
+    ).run();
+    db.close();
+
+    const out = mkdtempSync(join(tmpdir(), "snap-oi-"));
+    await runSnapshot({ db: src, outDir: out });
+    expect(readFileSync(join(out, "open-items.md"), "utf8")).toContain("tue-threshold-marker");
+
+    const seedOut = mkdtempSync(join(tmpdir(), "snap-oi-seed-"));
+    await runSnapshot({ db: src, outDir: seedOut, seedOnly: true });
+    expect(existsSync(join(seedOut, "open-items.md"))).toBe(false);
+  });
+
   it("throws a clear error when the DB file is missing", async () => {
     await expect(runSnapshot({ db: "/nonexistent/skill.db", outDir: tmpdir() })).rejects.toThrow(
       /not found/,

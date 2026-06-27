@@ -11,6 +11,13 @@ export type SnapshotOptions = {
 type SectionRow = { name: string; content: string };
 type RefRow = { name: string; content: string };
 type JournalRow = { entry: string; created_at: string };
+type OpenItemRow = {
+  id: number;
+  kind: string;
+  content: string;
+  status: string;
+  relevant_date: string | null;
+};
 
 function writeContent(path: string, content: string): string {
   mkdirSync(dirname(path), { recursive: true });
@@ -22,6 +29,15 @@ function formatJournal(rows: JournalRow[]): string {
   if (rows.length === 0) return "# Journal\n\n_No entries._\n";
   const blocks = rows.map((r) => `## ${r.created_at}\n\n${r.entry}\n`);
   return `# Journal\n\n${blocks.join("\n---\n\n")}`;
+}
+
+function formatOpenItems(rows: OpenItemRow[]): string {
+  if (rows.length === 0) return "# Open Items\n\n_No items._\n";
+  const blocks = rows.map(
+    (r) =>
+      `## #${r.id} [${r.kind}/${r.status}]${r.relevant_date ? ` (${r.relevant_date})` : ""}\n\n${r.content}\n`,
+  );
+  return `# Open Items\n\n${blocks.join("\n---\n\n")}`;
 }
 
 /**
@@ -65,6 +81,11 @@ export async function runSnapshot(opts: SnapshotOptions): Promise<string[]> {
         .prepare("SELECT entry, created_at FROM journal ORDER BY created_at DESC, id DESC")
         .all() as JournalRow[];
       written.push(writeContent(join(outDir, "journal.md"), formatJournal(journal)));
+
+      const openItems = db
+        .prepare("SELECT id, kind, content, status, relevant_date FROM open_items ORDER BY id DESC")
+        .all() as OpenItemRow[];
+      written.push(writeContent(join(outDir, "open-items.md"), formatOpenItems(openItems)));
 
       const backupPath = join(outDir, "skill.db");
       rmSync(backupPath, { force: true });
