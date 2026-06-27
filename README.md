@@ -4,15 +4,18 @@ Personal coaching MCP server for Claude AI, backed by SQLite + FTS5. Serves a `S
 
 ## Tools
 
-| Tool                   | Description                                                    |
-| ---------------------- | -------------------------------------------------------------- |
-| `get_coaching_context` | Returns the full `SKILL.md` content                            |
-| `search_knowledge`     | FTS5 full-text search across sections, references, and journal |
-| `get_reference`        | Returns a reference document by name                           |
-| `get_journal`          | Returns recent journal entries newest-first                    |
-| `update_section`       | Upserts a knowledge section                                    |
-| `update_reference`     | Upserts a reference document                                   |
-| `append_journal`       | Appends a coaching journal entry                               |
+| Tool                   | Description                                                                    |
+| ---------------------- | ------------------------------------------------------------------------------ |
+| `get_coaching_context` | Returns the full `SKILL.md` content                                            |
+| `search_knowledge`     | FTS5 full-text search across sections, references, and journal                 |
+| `get_reference`        | Returns a reference document by name                                           |
+| `get_journal`          | Returns recent journal entries newest-first                                    |
+| `update_section`       | Upserts a knowledge section                                                    |
+| `update_reference`     | Upserts a reference document                                                   |
+| `append_journal`       | Appends a coaching journal entry                                               |
+| `add_open_item`        | Records a commitment (if-then next action) or a de-duplicated flag             |
+| `list_open_items`      | Lists open commitments/flags (defaults to status=open) — call at session start |
+| `resolve_open_item`    | Closes an open item (done/dismissed) with an optional note                     |
 
 ## Quick start (Docker Compose)
 
@@ -64,13 +67,13 @@ node dist/snapshot-cli.js ./snapshots --db /data/skill.db
 
 Output (full mode):
 
-| File | What |
-|---|---|
-| `skill.db` | Lossless online backup — the recovery artifact (FTS, triggers, timestamps, journal). |
-| `SKILL.md` | The `main` knowledge section. |
-| `sections/<name>.md` | Other sections. |
-| `references/<name>.md` | Reference documents. |
-| `journal.md` | All journal entries, newest first, with timestamps (inspection only). |
+| File                   | What                                                                                 |
+| ---------------------- | ------------------------------------------------------------------------------------ |
+| `skill.db`             | Lossless online backup — the recovery artifact (FTS, triggers, timestamps, journal). |
+| `SKILL.md`             | The `main` knowledge section.                                                        |
+| `sections/<name>.md`   | Other sections.                                                                      |
+| `references/<name>.md` | Reference documents.                                                                 |
+| `journal.md`           | All journal entries, newest first, with timestamps (inspection only).                |
 
 `--seed-only` emits just `SKILL.md` + `references/*.md` (the files the seed loader reads).
 

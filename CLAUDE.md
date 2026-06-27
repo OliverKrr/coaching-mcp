@@ -52,15 +52,18 @@ After first seed, all writes go through the MCP tools. The `/seed` volume is rea
 
 ## MCP tools
 
-| Tool                   | Direction | Description                                          |
-| ---------------------- | --------- | ---------------------------------------------------- |
-| `get_coaching_context` | read      | Full SKILL.md — call at session start                |
-| `search_knowledge`     | read      | FTS5 full-text search across all tables              |
-| `get_reference`        | read      | One reference doc by name                            |
-| `get_journal`          | read      | Recent journal entries, newest first                 |
-| `update_section`       | write     | Upsert a knowledge section (use `main` for SKILL.md) |
-| `update_reference`     | write     | Upsert a reference doc                               |
-| `append_journal`       | write     | Append a coaching journal entry                      |
+| Tool                   | Direction | Description                                                                   |
+| ---------------------- | --------- | ----------------------------------------------------------------------------- |
+| `get_coaching_context` | read      | Full SKILL.md — call at session start                                         |
+| `search_knowledge`     | read      | FTS5 full-text search across all tables                                       |
+| `get_reference`        | read      | One reference doc by name                                                     |
+| `get_journal`          | read      | Recent journal entries, newest first                                          |
+| `update_section`       | write     | Upsert a knowledge section (use `main` for SKILL.md)                          |
+| `update_reference`     | write     | Upsert a reference doc                                                        |
+| `append_journal`       | write     | Append a coaching journal entry                                               |
+| `add_open_item`        | write     | Record a commitment (if-then next action) or a de-duplicated flag             |
+| `list_open_items`      | read      | List open commitments/flags (defaults to status=open) — call at session start |
+| `resolve_open_item`    | write     | Close an open item (done/dismissed) with an optional note                     |
 
 ## Environment variables (runtime)
 
