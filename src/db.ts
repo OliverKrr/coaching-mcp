@@ -5,6 +5,17 @@ import { join } from "node:path";
 export type Section = { name: string; content: string; updated_at: string };
 export type Reference = { name: string; content: string; updated_at: string };
 export type JournalEntry = { id: number; entry: string; created_at: string };
+export type OpenItem = {
+  id: number;
+  kind: "commitment" | "flag";
+  content: string;
+  status: "open" | "done" | "dismissed";
+  source: string | null;
+  dedup_key: string | null;
+  relevant_date: string | null;
+  created_at: string;
+  updated_at: string;
+};
 
 const DEFAULT_DATA_DIR = "/data";
 const DEFAULT_SEED_DIR = "/seed";
@@ -38,6 +49,18 @@ export function createSchema(db: Database.Database): void {
 			entry TEXT NOT NULL,
 			created_at TEXT NOT NULL DEFAULT (datetime('now'))
 		);
+		CREATE TABLE IF NOT EXISTS open_items (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			kind TEXT NOT NULL CHECK (kind IN ('commitment','flag')),
+			content TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','done','dismissed')),
+			source TEXT,
+			dedup_key TEXT,
+			relevant_date TEXT,
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);
+		CREATE INDEX IF NOT EXISTS open_items_kind_status ON open_items(kind, status);
 		CREATE VIRTUAL TABLE IF NOT EXISTS sections_fts USING fts5(
 			name UNINDEXED, content,
 			content=sections, content_rowid=rowid

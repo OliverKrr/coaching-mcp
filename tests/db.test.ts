@@ -100,3 +100,63 @@ describe("FTS5 triggers", () => {
     expect(results.length).toBe(0);
   });
 });
+
+describe("open_items schema", () => {
+  it("creates the open_items table with expected columns", () => {
+    const db = new Database(":memory:");
+    createSchema(db);
+    const cols = (db.prepare("PRAGMA table_info(open_items)").all() as Array<{ name: string }>).map(
+      (c) => c.name,
+    );
+    expect(cols).toEqual([
+      "id",
+      "kind",
+      "content",
+      "status",
+      "source",
+      "dedup_key",
+      "relevant_date",
+      "created_at",
+      "updated_at",
+    ]);
+  });
+
+  it("defaults status to 'open'", () => {
+    const db = new Database(":memory:");
+    createSchema(db);
+    db.prepare("INSERT INTO open_items(kind, content) VALUES ('flag', 'x')").run();
+    const row = db.prepare("SELECT status FROM open_items").get() as { status: string };
+    expect(row.status).toBe("open");
+  });
+
+  it("rejects an invalid kind via CHECK", () => {
+    const db = new Database(":memory:");
+    createSchema(db);
+    expect(() =>
+      db.prepare("INSERT INTO open_items(kind, content) VALUES ('bogus', 'x')").run(),
+    ).toThrow();
+  });
+
+  it("rejects an invalid status via CHECK", () => {
+    const db = new Database(":memory:");
+    createSchema(db);
+    expect(() =>
+      db
+        .prepare("INSERT INTO open_items(kind, content, status) VALUES ('flag', 'x', 'bogus')")
+        .run(),
+    ).toThrow();
+  });
+
+  it("has the kind/status index and no open_items FTS table", () => {
+    const db = new Database(":memory:");
+    createSchema(db);
+    const idx = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='index' AND name='open_items_kind_status'",
+      )
+      .get();
+    expect(idx).toBeTruthy();
+    const fts = db.prepare("SELECT name FROM sqlite_master WHERE name='open_items_fts'").get();
+    expect(fts).toBeUndefined();
+  });
+});
