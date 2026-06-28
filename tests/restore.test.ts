@@ -164,4 +164,67 @@ describe("runRestore", () => {
     const db = makeDb();
     expect(() => runRestore({ db, seedDir: "/nonexistent/seed" })).toThrow(/not found/);
   });
+
+  it("dry-run reports the same created/changed/unchanged plan a real run would", () => {
+    const db = makeDb();
+    const seed = makeSeedDir({
+      skill: NEW_MAIN, // 'main' exists with ORIGINAL_MAIN → changed
+      refs: { squat: "Squat cues", deadlift: "new ref" }, // squat identical → unchanged; deadlift new → created
+    });
+
+    const result = runRestore({ db, seedDir: seed, dryRun: true });
+
+    expect(result.created).toEqual(["deadlift"]);
+    expect(result.changed).toEqual(["main"]);
+    expect(result.unchanged).toEqual(["squat"]);
+  });
+
+  it("dry-run writes nothing — content and updated_at are byte-identical, would-be-created ref absent", () => {
+    const db = makeDb();
+
+    const before = new Database(db, { readonly: true });
+    const beforeMain = before
+      .prepare("SELECT content, updated_at FROM sections WHERE name = 'main'")
+      .get() as {
+      content: string;
+      updated_at: string;
+    };
+    before.close();
+
+    const seed = makeSeedDir({ skill: NEW_MAIN, refs: { deadlift: "new ref" } });
+    const result = runRestore({ db, seedDir: seed, dryRun: true });
+    expect(result.changed).toContain("main");
+    expect(result.created).toContain("deadlift");
+
+    const after = new Database(db, { readonly: true });
+    const afterMain = after
+      .prepare("SELECT content, updated_at FROM sections WHERE name = 'main'")
+      .get() as {
+      content: string;
+      updated_at: string;
+    };
+    // No upsert: original content and updated_at are byte-identical.
+    expect(afterMain.content).toBe(beforeMain.content);
+    expect(afterMain.content).toBe(ORIGINAL_MAIN);
+    expect(afterMain.updated_at).toBe(beforeMain.updated_at);
+    // The would-be-"created" ref does not exist afterward.
+    expect(
+      after.prepare("SELECT content FROM refs WHERE name = ?").get("deadlift"),
+    ).toBeUndefined();
+    after.close();
+  });
+
+  it("dry-run works against a read-only-opened DB without error", () => {
+    const db = makeDb();
+    // Open the DB read-only ourselves and hold it open while the dry-run runs — proving the
+    // dry-run path takes no write lock and never attempts a write.
+    const holder = new Database(db, { readonly: true });
+    const seed = makeSeedDir({ skill: NEW_MAIN, refs: { deadlift: "new ref" } });
+
+    expect(() => runRestore({ db, seedDir: seed, dryRun: true })).not.toThrow();
+    const result = runRestore({ db, seedDir: seed, dryRun: true });
+    expect(result.changed).toContain("main");
+
+    holder.close();
+  });
 });

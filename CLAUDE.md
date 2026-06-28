@@ -50,7 +50,7 @@ Seed data flow (first start only):
 
 After first seed, all writes go through the MCP tools. The `/seed` volume is read-only.
 
-`coaching-mcp-restore` (inverse of `coaching-mcp-snapshot`) upserts `sections`/`refs` from a seed dir into a live DB, so edited seed files reach an already-seeded DB; it preserves `journal` + `open_items`. It overwrites section/ref content from files — snapshot first if the live DB may have diverged.
+`coaching-mcp-restore` (inverse of `coaching-mcp-snapshot`) upserts `sections`/`refs` from a seed dir into a live DB, so edited seed files reach an already-seeded DB; it preserves `journal` + `open_items`. It overwrites section/ref content from files — snapshot first if the live DB may have diverged. **Safe by default:** pass `--dry-run` to open the DB read-only and preview the exact `created`/`changed`/`unchanged` plan without writing anything (no transaction, no upsert, no `updated_at` bump). The Ansible deploy wrapper splits this so the everyday command can't clobber live edits: `just apply-coaching-content` runs the dry-run preview, `just apply-coaching-content-write` performs the write.
 
 ## MCP tools
 

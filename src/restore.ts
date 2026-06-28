@@ -5,6 +5,8 @@ import { join } from "node:path";
 export type RestoreOptions = {
   db: string;
   seedDir: string;
+  /** When true, open the DB read-only and report the plan without writing anything. */
+  dryRun?: boolean;
 };
 
 export type RestoreResult = {
@@ -34,10 +36,13 @@ const UPSERT_SQL = {
  * changes upsert, firing the FTS triggers. The `journal` and `open_items` tables are never
  * read or written.
  *
+ * With `dryRun: true` the DB is opened read-only, the same created/changed/unchanged plan is
+ * computed, but nothing is written (no transaction, no upsert) — a safe preview.
+ *
  * Operates on a local file path only — no SSH/Docker/host knowledge.
  */
 export function runRestore(opts: RestoreOptions): RestoreResult {
-  const { db: dbPath, seedDir } = opts;
+  const { db: dbPath, seedDir, dryRun = false } = opts;
   if (!existsSync(dbPath)) {
     throw new Error(`database not found: ${dbPath}`);
   }
@@ -78,32 +83,45 @@ export function runRestore(opts: RestoreOptions): RestoreResult {
     }
   }
 
-  const db = new Database(dbPath);
+  const db = dryRun
+    ? new Database(dbPath, { readonly: true, fileMustExist: true })
+    : new Database(dbPath);
   try {
-    db.pragma("busy_timeout = 5000");
-    db.pragma("journal_mode = WAL");
-
-    const result: RestoreResult = { created: [], changed: [], unchanged: [] };
+    if (!dryRun) {
+      db.pragma("busy_timeout = 5000");
+      db.pragma("journal_mode = WAL");
+    }
 
     const selectSection = db.prepare("SELECT content FROM sections WHERE name = ?");
     const selectRef = db.prepare("SELECT content FROM refs WHERE name = ?");
+
+    // Compute the plan first (read-only classification), then either write it or not.
+    const result: RestoreResult = { created: [], changed: [], unchanged: [] };
+    const toWrite: WorkItem[] = [];
+    for (const item of items) {
+      const existing = (
+        item.table === "sections" ? selectSection.get(item.name) : selectRef.get(item.name)
+      ) as Row;
+      if (existing === undefined) {
+        result.created.push(item.name);
+        toWrite.push(item);
+      } else if (existing.content !== item.content) {
+        result.changed.push(item.name);
+        toWrite.push(item);
+      } else {
+        result.unchanged.push(item.name);
+      }
+    }
+
+    if (dryRun) {
+      return result;
+    }
+
     const upsertSection = db.prepare(UPSERT_SQL.sections);
     const upsertRef = db.prepare(UPSERT_SQL.refs);
-
     db.transaction(() => {
-      for (const item of items) {
-        const existing = (
-          item.table === "sections" ? selectSection.get(item.name) : selectRef.get(item.name)
-        ) as Row;
-        if (existing === undefined) {
-          (item.table === "sections" ? upsertSection : upsertRef).run(item.name, item.content);
-          result.created.push(item.name);
-        } else if (existing.content !== item.content) {
-          (item.table === "sections" ? upsertSection : upsertRef).run(item.name, item.content);
-          result.changed.push(item.name);
-        } else {
-          result.unchanged.push(item.name);
-        }
+      for (const item of toWrite) {
+        (item.table === "sections" ? upsertSection : upsertRef).run(item.name, item.content);
       }
     })();
 

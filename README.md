@@ -85,8 +85,8 @@ from a seed directory into a **live** DB. This is how edited seed files (`SKILL.
 only loads when the DB is empty, so editing seed files alone never updates a running DB.
 
 ```sh
-just restore                          # apply ./seed (or wherever) → DB
-node dist/restore-cli.js /seed --db /data/skill.db
+node dist/restore-cli.js /seed --db /data/skill.db --dry-run  # preview only — writes nothing
+node dist/restore-cli.js /seed --db /data/skill.db            # apply for real
 ```
 
 It reads each seed file, compares it to the existing row, and upserts only when the content
@@ -94,9 +94,15 @@ actually differs (so `updated_at` is bumped only on real changes and the FTS ind
 sync via triggers). The `journal` and `open_items` tables are never touched, so live coaching
 history is preserved.
 
-> **Safety:** restore overwrites section/ref content from files. If the live DB may have diverged
-> from your seed files (e.g. sections edited via the MCP tools since the last sync), run a snapshot
-> first (`just snapshot`) and review the diff before applying.
+`--dry-run` is the **safe-by-default** preview: it opens the DB **read-only**, computes the exact
+same `created`/`changed`/`unchanged` plan, and writes nothing (no transaction, no upsert, no
+`updated_at` bump). Output is prefixed `DRY RUN — no changes written.`; rerun without the flag to
+apply. The deploy wrapper splits this in two — `just apply-coaching-content` is the dry-run preview
+and `just apply-coaching-content-write` performs the write (see `ponyfreude-ansible`).
+
+> **Safety:** the write path overwrites section/ref content from files. If the live DB may have
+> diverged from your seed files (e.g. sections edited via the MCP tools since the last sync), run a
+> snapshot first (`just snapshot`), preview with `--dry-run`, and review the diff before applying.
 
 **Recovery** (any deployment):
 

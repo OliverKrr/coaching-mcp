@@ -4,9 +4,10 @@ import { runRestore } from "./restore.js";
 
 function usage(): void {
   process.stderr.write(
-    "Usage: coaching-mcp-restore [seedDir] [--db <path>]\n" +
+    "Usage: coaching-mcp-restore [seedDir] [--db <path>] [--dry-run]\n" +
       "  seedDir      seed directory to apply (default: /seed)\n" +
       "  --db <path>  target SQLite file (default: $DATA_DIR/skill.db, else /data/skill.db)\n" +
+      "  --dry-run    open the DB read-only and preview the plan; write nothing\n" +
       "\n" +
       "Upserts sections (SKILL.md → 'main', sections/*.md) and references (references/*.md)\n" +
       "from the seed dir into the live DB. The journal and open_items tables are preserved.\n" +
@@ -22,11 +23,14 @@ function main(): number {
   const argv = process.argv.slice(2);
   let seedDir = "/seed";
   let dbPath = join(process.env.DATA_DIR ?? "/data", "skill.db");
+  let dryRun = false;
   const positional: string[] = [];
 
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--db") {
+    if (a === "--dry-run") {
+      dryRun = true;
+    } else if (a === "--db") {
       const next = argv[++i];
       if (next === undefined) {
         usage();
@@ -47,16 +51,23 @@ function main(): number {
   if (positional.length > 0) seedDir = positional[0];
 
   try {
-    const { created, changed, unchanged } = runRestore({ db: dbPath, seedDir });
+    const { created, changed, unchanged } = runRestore({ db: dbPath, seedDir, dryRun });
     const details = [
       summary("created", created),
       summary("changed", changed),
       summary("unchanged", unchanged),
     ].filter((s) => s.length > 0);
     const tail = details.length > 0 ? ` (${details.join("; ")})` : "";
-    process.stdout.write(
-      `restore: ${created.length} created, ${changed.length} changed, ${unchanged.length} unchanged${tail}\n`,
-    );
+    if (dryRun) {
+      process.stdout.write(
+        `DRY RUN — no changes written. Would: ${created.length} created, ${changed.length} changed, ${unchanged.length} unchanged${tail}\n` +
+          "Run the write command to apply for real.\n",
+      );
+    } else {
+      process.stdout.write(
+        `restore: ${created.length} created, ${changed.length} changed, ${unchanged.length} unchanged${tail}\n`,
+      );
+    }
     return 0;
   } catch (err) {
     process.stderr.write(`restore failed: ${(err as Error).message}\n`);
