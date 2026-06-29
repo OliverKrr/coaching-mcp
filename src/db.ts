@@ -27,6 +27,7 @@ export function openDatabase(): Database.Database {
   const db = new Database(join(dataDir, "skill.db"));
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
+  db.pragma("busy_timeout = 5000");
   createSchema(db);
   seedFromDirectory(db, seedDir);
   return db;
