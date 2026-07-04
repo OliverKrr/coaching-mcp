@@ -10,55 +10,56 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-Coaching MCP server for Claude AI. Serves a `SKILL.md` knowledge base (goals, rules, athlete profile) plus reference documents and a session journal, all stored in SQLite+FTS5 and exposed as MCP tools. It runs as a Docker container reading its DB from a persistent volume; for remote MCP access it is typically fronted by an OAuth 2.0 proxy (configured by whatever deployment consumes this package).
+Multi-user coaching MCP server for Claude AI. Serves a `SKILL.md` knowledge base (goals, rules,
+athlete profile) plus reference documents, a session journal, and open items — stored in
+SQLite+FTS5 and exposed as MCP tools over Streamable HTTP. v2 is multi-tenant: a built-in OAuth
+2.1 authorization server federates login to an OIDC identity provider (Google by default), an
+email allowlist gates access, and every user gets an isolated per-user database seeded from a
+generic template. A self-service `/account` page provides data export and account deletion.
+The bare `coaching-mcp` command remains the v1-style single-user stdio server.
 
 ## Commands
 
 Use `just` for everything (see `Justfile` for the full list):
 
 ```sh
-just build        # compile TypeScript (tsdown → dist/index.js)
-just test         # vitest run
+just build        # compile TypeScript (tsdown → dist/)
+just test         # vitest run (no external network; OIDC is mocked on 127.0.0.1)
 just check        # oxlint + oxfmt --check
 just fix          # oxlint + oxfmt --write (auto-format)
 just types        # tsc --noEmit
-just dev          # tsx src/index.ts (stdio, no supergateway)
+just dev          # tsx src/index.ts (stdio single-user mode)
 just update-deps  # ncu -u && npm install
 ```
 
-Direct npm equivalents if just is not installed:
-
-```sh
-npm run build
-npm test
-npm run check
-npm run check:fix
-npm run check:types
-```
+Direct npm equivalents if just is not installed: `npm run build|test|check|check:fix|check:types`.
 
 ## Architecture
 
 ```
-coaching-mcp (Node 26 binary)
-  └── src/db.ts           SQLite+FTS5 database: sections, refs, journal tables
-  └── src/tools/read.ts   4 read tools (get_coaching_context, search_knowledge, get_reference, get_journal)
-  └── src/tools/write.ts  3 write tools (update_section, update_reference, append_journal)
-  └── src/utils/errors.ts toolText() / toolError() / withErrorHandling() helpers
-  └── src/index.ts        McpServer → StdioServerTransport → supergateway (port 8000)
+src/index.ts        bin `coaching-mcp` — stdio single-user server; `serve` arg dispatches to serve.ts
+src/serve.ts        bin path `coaching-mcp serve` — node:http server + router (multi-user mode)
+src/mcp-http.ts     /mcp Streamable HTTP endpoint; per-session McpServer bound to the user's DB
+src/auth/oauth.ts   OAuth 2.1 AS: RFC 8414 metadata, RFC 7591 DCR, /authorize, /oidc/callback, /token
+src/auth/oidc.ts    openid-client wrapper (lazy discovery, PKCE toward the IdP, id_token verify)
+src/auth/allowlist.ts  ALLOWED_EMAILS / ALLOWED_EMAILS_FILE (file re-read per login attempt)
+src/auth/db.ts      DATA_DIR/auth.db — users, clients, pending auth, hashed tokens, web sessions
+src/tenancy.ts      TenantManager: DATA_DIR/users/<id>/skill.db, lazy open/cache, delete
+src/account.ts      /account page: profile, zip export (fflate), delete with confirmation
+src/db.ts           coaching DB schema: sections, refs, journal, open_items + FTS5 (per user)
+src/tools/*.ts      the 10 MCP tools — take (server, db); deliberately user-agnostic
+src/snapshot.ts / restore.ts / migrate.ts + *-cli.ts   operational CLIs
+src/http-util.ts    tiny node:http helpers (no express — keep deps lean)
+seed-template/      generic SKILL.md + reference skeletons, baked into the image as /seed
 ```
 
-Seed data flow (first start only):
+Seed data flow (per user, first login only): `/seed/SKILL.md` → sections(name='main'),
+`/seed/references/*.md` → refs. After that, all writes go through the MCP tools.
 
-```
-/seed/SKILL.md            → sections table (name='main')
-/seed/references/*.md     → refs table (name = filename without .md)
-```
-
-After first seed, all writes go through the MCP tools. The `/seed` volume is read-only.
-
-`coaching-mcp-restore` (inverse of `coaching-mcp-snapshot`) upserts `sections`/`refs` from a seed dir into a live DB, so edited seed files reach an already-seeded DB; it preserves `journal` + `open_items`. It overwrites section/ref content from files — snapshot first if the live DB may have diverged. **Safe by default:** pass `--dry-run` to open the DB read-only and preview the exact `created`/`changed`/`unchanged`/`conflicts` plan without writing anything (no transaction, no upsert, no `updated_at` bump). Consuming tooling can split this into a preview step and a write step so an everyday command can't clobber live edits.
-
-**Clobber guard (v1.3.0):** `coaching-mcp-snapshot` writes a `seed-manifest.json` at the seed root recording each doc's `updated_at` (raw SQLite `datetime('now')` strings — fixed-width UTC, so string compare = chronological). The `.md` files stay byte-identical to DB `content` (restore's `unchanged` detection depends on that), so the timestamp lives in the sidecar, not per-file frontmatter. When a manifest is present, `coaching-mcp-restore` treats a content change as a **conflict** if the live `updated_at` is newer than the manifest's timestamp for that doc (or the manifest has no entry for it) — i.e. the seed is stale and would overwrite newer live content. A conflict **aborts the whole write** (exit 1, nothing written) unless `--force` is passed; `--dry-run` reports conflicts as `STALE SEED` warnings but still exits 0, so the preview doubles as a stale-seed drift detector. No manifest → legacy mode (guard off, warns). `created` docs (absent from live) always apply. The guard needs no DB schema change — `updated_at` already exists on `sections`/`refs`; only `updated_by` is intentionally not tracked (single-user system).
+`coaching-mcp-restore` (inverse of `coaching-mcp-snapshot`) upserts `sections`/`refs` from a seed
+dir into a live DB; it preserves `journal` + `open_items` and has a timestamp clobber guard
+(`seed-manifest.json`; conflicts abort unless `--force`; `--dry-run` previews read-only).
+`coaching-mcp-migrate` adopts a v1 single-user `DATA_DIR/skill.db` into the multi-user layout.
 
 ## MCP tools
 
@@ -75,19 +76,55 @@ After first seed, all writes go through the MCP tools. The `/seed` volume is rea
 | `list_open_items`      | read      | List open commitments/flags (defaults to status=open) — call at session start |
 | `resolve_open_item`    | write     | Close an open item (done/dismissed) with an optional note                     |
 
-## Environment variables (runtime)
+## Environment variables (serve mode)
 
-| Variable   | Default | Description                                  |
-| ---------- | ------- | -------------------------------------------- |
-| `DATA_DIR` | `/data` | SQLite database location (persistent volume) |
-| `SEED_DIR` | `/seed` | Seed markdown files (read-only volume)       |
+`PUBLIC_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` required (fail-fast); `OIDC_ISSUER`
+(default Google), `ALLOWED_EMAILS`/`ALLOWED_EMAILS_FILE`, `DATA_DIR` (/data), `SEED_DIR` (/seed),
+`PORT` (8000), `ACCESS_TOKEN_TTL` (3600), `REFRESH_TOKEN_TTL` (7776000). Stdio mode uses only
+`DATA_DIR`/`SEED_DIR`.
 
 ## Key design decisions
 
-**FTS5 external content tables**: `sections_fts`, `refs_fts`, `journal_fts` are external-content virtual tables. All three require INSERT + UPDATE + DELETE triggers to stay in sync with their base tables. Do not remove any trigger from `db.ts`.
+**FTS5 external content tables**: `sections_fts`, `refs_fts`, `journal_fts` are external-content
+virtual tables. All three require INSERT + UPDATE + DELETE triggers to stay in sync with their
+base tables. Do not remove any trigger from `db.ts`.
 
-**Seed idempotency**: `seedFromDirectory()` checks `COUNT(*) FROM sections` before seeding — safe to call on every start. Wrapped in a `db.transaction()` to prevent partial state if the process is killed mid-seed.
+**Seed idempotency**: `seedFromDirectory()` checks `COUNT(*) FROM sections` before seeding — safe
+to call on every start. Wrapped in a `db.transaction()` to prevent partial state.
 
-**tsdown + fixedExtension**: `tsdown.config.ts` sets `fixedExtension: false` so output is `dist/index.js` (not `.mjs`), matching the `bin` entry in `package.json`.
+**Per-user SQLite files, not one DB with user columns**: isolation is structural, export is "zip
+the directory contents", deletion is "remove the directory", v1 migration is "move the file". The
+tool layer receives only a DB handle and must stay user-agnostic — never thread identity into
+`src/tools/`.
 
-**Prepared statements**: All SQL statements used in loops are hoisted outside the loop — `db.prepare()` is called once, not per iteration.
+**Tokens are opaque and stored hashed**: auth codes, access and refresh tokens are random values
+whose SHA-256 hashes live in auth.db — possession of the DB yields no usable credential, and
+revocation (account deletion, refresh-reuse theft detection) is exact. No JWTs, no signing keys.
+Refresh tokens rotate on every use; reuse of a rotated token revokes the user+client chain.
+
+**Login is fully delegated to the IdP**: this server never sees passwords; it verifies the
+id_token (issuer, audience, nonce, signature via JWKS — `openid-client`) and applies the email
+allowlist. The OAuth endpoint surface (metadata + DCR + authorize + token, PKCE S256 only)
+matches what MCP connector clients negotiate.
+
+**No express**: the HTTP layer is plain `node:http` + ~100 lines of helpers (`http-util.ts`);
+the MCP SDK's `StreamableHTTPServerTransport` consumes Node req/res directly. Keep it that way —
+the dependency budget of this package is deliberately small.
+
+**All advertised URLs come from `PUBLIC_URL`**: routes mount at `/` behind a prefix-stripping
+reverse proxy; never build absolute URLs from Host headers. HTML forms/links on the account page
+must use absolute `PUBLIC_URL`-based URLs for the same reason.
+
+**Clobber guard (snapshot/restore)**: `coaching-mcp-snapshot` writes `seed-manifest.json` (raw
+SQLite `datetime('now')` strings — fixed-width UTC, string compare = chronological); the `.md`
+files stay byte-identical to DB `content`. `coaching-mcp-restore` treats content changes where
+live `updated_at` is newer than the manifest as conflicts: abort-all unless `--force`;
+`--dry-run` reports `STALE SEED` but exits 0. No manifest → legacy mode (guard off, warns).
+
+**Prepared statements**: SQL statements used in loops are hoisted outside the loop.
+
+**tsdown + fixedExtension**: output is `dist/*.js` (not `.mjs`), matching `bin` entries.
+
+**Tests never touch the network**: `tests/serve.test.ts` runs a mock OIDC issuer on 127.0.0.1
+(RS256 JWKS, authorize/token endpoints) and drives the full redirect chain with `fetch`; MCP
+round-trips use the SDK's Streamable HTTP client against the in-process server.

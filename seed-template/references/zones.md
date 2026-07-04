@@ -10,13 +10,13 @@ by HR cap; bike everything by power". Fill during onboarding.]
 
 ## [Primary sport] zones
 
-| Zone | Name | [Pace/Power/HR] range | Feel / use |
-|---|---|---|---|
-| Z1 | Recovery | [..] | [..] |
-| Z2 | Easy / endurance | [..] | conversational |
-| Z3 | Tempo | [..] | [..] |
-| Z4 | Threshold | [..] | [..] |
-| Z5 | VO2max+ | [..] | [..] |
+| Zone | Name             | [Pace/Power/HR] range | Feel / use     |
+| ---- | ---------------- | --------------------- | -------------- |
+| Z1   | Recovery         | [..]                  | [..]           |
+| Z2   | Easy / endurance | [..]                  | conversational |
+| Z3   | Tempo            | [..]                  | [..]           |
+| Z4   | Threshold        | [..]                  | [..]           |
+| Z5   | VO2max+          | [..]                  | [..]           |
 
 Anchored on: [test/race, date].
 

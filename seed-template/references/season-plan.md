@@ -10,24 +10,24 @@ athlete request; tier 1/2 for filling in results and adjusting within phases.
 
 ## Phase structure
 
-| Phase | Dates | Focus | Key sessions |
-|---|---|---|---|
-| [Base] | [..] | [..] | [..] |
-| [Build] | [..] | [..] | [..] |
-| [Peak] | [..] | [..] | [..] |
-| [Taper & race] | [..] | [..] | [..] |
+| Phase          | Dates | Focus | Key sessions |
+| -------------- | ----- | ----- | ------------ |
+| [Base]         | [..]  | [..]  | [..]         |
+| [Build]        | [..]  | [..]  | [..]         |
+| [Peak]         | [..]  | [..]  | [..]         |
+| [Taper & race] | [..]  | [..]  | [..]         |
 
 ## Checkpoints
 
-| Date | Checkpoint | Target | Actual |
-|---|---|---|---|
-| [..] | [test/race] | [..] | |
+| Date | Checkpoint  | Target | Actual |
+| ---- | ----------- | ------ | ------ |
+| [..] | [test/race] | [..]   |        |
 
 ## Race log
 
 | Date | Event | Role (A/B/C) | Result | Notes |
-|---|---|---|---|---|
-| [..] | [..] | [..] | | |
+| ---- | ----- | ------------ | ------ | ----- |
+| [..] | [..]  | [..]         |        |       |
 
 ## Key principles for this campaign
 

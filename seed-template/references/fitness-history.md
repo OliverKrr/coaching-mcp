@@ -11,8 +11,8 @@ prose summary: "ran 2019–2021 casually, structured training since 2024…".]
 ## Volume history
 
 | Period | Weekly volume | Notes |
-|---|---|---|
-| [..] | [..] | [..] |
+| ------ | ------------- | ----- |
+| [..]   | [..]          | [..]  |
 
 ## Wellness baseline
 

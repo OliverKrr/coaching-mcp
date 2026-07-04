@@ -4,9 +4,9 @@ Gear and device context the coach needs when prescribing. Update when equipment 
 
 ## Footwear / primary equipment
 
-| Item | Role | Notes (mileage, quirks) |
-|---|---|---|
-| [e.g. daily trainer] | [..] | [..] |
+| Item                 | Role | Notes (mileage, quirks) |
+| -------------------- | ---- | ----------------------- |
+| [e.g. daily trainer] | [..] | [..]                    |
 
 ## Devices & data
 

@@ -9,11 +9,11 @@ heavy + plyometric work), durability for masters athletes. Keep to a few bullets
 
 ## Periodization by phase
 
-| Phase | Frequency | Emphasis |
-|---|---|---|
-| Base | [..] | [..] |
-| Build | [..] | [..] |
-| Peak/taper | [..] | [..] |
+| Phase      | Frequency | Emphasis |
+| ---------- | --------- | -------- |
+| Base       | [..]      | [..]     |
+| Build      | [..]      | [..]     |
+| Peak/taper | [..]      | [..]     |
 
 ## Current block
 
@@ -21,9 +21,9 @@ heavy + plyometric work), durability for masters athletes. Keep to a few bullets
 
 ## Exercise library
 
-| Exercise | Pattern | Notes / substitutions |
-|---|---|---|
-| [..] | [squat/hinge/push/pull/core/plyo] | [..] |
+| Exercise | Pattern                           | Notes / substitutions |
+| -------- | --------------------------------- | --------------------- |
+| [..]     | [squat/hinge/push/pull/core/plyo] | [..]                  |
 
 ## Session templates
 

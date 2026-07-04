@@ -20,9 +20,10 @@ export type OpenItem = {
 const DEFAULT_DATA_DIR = "/data";
 const DEFAULT_SEED_DIR = "/seed";
 
-export function openDatabase(): Database.Database {
-  const dataDir = process.env.DATA_DIR ?? DEFAULT_DATA_DIR;
-  const seedDir = process.env.SEED_DIR ?? DEFAULT_SEED_DIR;
+export function openDatabase(
+  dataDir: string = process.env.DATA_DIR ?? DEFAULT_DATA_DIR,
+  seedDir: string = process.env.SEED_DIR ?? DEFAULT_SEED_DIR,
+): Database.Database {
   if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
   const db = new Database(join(dataDir, "skill.db"));
   db.pragma("journal_mode = WAL");

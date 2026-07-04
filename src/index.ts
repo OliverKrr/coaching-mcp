@@ -7,6 +7,7 @@ import { registerOpenItemsTools } from "./tools/openitems.js";
 import { registerOpsTools } from "./tools/ops.js";
 import { registerReadTools } from "./tools/read.js";
 import { registerWriteTools } from "./tools/write.js";
+import { VERSION } from "./version.js";
 
 function log(msg: string): void {
   process.stderr.write(`${new Date().toISOString()} [coaching-mcp] ${msg}\n`);
@@ -22,7 +23,7 @@ async function main(): Promise<void> {
   log("database opened");
 
   log("registering tools…");
-  const server = new McpServer({ name: "coaching-mcp", version: "1.3.0" });
+  const server = new McpServer({ name: "coaching-mcp", version: VERSION });
   registerReadTools(server, db);
   registerWriteTools(server, db);
   registerOpsTools(server, db);
@@ -57,7 +58,18 @@ async function main(): Promise<void> {
   });
 }
 
-main().catch((err) => {
+async function dispatch(): Promise<void> {
+  // `coaching-mcp serve` starts the multi-user HTTP mode; the bare command
+  // stays the single-user stdio server (v1 behavior).
+  if (process.argv[2] === "serve") {
+    const serve = await import("./serve.js");
+    await serve.main();
+    return;
+  }
+  await main();
+}
+
+dispatch().catch((err) => {
   log(`fatal: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`);
   process.exit(1);
 });

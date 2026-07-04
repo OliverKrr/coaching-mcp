@@ -7,6 +7,10 @@ build:
 dev:
     npm run dev
 
+# Run the multi-user HTTP server locally (requires PUBLIC_URL / OIDC_* / ALLOWED_EMAILS env)
+serve:
+    npx tsx src/index.ts serve
+
 test:
     npm test
 

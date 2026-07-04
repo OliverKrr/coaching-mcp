@@ -5,9 +5,9 @@ the athlete reports a niggle or a resolution.
 
 ## Active issues
 
-| Issue | Since | Status | Constraints it imposes |
-|---|---|---|---|
-| [none yet] | | | |
+| Issue      | Since | Status | Constraints it imposes |
+| ---------- | ----- | ------ | ---------------------- |
+| [none yet] |       |        |                        |
 
 ## Watch triggers
 
@@ -29,5 +29,5 @@ Early-warning signs and the agreed response:
 ## History
 
 | Injury | When | Resolution | Lesson |
-|---|---|---|---|
-| [..] | [..] | [..] | [..] |
+| ------ | ---- | ---------- | ------ |
+| [..]   | [..] | [..]       | [..]   |

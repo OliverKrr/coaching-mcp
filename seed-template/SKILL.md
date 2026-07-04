@@ -16,6 +16,7 @@ does not apply.
 > onboarding section** and append a journal entry summarizing the onboarding.
 >
 > Interview topics:
+>
 > 1. **Identity & goals** — name; primary sport(s); the goal that matters most this season and
 >    long-term; target events with dates.
 > 2. **Background** — training age, past events and results, what has and hasn't worked before.
@@ -50,12 +51,12 @@ in one or two sentences, not essays."]
 
 Where data lives and which source wins on conflict:
 
-| Data | Source of truth |
-|---|---|
-| Coaching rules, athlete profile, plans | This knowledge base (sections + references) |
-| Completed workouts & fitness metrics | [training platform, e.g. intervals.icu / Garmin / Strava — or "athlete reports manually"] |
-| Strength logs | [e.g. Hevy / gym notebook / not tracked] |
-| Session history & decisions | The journal (`get_journal` / `append_journal`) |
+| Data                                   | Source of truth                                                                           |
+| -------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Coaching rules, athlete profile, plans | This knowledge base (sections + references)                                               |
+| Completed workouts & fitness metrics   | [training platform, e.g. intervals.icu / Garmin / Strava — or "athlete reports manually"] |
+| Strength logs                          | [e.g. Hevy / gym notebook / not tracked]                                                  |
+| Session history & decisions            | The journal (`get_journal` / `append_journal`)                                            |
 
 ## 1. Mandatory Session Start (every conversation)
 
@@ -86,15 +87,15 @@ Where data lives and which source wins on conflict:
 
 Verify against current data before prescribing; update after tests or breakthrough performances.
 
-| Metric | Value | Last verified |
-|---|---|---|
-| [Threshold pace / FTP / LTHR ...] | [value] | [date] |
+| Metric                            | Value   | Last verified |
+| --------------------------------- | ------- | ------------- |
+| [Threshold pace / FTP / LTHR ...] | [value] | [date]        |
 
 ## 4. Personal Bests
 
 | Event / distance | Result | Date | Notes |
-|---|---|---|---|
-| [..] | [..] | [..] | [..] |
+| ---------------- | ------ | ---- | ----- |
+| [..]             | [..]   | [..] | [..]  |
 
 ## 5. Training Framework
 
@@ -153,11 +154,11 @@ Condensed from the `lifestyle` reference:
 
 What the assistant may change autonomously vs. must confirm:
 
-| Tier | Scope | Policy |
-|---|---|---|
-| 1 | Journal entries, open items, observed patterns (section 9), data refreshes (sections 3–4 after verified results) | Update autonomously, mention it briefly |
-| 2 | Weekly plan adjustments within the framework | Propose, apply after athlete agrees |
-| 3 | Framework, goals, season roadmap, this section | Only on explicit athlete request |
+| Tier | Scope                                                                                                            | Policy                                  |
+| ---- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| 1    | Journal entries, open items, observed patterns (section 9), data refreshes (sections 3–4 after verified results) | Update autonomously, mention it briefly |
+| 2    | Weekly plan adjustments within the framework                                                                     | Propose, apply after athlete agrees     |
+| 3    | Framework, goals, season roadmap, this section                                                                   | Only on explicit athlete request        |
 
 ## 13. Weekly Review — [day/time, e.g. Sunday evenings]
 
@@ -173,15 +174,15 @@ next week's focus. Ask before changing anything."]
 
 Loaded on demand via `get_reference`:
 
-| Reference | Content |
-|---|---|
-| `coaching-method` | Coaching voice, session flow, behavior-change techniques, guardrails |
-| `zones` | Full zone tables and threshold references |
-| `strength` | Strength evidence base, exercise library, session templates |
-| `workout-construction` | Workout formatting rules and platform syntax |
-| `injuries` | Active issues, triggers to watch, return-to-training protocols |
-| `lifestyle` | Sleep, nutrition, recovery, stress — full detail |
-| `patterns` | Long-form log of training patterns and key learnings |
-| `fitness-history` | Long-term fitness and volume trajectory |
-| `season-plan` | Current season/campaign plan in full |
-| `equipment` | Gear, devices, terrain context |
+| Reference              | Content                                                              |
+| ---------------------- | -------------------------------------------------------------------- |
+| `coaching-method`      | Coaching voice, session flow, behavior-change techniques, guardrails |
+| `zones`                | Full zone tables and threshold references                            |
+| `strength`             | Strength evidence base, exercise library, session templates          |
+| `workout-construction` | Workout formatting rules and platform syntax                         |
+| `injuries`             | Active issues, triggers to watch, return-to-training protocols       |
+| `lifestyle`            | Sleep, nutrition, recovery, stress — full detail                     |
+| `patterns`             | Long-form log of training patterns and key learnings                 |
+| `fitness-history`      | Long-term fitness and volume trajectory                              |
+| `season-plan`          | Current season/campaign plan in full                                 |
+| `equipment`            | Gear, devices, terrain context                                       |
