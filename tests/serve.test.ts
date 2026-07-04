@@ -482,6 +482,23 @@ describe("multi-tenant MCP sessions", () => {
   });
 });
 
+describe("landing page setup guide", () => {
+  it("serves the guide in English and German (query param + Accept-Language)", async () => {
+    const en = await (await fetch(`${base}/`)).text();
+    expect(en).toContain("Set up in five steps");
+    expect(en).toContain(base); // the connector URL is shown for copy-paste
+    expect(en).toContain("get_coaching_context"); // project-instructions block
+
+    const de = await (await fetch(`${base}/?lang=de`)).text();
+    expect(de).toContain("Einrichtung in fünf Schritten");
+
+    const auto = await (
+      await fetch(`${base}/`, { headers: { "accept-language": "de-DE,de;q=0.9" } })
+    ).text();
+    expect(auto).toContain("Einrichtung in fünf Schritten");
+  });
+});
+
 describe("account data editor", () => {
   async function csrfFor(cookie: string): Promise<string> {
     const html = await (await fetch(`${base}/account`, { headers: { cookie } })).text();
@@ -612,7 +629,7 @@ describe("account data editor", () => {
     const client = await mcpClient(alice.access);
     await client.callTool({
       name: "append_journal",
-      arguments: { entry: "Session about threshold blorbing" },
+      arguments: { entry: "Session about **threshold** blorbing" },
     });
 
     const cookie = await accountLogin(ALICE);
@@ -621,6 +638,7 @@ describe("account data editor", () => {
       await fetch(`${base}/account/data/journal`, { headers: { cookie } })
     ).text();
     expect(journalPage).toContain("blorbing");
+    expect(journalPage).toContain("<strong>threshold</strong>"); // entries render as markdown
     const id = /journal\/edit\?id=(\d+)/.exec(journalPage)?.[1] ?? "";
     expect(id).not.toBe("");
 
@@ -668,7 +686,7 @@ describe("account data editor", () => {
     const client = await mcpClient(alice.access);
     await client.callTool({
       name: "add_open_item",
-      arguments: { kind: "commitment", content: "If it rains, then treadmill" },
+      arguments: { kind: "commitment", content: "If it rains, then **treadmill**" },
     });
 
     const cookie = await accountLogin(ALICE);
@@ -676,7 +694,7 @@ describe("account data editor", () => {
     const listPage = await (
       await fetch(`${base}/account/data/open-items`, { headers: { cookie } })
     ).text();
-    expect(listPage).toContain("treadmill");
+    expect(listPage).toContain("<strong>treadmill</strong>"); // items render as markdown
     const id = /open-items\/edit\?id=(\d+)/.exec(listPage)?.[1] ?? "";
     expect(id).not.toBe("");
 

@@ -13,7 +13,8 @@ import {
   protectedResourceMetadata,
 } from "./auth/oauth.js";
 import type { ServeConfig, ServeContext } from "./context.js";
-import { page, sendHtml, sendJson } from "./http-util.js";
+import { sendJson } from "./http-util.js";
+import { renderLanding } from "./landing.js";
 import { McpSessionManager } from "./mcp-http.js";
 import { TenantManager } from "./tenancy.js";
 import { VERSION } from "./version.js";
@@ -138,15 +139,7 @@ async function route(
     return;
   }
   if (path === "/" && method === "GET") {
-    sendHtml(
-      res,
-      200,
-      page(
-        "Coaching MCP",
-        `<h1>Coaching MCP server</h1>
-<p>Add <code>${ctx.cfg.publicUrl}</code> as a custom connector in your MCP client, or manage your data on the <a href="${ctx.cfg.publicUrl}/account">account page</a>.</p>`,
-      ),
-    );
+    renderLanding(ctx, req, res, url);
     return;
   }
   sendJson(res, 404, { error: "not_found" });

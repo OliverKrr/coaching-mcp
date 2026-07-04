@@ -230,7 +230,7 @@ function renderJournal(ctx: ServeContext, res: ServerResponse, auth: WebAuth, ur
     .map(
       (r) =>
         `<div class="card"><p class="muted">${htmlEscape(r.created_at)} UTC — <a href="${base}/account/data/journal/edit?id=${r.id}">edit</a></p>
-<pre style="white-space:pre-wrap;margin:0">${htmlEscape(r.entry)}</pre></div>`,
+<div class="preview">${renderMarkdown(r.entry)}</div></div>`,
     )
     .join("\n");
   const nav = [
@@ -286,14 +286,23 @@ function renderJournalEditor(
       `${backBar(base, "Journal", "/account/data/journal")}
 <h1>Journal entry #${row.id}</h1>
 <p class="muted">Written ${htmlEscape(row.created_at)} UTC (timestamp is preserved on edit)</p>
+<div class="split">
+<div>
 <form method="post" action="${base}/account/data/journal/save">
 <input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="id" value="${row.id}">
-<textarea name="entry" rows="12" style="width:100%;font-family:ui-monospace,monospace;font-size:.9rem">${htmlEscape(row.entry)}</textarea>
+<textarea name="entry" class="editor" style="height:50vh">${htmlEscape(row.entry)}</textarea>
 <p><button>Save</button></p>
 </form>
 <form method="post" action="${base}/account/data/journal/delete" onsubmit="return confirm('Delete this journal entry? This cannot be undone.')">
 <input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="id" value="${row.id}">
-<button class="danger">Delete entry</button></form>`,
+<button class="danger">Delete entry</button></form>
+</div>
+<div>
+<p class="muted">Rendered preview — updates when you save</p>
+<div class="preview">${renderMarkdown(row.entry)}</div>
+</div>
+</div>`,
+      { wide: true },
     ),
   );
 }
@@ -307,10 +316,11 @@ function renderOpenItems(ctx: ServeContext, res: ServerResponse, auth: WebAuth):
     )
     .all() as ItemRow[];
   const body = rows
-    .map((r) => {
-      const preview = r.content.length > 80 ? `${r.content.slice(0, 80)}…` : r.content;
-      return `<tr><td>#${r.id}</td><td>${htmlEscape(r.kind)}</td><td>${htmlEscape(r.status)}</td><td>${htmlEscape(r.relevant_date ?? "—")}</td><td>${htmlEscape(preview)}</td><td><a href="${base}/account/data/open-items/edit?id=${r.id}">edit</a></td></tr>`;
-    })
+    .map(
+      (r) =>
+        `<div class="card"><p class="muted">#${r.id} [${htmlEscape(r.kind)}] · ${htmlEscape(r.status)}${r.relevant_date ? ` · ${htmlEscape(r.relevant_date)}` : ""} — <a href="${base}/account/data/open-items/edit?id=${r.id}">edit</a></p>
+<div class="preview">${renderMarkdown(r.content)}</div></div>`,
+    )
     .join("\n");
   sendHtml(
     res,
@@ -320,7 +330,7 @@ function renderOpenItems(ctx: ServeContext, res: ServerResponse, auth: WebAuth):
       `${backBar(base)}
 <h1>Open items</h1>
 <p class="muted">Commitments and flags from your coaching sessions (open first).</p>
-<div style="overflow-x:auto"><table><tr><th>#</th><th>Kind</th><th>Status</th><th>Date</th><th>Content</th><th></th></tr>${body || '<tr><td colspan="6" class="muted">none</td></tr>'}</table></div>`,
+${body || '<p class="muted">none</p>'}`,
     ),
   );
 }

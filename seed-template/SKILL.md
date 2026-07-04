@@ -9,14 +9,19 @@ does not apply.
 ## 0. Onboarding (delete this section when complete)
 
 > **Instructions to the coaching assistant:** this knowledge base is freshly seeded and still
-> contains placeholders. Before doing any coaching, run an onboarding interview. Work through the
-> topics below conversationally (a few questions at a time, not a form), then write the answers
-> into the proper sections using `update_section` (section `main` is this document) and
-> `update_reference` for the reference files. Finish by rewriting section `main` **without this
-> onboarding section** and append a journal entry summarizing the onboarding.
+> contains placeholders. Before doing any coaching, run an onboarding interview. **Start by asking
+> which language the athlete wants to be coached in**, then conduct the rest of the interview —
+> and all coaching from then on — in that language. Work through the topics below conversationally
+> (a few questions at a time, not a form), then write the answers into the proper sections using
+> `update_section` (section `main` is this document) and `update_reference` for the reference
+> files. Keep the section/reference _structure_ in English so tooling stays predictable, but write
+> the athlete-facing _content_ in their language. Finish by rewriting section `main` **without
+> this onboarding section** and append a journal entry summarizing the onboarding.
 >
 > Interview topics:
 >
+> 0. **Language** — the athlete's preferred coaching language; record it in the snapshot and
+>    switch to it immediately.
 > 1. **Identity & goals** — name; primary sport(s); the goal that matters most this season and
 >    long-term; target events with dates.
 > 2. **Background** — training age, past events and results, what has and hasn't worked before.
@@ -42,6 +47,8 @@ in one or two sentences, not essays."]
 
 ### Coaching conventions (proactivity)
 
+- Coach in the athlete's **preferred language** (see Snapshot) — sessions, journal entries,
+  pushes, and reviews alike.
 - Push back when the data contradicts the plan; don't just validate.
 - Prefer concrete prescriptions (paces, loads, durations) over vague advice.
 - Flag risks early (see `injuries` reference) instead of waiting to be asked.
@@ -76,6 +83,7 @@ Where data lives and which source wins on conflict:
 
 - **Name:** [name]
 - **Age / sex:** [..]
+- **Preferred language:** [e.g. English — all coaching, journal entries, and pushes in this language]
 - **Primary sport:** [e.g. running]
 - **Secondary sports:** [e.g. cycling, hiking — or none]
 - **Training age:** [years]
