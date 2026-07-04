@@ -14,7 +14,7 @@ import {
 } from "./auth/oauth.js";
 import type { ServeConfig, ServeContext } from "./context.js";
 import { sendJson } from "./http-util.js";
-import { renderLanding } from "./landing.js";
+import { renderLanding, renderRoutines } from "./landing.js";
 import { McpSessionManager } from "./mcp-http.js";
 import { TenantManager } from "./tenancy.js";
 import { VERSION } from "./version.js";
@@ -140,6 +140,10 @@ async function route(
   }
   if (path === "/" && method === "GET") {
     renderLanding(ctx, req, res, url);
+    return;
+  }
+  if (path === "/routines" && method === "GET") {
+    renderRoutines(ctx, req, res, url);
     return;
   }
   sendJson(res, 404, { error: "not_found" });

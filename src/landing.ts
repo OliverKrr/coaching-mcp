@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ServeContext } from "./context.js";
 import { htmlEscape, page, sendHtml } from "./http-util.js";
+import { ROUTINE_TEMPLATES } from "./routine-templates.js";
 
 /**
  * Public landing page = the setup guide new users need to get from "invited"
@@ -79,11 +80,56 @@ and name every day with its calendar date in weekly plans.`;
 </div>
 
 <div class="card">
+<h2>${t.routinesTitle}</h2>
+<p>${t.routinesBody} <a href="${base}/routines?lang=${lang}">${htmlEscape(base.replace(/^https?:\/\//, ""))}/routines</a></p>
+</div>
+
+<div class="card">
 <h2>${t.dataTitle}</h2>
 <p>${t.dataBody} <a href="${base}/account">${htmlEscape(base.replace(/^https?:\/\//, ""))}/account</a></p>
 </div>
 
 <p class="muted">${t.footer}</p>`,
+    ),
+  );
+}
+
+/** /routines — the scheduled-task templates, ready to copy, in the page language. */
+export function renderRoutines(
+  ctx: ServeContext,
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+): void {
+  const base = ctx.cfg.publicUrl;
+  const lang = pickLang(req, url);
+  const t = lang === "de" ? DE : EN;
+
+  const cards = ROUTINE_TEMPLATES.map(
+    (r) => `<div class="card">
+<details${r.id === "weekly-review" ? " open" : ""}>
+<summary style="cursor:pointer"><strong>${htmlEscape(r.title[lang])}</strong> — <span class="muted">${htmlEscape(r.cadence[lang])}</span></summary>
+<pre style="white-space:pre-wrap;background:#f6f6f6;padding:.75rem;border-radius:6px;font-size:.82rem">${htmlEscape(r.prompt[lang])}</pre>
+</details>
+</div>`,
+  ).join("\n");
+
+  sendHtml(
+    res,
+    200,
+    page(
+      t.routinesTitle,
+      `<p class="muted" style="text-align:right"><a href="${base}/routines?lang=de">Deutsch</a> · <a href="${base}/routines?lang=en">English</a></p>
+<p class="muted"><a href="${base}/?lang=${lang}">${t.backToGuide}</a></p>
+<h1>${t.routinesTitle}</h1>
+<p>${t.routinesIntro}</p>
+<ol>
+<li>${t.routinesStep1}</li>
+<li>${t.routinesStep2}</li>
+<li>${t.routinesStep3}</li>
+</ol>
+${cards}
+<p class="muted">${t.routinesFooter}</p>`,
     ),
   );
 }
@@ -105,6 +151,19 @@ const EN = {
     "<strong>Start your first conversation</strong> in that project. The coach will interview you — language, goals, background, schedule, injuries — and build your personal coaching knowledge base from it. Just answer; nothing to configure.",
   projectTitle: "Project instructions (copy & paste)",
   projectIntro: "Paste this into your Claude project's instructions and adapt freely:",
+  routinesTitle: "Automatic check-ins (optional)",
+  routinesBody:
+    "Let the coach come to you: a weekly review, an evening briefing, a morning readiness check — as scheduled tasks in your own Claude account. Ready-to-copy templates:",
+  routinesIntro:
+    "These run as scheduled tasks in YOUR Claude account — the coaching server never starts conversations itself. Setup per routine:",
+  routinesStep1: "In Claude, create a scheduled task with the cadence shown on the template.",
+  routinesStep2:
+    "Copy the template below as the task prompt and fill the [placeholders]; if you have no fitness-data connector, delete those steps — the routine degrades gracefully.",
+  routinesStep3:
+    "Done — output (pushes, journal entries) automatically arrives in your preferred coaching language.",
+  routinesFooter:
+    "The weekly review writes the check-in of record, the evening preview briefs tomorrow's quality session, the morning check raises readiness flags only — no overlaps.",
+  backToGuide: "← Back to the setup guide",
   dataTitle: "Your data",
   dataBody:
     "Everything the coach knows about you is yours: view and edit every document, download a full export, or delete your account at",
@@ -128,6 +187,20 @@ const DE: typeof EN = {
     "<strong>Erste Unterhaltung starten</strong> in diesem Projekt. Der Coach interviewt dich — Sprache, Ziele, Vorgeschichte, Zeitbudget, Verletzungen — und baut daraus deine persönliche Coaching-Wissensbasis auf. Einfach antworten; nichts zu konfigurieren.",
   projectTitle: "Projekt-Anweisungen (kopieren & einfügen)",
   projectIntro: "Füge das in die Anweisungen deines Claude-Projekts ein und passe es frei an:",
+  routinesTitle: "Automatische Check-ins (optional)",
+  routinesBody:
+    "Lass den Coach auf dich zukommen: Weekly Review, Abend-Briefing, Morgen-Readiness-Check — als geplante Aufgaben in deinem eigenen Claude-Konto. Fertige Vorlagen zum Kopieren:",
+  routinesIntro:
+    "Diese laufen als geplante Aufgaben in DEINEM Claude-Konto — der Coaching-Server startet nie selbst Unterhaltungen. Einrichtung pro Routine:",
+  routinesStep1:
+    "In Claude eine geplante Aufgabe mit dem auf der Vorlage angegebenen Rhythmus anlegen.",
+  routinesStep2:
+    "Die Vorlage unten als Aufgaben-Prompt kopieren und die [Platzhalter] ausfüllen; ohne Fitness-Daten-Connector die betreffenden Schritte einfach löschen — die Routine funktioniert auch ohne.",
+  routinesStep3:
+    "Fertig — die Ausgaben (Pushes, Journaleinträge) kommen automatisch in deiner bevorzugten Coaching-Sprache.",
+  routinesFooter:
+    "Der Weekly Review schreibt den offiziellen Check-in, das Abend-Preview brieft die morgige Quality-Session, der Morgen-Check meldet nur Readiness-Flags — keine Überschneidungen.",
+  backToGuide: "← Zurück zur Einrichtungs-Anleitung",
   dataTitle: "Deine Daten",
   dataBody:
     "Alles, was der Coach über dich weiß, gehört dir: alle Dokumente ansehen und bearbeiten, einen vollständigen Export herunterladen oder deinen Account löschen unter",

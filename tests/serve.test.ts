@@ -497,6 +497,21 @@ describe("landing page setup guide", () => {
     ).text();
     expect(auto).toContain("Einrichtung in fünf Schritten");
   });
+
+  it("serves copyable routine templates bilingually at /routines", async () => {
+    const en = await (await fetch(`${base}/routines`)).text();
+    expect(en).toContain("Weekly Review");
+    expect(en).toContain("get_coaching_context"); // prompt text present
+    expect(en).toContain("check-in of record");
+
+    const de = await (await fetch(`${base}/routines?lang=de`)).text();
+    expect(de).toContain("Ausfall-Absicherung");
+    expect(de).toContain("Tägliche Readiness");
+
+    // the landing guide links to it
+    const landing = await (await fetch(`${base}/`)).text();
+    expect(landing).toContain("/routines");
+  });
 });
 
 describe("account data editor", () => {
