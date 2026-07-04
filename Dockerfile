@@ -59,8 +59,13 @@ RUN test -L /usr/local/bin/coaching-mcp \
  && head -1 /usr/local/lib/node_modules/coaching-mcp/dist/index.js | grep -q '^#!/usr/bin/env node$' \
  && node --version | grep -q '^v26\.'
 
+# Generic seed template baked in as the default /seed content. A bind mount of
+# personal seed data replaces it; without a mount, first start seeds the DB with
+# the template (placeholders + onboarding interview for the connected assistant).
+COPY --chown=nonroot:nonroot seed-template/ /seed/
+
 # /data  — SQLite database (persistent volume, survives restarts)
-# /seed  — read-only seed data mounted at runtime
+# /seed  — seed data; defaults to the baked-in template, override by mounting
 VOLUME ["/data", "/seed"]
 ENV DATA_DIR=/data \
     SEED_DIR=/seed

@@ -44,6 +44,23 @@ seed/
 
 The database is seeded only on first start (when `sections` is empty). After that, all writes go through the MCP tools — the seed mount is only read on init.
 
+## Default seed template
+
+If you don't mount your own seed data, the image ships a generic coaching template
+(`seed-template/` in this repo, baked into `/seed`): a `SKILL.md` with the full coaching
+structure (session-start protocol, athlete snapshot, thresholds, training framework, zone rules,
+tiered auto-update policy, weekly review) as `[placeholder]`-marked skeletons, plus ten reference
+stubs (`zones`, `strength`, `injuries`, `lifestyle`, `season-plan`, …).
+
+The template's first section is an **onboarding interview**: on the first conversation, the
+connected assistant interviews the user (goals, background, fitness, schedule, injuries,
+equipment, lifestyle, coaching preference), writes the answers into the sections via the MCP
+write tools, and removes the onboarding section when done. So a brand-new user goes from empty
+database to a personalized coaching setup in one conversation — no files to edit.
+
+For the client side, `docs/project-instructions-template.md` has a small Claude-project
+instructions template that bootstraps the assistant into this server at session start.
+
 ## Environment variables
 
 | Variable   | Default | Description                                                 |
