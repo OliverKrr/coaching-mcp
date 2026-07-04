@@ -74,8 +74,8 @@ export function htmlEscape(value: string): string {
     .replaceAll("'", "&#39;");
 }
 
-/** Shared minimal page chrome for the few human-facing pages. */
-export function page(title: string, body: string): string {
+/** Shared minimal page chrome for the few human-facing pages. `wide` = editor layout. */
+export function page(title: string, body: string, opts: { wide?: boolean } = {}): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -83,7 +83,16 @@ export function page(title: string, body: string): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${htmlEscape(title)}</title>
 <style>
-body{font-family:system-ui,sans-serif;max-width:560px;margin:60px auto;padding:0 1rem;color:#222;line-height:1.5}
+body{font-family:system-ui,sans-serif;max-width:${opts.wide ? "min(1500px,95vw)" : "560px"};margin:${opts.wide ? "24px" : "60px"} auto;padding:0 1rem;color:#222;line-height:1.5}
+.split{display:flex;gap:1.5rem;align-items:flex-start;flex-wrap:wrap}
+.split>div{flex:1 1 480px;min-width:0}
+textarea.editor{height:74vh;width:100%;box-sizing:border-box;font-family:ui-monospace,monospace;font-size:.9rem}
+.preview{border:1px solid #e5e5e5;border-radius:8px;padding:.25rem 1.25rem;background:#fafafa;overflow-wrap:break-word}
+.preview h1{font-size:1.35rem}.preview h2{font-size:1.15rem}.preview h3{font-size:1rem}
+.preview pre{background:#f0f0f0;padding:.75rem;border-radius:6px;overflow-x:auto}
+.preview code{background:#f0f0f0;padding:.1rem .3rem;border-radius:3px;font-size:.85em}
+.preview pre code{background:none;padding:0}
+.preview blockquote{border-left:3px solid #ccc;margin:.5rem 0;padding:.1rem 1rem;color:#555}
 h1,h2{line-height:1.2}
 table{border-collapse:collapse;width:100%;margin:1rem 0}
 td,th{text-align:left;padding:.35rem .6rem;border-bottom:1px solid #eee}

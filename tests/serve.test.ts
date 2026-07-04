@@ -319,7 +319,10 @@ describe("OAuth flow with OIDC federation", () => {
     // bootstrap challenge (this is what an MCP connector client sends first)
     const res = await fetch(`${base}/`, {
       method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+      },
       body: JSON.stringify({ jsonrpc: "2.0", method: "initialize", params: {}, id: 1 }),
     });
     expect(res.status).toBe(401);
@@ -523,6 +526,33 @@ describe("account data editor", () => {
     expect(docPage).toContain("10k in autumn");
 
     expect((await create()).status).toBe(409); // duplicate name refused
+  });
+
+  it("shows a rendered markdown preview beside the editor", async () => {
+    const cookie = await accountLogin(ALICE);
+    const csrf = await csrfFor(cookie);
+    await fetch(`${base}/account/data/doc/save`, {
+      method: "POST",
+      headers: { cookie, "content-type": FORM },
+      body: new URLSearchParams({
+        csrf,
+        type: "section",
+        name: "preview-check",
+        content: "## Plan\n\n**boldy** move\n\n<script>alert(1)</script>",
+        expected_updated_at: "",
+      }),
+      redirect: "manual",
+    });
+    const html = await (
+      await fetch(`${base}/account/data/doc?type=section&name=preview-check`, {
+        headers: { cookie },
+      })
+    ).text();
+    expect(html).toContain('<div class="preview">');
+    expect(html).toContain("<h2>Plan</h2>");
+    expect(html).toContain("<strong>boldy</strong>");
+    // raw HTML in the document stays escaped in BOTH the textarea and the preview
+    expect(html).not.toContain("<script>alert(1)</script>");
   });
 
   it("saves with the current token and rejects a stale one (optimistic concurrency)", async () => {

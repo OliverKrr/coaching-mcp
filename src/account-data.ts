@@ -2,6 +2,7 @@ import type { ServerResponse } from "node:http";
 import type { WebAuth } from "./account.js";
 import type { ServeContext } from "./context.js";
 import { htmlEscape, page, redirect, sendHtml } from "./http-util.js";
+import { renderMarkdown } from "./markdown.js";
 
 /**
  * Browse & edit area under /account/data: every document the server stores
@@ -179,6 +180,13 @@ function renderDocEditor(
         ? `<p class="muted">The <code>main</code> section cannot be deleted — it is the canonical SKILL.md.</p>`
         : "";
 
+  const previewColumn = row
+    ? `<div>
+<p class="muted">Rendered preview — updates when you save</p>
+<div class="preview">${renderMarkdown(row.content)}</div>
+</div>`
+    : "";
+
   sendHtml(
     res,
     200,
@@ -188,15 +196,21 @@ function renderDocEditor(
 <h1>${row ? `${htmlEscape(type)}: ${htmlEscape(row.name)}` : `New ${htmlEscape(type)}`}</h1>
 ${saved ? '<p class="muted">✓ Saved.</p>' : ""}
 ${row ? `<p class="muted">Last updated ${htmlEscape(row.updated_at)} UTC</p>` : ""}
+<div class="split">
+<div>
 <form method="post" action="${base}/account/data/doc/save">
 <input type="hidden" name="csrf" value="${csrf}">
 <input type="hidden" name="type" value="${type}">
 <input type="hidden" name="expected_updated_at" value="${htmlEscape(row?.updated_at ?? "")}">
 <p>${nameField}</p>
-<textarea name="content" rows="24" style="width:100%;font-family:ui-monospace,monospace;font-size:.9rem">${htmlEscape(row?.content ?? "")}</textarea>
+<textarea name="content" class="editor">${htmlEscape(row?.content ?? "")}</textarea>
 <p><button>Save</button></p>
 </form>
-${deleteForm}`,
+${deleteForm}
+</div>
+${previewColumn}
+</div>`,
+      { wide: true },
     ),
   );
 }
