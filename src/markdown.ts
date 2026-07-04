@@ -27,11 +27,11 @@ export function renderMarkdown(md: string): string {
     const line = lines[i] as string;
 
     // fenced code block
-    if (/^```/.test(line)) {
+    if (line.startsWith("```")) {
       flushParagraph();
       const code: string[] = [];
       i++;
-      while (i < lines.length && !/^```/.test(lines[i] as string)) {
+      while (i < lines.length && !(lines[i] as string).startsWith("```")) {
         code.push(lines[i] as string);
         i++;
       }
