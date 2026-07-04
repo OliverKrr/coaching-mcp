@@ -314,6 +314,34 @@ describe("OAuth flow with OIDC federation", () => {
     expect(res.headers.get("www-authenticate")).toContain("oauth-protected-resource");
   });
 
+  it("serves MCP at the root path too — the connector URL form", async () => {
+    // unauthenticated initialize at the bare server URL must get the OAuth
+    // bootstrap challenge (this is what an MCP connector client sends first)
+    const res = await fetch(`${base}/`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "initialize", params: {}, id: 1 }),
+    });
+    expect(res.status).toBe(401);
+    expect(res.headers.get("www-authenticate")).toContain("oauth-protected-resource");
+
+    // a plain browser GET still sees the landing page, not an MCP error
+    const browser = await fetch(`${base}/`);
+    expect(browser.status).toBe(200);
+    expect(browser.headers.get("content-type")).toContain("text/html");
+
+    // and a real authenticated MCP session works against the root URL
+    const alice = await oauthLogin(ALICE);
+    const transport = new StreamableHTTPClientTransport(new URL(`${base}/`), {
+      requestInit: { headers: { authorization: `Bearer ${alice.access}` } },
+    });
+    const client = new Client({ name: "root-probe", version: "0.0.0" });
+    await client.connect(transport);
+    const tools = await client.listTools();
+    expect(tools.tools.map((t) => t.name)).toContain("get_coaching_context");
+    await client.close();
+  });
+
   it("denies a non-allowlisted email and provisions nothing", async () => {
     const clientId = await registerClient();
     const authorizeUrl =

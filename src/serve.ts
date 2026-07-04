@@ -88,9 +88,21 @@ async function route(
   const path = url.pathname;
   const method = req.method ?? "GET";
 
-  if (path === "/mcp") {
-    await mcpSessions.handle(req, res);
-    return;
+  // MCP is served at /mcp AND at the root: connector clients speak MCP to the
+  // bare server URL (behind a prefix-stripping proxy that is "/"), and their
+  // unauthenticated initialize must get the 401 + WWW-Authenticate challenge
+  // that bootstraps the OAuth flow. Only a plain browser GET (no MCP session,
+  // no Bearer token) falls through to the human landing page below.
+  if (path === "/mcp" || path === "/") {
+    const browserGet =
+      path === "/" &&
+      method === "GET" &&
+      req.headers["mcp-session-id"] === undefined &&
+      req.headers.authorization === undefined;
+    if (!browserGet) {
+      await mcpSessions.handle(req, res);
+      return;
+    }
   }
 
   // RFC 8414: with a path-suffixed issuer, discovery arrives as
