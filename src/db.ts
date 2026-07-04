@@ -94,6 +94,11 @@ export function createSchema(db: Database.Database): void {
 		CREATE TRIGGER IF NOT EXISTS journal_ai AFTER INSERT ON journal BEGIN
 			INSERT INTO journal_fts(rowid, entry) VALUES (new.id, new.entry);
 		END;
+		CREATE TRIGGER IF NOT EXISTS journal_au AFTER UPDATE ON journal BEGIN
+			INSERT INTO journal_fts(journal_fts, rowid, entry)
+				VALUES ('delete', old.id, old.entry);
+			INSERT INTO journal_fts(rowid, entry) VALUES (new.id, new.entry);
+		END;
 		CREATE TRIGGER IF NOT EXISTS sections_ad AFTER DELETE ON sections BEGIN
 			INSERT INTO sections_fts(sections_fts, rowid, name, content)
 				VALUES ('delete', old.rowid, old.name, old.content);

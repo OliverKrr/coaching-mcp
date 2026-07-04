@@ -81,10 +81,16 @@ prefix-stripping proxy location and everything (metadata discovery, OIDC callbac
 lines up. RFC 8414 suffixed discovery paths (`/.well-known/oauth-authorization-server/<suffix>`)
 are handled.
 
-## Account page — export & delete
+## Account page — view, edit, export & delete
 
 `<PUBLIC_URL>/account` lets every user self-serve their data rights:
 
+- **View & edit** (`/account/data`): browse every document the server stores — knowledge
+  sections, reference documents, journal entries, open items — and edit them directly in the
+  browser: fix a section the assistant got wrong, create or delete documents (the `main`
+  SKILL.md section is edit-only), correct or remove journal entries, change an open item's
+  content or status. Section/reference saves are guarded by an optimistic-concurrency check, so
+  a save never silently overwrites a change a coaching session made in the meantime.
 - **Export**: one click downloads a zip with every document as markdown (`SKILL.md`,
   `sections/`, `references/`, `journal.md`, `open-items.md`, `seed-manifest.json`) plus a
   restorable binary copy of their `skill.db`.

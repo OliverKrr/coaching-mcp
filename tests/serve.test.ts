@@ -451,6 +451,202 @@ describe("multi-tenant MCP sessions", () => {
   });
 });
 
+describe("account data editor", () => {
+  async function csrfFor(cookie: string): Promise<string> {
+    const html = await (await fetch(`${base}/account`, { headers: { cookie } })).text();
+    const csrf = /name="csrf" value="([^"]+)"/.exec(html)?.[1] ?? "";
+    expect(csrf).not.toBe("");
+    return csrf;
+  }
+
+  const FORM = "application/x-www-form-urlencoded";
+
+  it("requires a session for data pages", async () => {
+    const res = await fetch(`${base}/account/data`, { redirect: "manual" });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(`${base}/account`);
+  });
+
+  it("lists documents, creates a new section, and refuses duplicate names", async () => {
+    const cookie = await accountLogin(ALICE);
+    const csrf = await csrfFor(cookie);
+
+    const overview = await (await fetch(`${base}/account/data`, { headers: { cookie } })).text();
+    expect(overview).toContain("main");
+    expect(overview).toContain("zones");
+
+    const create = (): Promise<Response> =>
+      fetch(`${base}/account/data/doc/save`, {
+        method: "POST",
+        headers: { cookie, "content-type": FORM },
+        body: new URLSearchParams({
+          csrf,
+          type: "section",
+          name: "race-plan",
+          content: "# Race plan\n\n10k in autumn.",
+          expected_updated_at: "",
+        }),
+        redirect: "manual",
+      });
+    expect((await create()).status).toBe(302);
+    const docPage = await (
+      await fetch(`${base}/account/data/doc?type=section&name=race-plan`, { headers: { cookie } })
+    ).text();
+    expect(docPage).toContain("10k in autumn");
+
+    expect((await create()).status).toBe(409); // duplicate name refused
+  });
+
+  it("saves with the current token and rejects a stale one (optimistic concurrency)", async () => {
+    const cookie = await accountLogin(ALICE);
+    const csrf = await csrfFor(cookie);
+    const docPage = await (
+      await fetch(`${base}/account/data/doc?type=reference&name=zones`, { headers: { cookie } })
+    ).text();
+    const token = /name="expected_updated_at" value="([^"]+)"/.exec(docPage)?.[1] ?? "";
+    expect(token).not.toBe("");
+
+    const save = (expected: string, content: string): Promise<Response> =>
+      fetch(`${base}/account/data/doc/save`, {
+        method: "POST",
+        headers: { cookie, "content-type": FORM },
+        body: new URLSearchParams({
+          csrf,
+          type: "reference",
+          name: "zones",
+          content,
+          expected_updated_at: expected,
+        }),
+        redirect: "manual",
+      });
+
+    expect((await save(token, "# Zones v2")).status).toBe(302);
+    // an obviously stale token → conflict, nothing written
+    const conflict = await save("2000-01-01 00:00:00", "# clobber attempt");
+    expect(conflict.status).toBe(409);
+    const after = await (
+      await fetch(`${base}/account/data/doc?type=reference&name=zones`, { headers: { cookie } })
+    ).text();
+    expect(after).toContain("Zones v2");
+    expect(after).not.toContain("clobber attempt");
+  });
+
+  it("protects main from deletion but deletes other documents", async () => {
+    const cookie = await accountLogin(ALICE);
+    const csrf = await csrfFor(cookie);
+    const del = (type: string, name: string): Promise<Response> =>
+      fetch(`${base}/account/data/doc/delete`, {
+        method: "POST",
+        headers: { cookie, "content-type": FORM },
+        body: new URLSearchParams({ csrf, type, name }),
+        redirect: "manual",
+      });
+    expect((await del("section", "main")).status).toBe(400);
+    expect((await del("section", "race-plan")).status).toBe(302);
+    const gone = await fetch(`${base}/account/data/doc?type=section&name=race-plan`, {
+      headers: { cookie },
+    });
+    expect(gone.status).toBe(404);
+  });
+
+  it("edits journal entries and keeps FTS search in sync (journal_au trigger)", async () => {
+    const alice = await oauthLogin(ALICE);
+    const client = await mcpClient(alice.access);
+    await client.callTool({
+      name: "append_journal",
+      arguments: { entry: "Session about threshold blorbing" },
+    });
+
+    const cookie = await accountLogin(ALICE);
+    const csrf = await csrfFor(cookie);
+    const journalPage = await (
+      await fetch(`${base}/account/data/journal`, { headers: { cookie } })
+    ).text();
+    expect(journalPage).toContain("blorbing");
+    const id = /journal\/edit\?id=(\d+)/.exec(journalPage)?.[1] ?? "";
+    expect(id).not.toBe("");
+
+    const save = await fetch(`${base}/account/data/journal/save`, {
+      method: "POST",
+      headers: { cookie, "content-type": FORM },
+      body: new URLSearchParams({ csrf, id, entry: "Session about threshold glimmerwork" }),
+      redirect: "manual",
+    });
+    expect(save.status).toBe(302);
+
+    // FTS reflects the edit: new wording found, old wording gone
+    const hit = toolText(
+      await client.callTool({
+        name: "search_knowledge",
+        arguments: { query: "glimmerwork", type: "journal" },
+      }),
+    );
+    expect(hit).toContain("glimmerwork");
+    const miss = toolText(
+      await client.callTool({
+        name: "search_knowledge",
+        arguments: { query: "blorbing", type: "journal" },
+      }),
+    );
+    expect(miss).not.toContain("Session about");
+
+    // delete removes the entry from the page
+    const del = await fetch(`${base}/account/data/journal/delete`, {
+      method: "POST",
+      headers: { cookie, "content-type": FORM },
+      body: new URLSearchParams({ csrf, id }),
+      redirect: "manual",
+    });
+    expect(del.status).toBe(302);
+    const afterDelete = await (
+      await fetch(`${base}/account/data/journal`, { headers: { cookie } })
+    ).text();
+    expect(afterDelete).not.toContain("glimmerwork");
+    await client.close();
+  });
+
+  it("edits open items in a way the MCP tools observe", async () => {
+    const alice = await oauthLogin(ALICE);
+    const client = await mcpClient(alice.access);
+    await client.callTool({
+      name: "add_open_item",
+      arguments: { kind: "commitment", content: "If it rains, then treadmill" },
+    });
+
+    const cookie = await accountLogin(ALICE);
+    const csrf = await csrfFor(cookie);
+    const listPage = await (
+      await fetch(`${base}/account/data/open-items`, { headers: { cookie } })
+    ).text();
+    expect(listPage).toContain("treadmill");
+    const id = /open-items\/edit\?id=(\d+)/.exec(listPage)?.[1] ?? "";
+    expect(id).not.toBe("");
+
+    const save = await fetch(`${base}/account/data/open-items/save`, {
+      method: "POST",
+      headers: { cookie, "content-type": FORM },
+      body: new URLSearchParams({
+        csrf,
+        id,
+        content: "If it rains, then bike trainer",
+        status: "done",
+        relevant_date: "",
+      }),
+      redirect: "manual",
+    });
+    expect(save.status).toBe(302);
+
+    // default list_open_items (status=open) no longer shows it
+    const open = toolText(await client.callTool({ name: "list_open_items", arguments: {} }));
+    expect(open).not.toContain("bike trainer");
+    const done = toolText(
+      await client.callTool({ name: "list_open_items", arguments: { status: "done" } }),
+    );
+    expect(done).toContain("bike trainer");
+    await client.close();
+  });
+});
+
 describe("account page", () => {
   it("shows the profile after IdP login", async () => {
     const cookie = await accountLogin(ALICE);

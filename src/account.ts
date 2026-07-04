@@ -2,6 +2,7 @@ import { zipSync, strToU8 } from "fflate";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { handleDataGet, handleDataPost } from "./account-data.js";
 import { startAccountLogin } from "./auth/oauth.js";
 import { deleteUser, deleteWebSession, getUser, getWebSession } from "./auth/db.js";
 import type { ServeContext } from "./context.js";
@@ -27,7 +28,7 @@ import { snapshotDocuments } from "./snapshot.js";
 
 const SESSION_COOKIE = "account_session";
 
-type WebAuth = { sessionId: string; userId: string; csrf: string };
+export type WebAuth = { sessionId: string; userId: string; csrf: string };
 
 function webAuth(ctx: ServeContext, req: IncomingMessage): WebAuth | undefined {
   const sessionId = parseCookies(req.headers.cookie)[SESSION_COOKIE];
@@ -36,7 +37,11 @@ function webAuth(ctx: ServeContext, req: IncomingMessage): WebAuth | undefined {
   return session ? { sessionId, userId: session.userId, csrf: session.csrf } : undefined;
 }
 
-/** Routes under /account. Returns false when the path is not ours. */
+/**
+ * Routes under /account. Returns false when the path is not ours. Session and
+ * CSRF checks happen once here for every account route, including the data
+ * browser/editor (account-data.ts).
+ */
 export async function handleAccountRoute(
   ctx: ServeContext,
   mcpSessions: McpSessionManager,
@@ -46,10 +51,16 @@ export async function handleAccountRoute(
 ): Promise<boolean> {
   const base = ctx.cfg.publicUrl;
   const path = url.pathname;
+  if (path !== "/account" && !path.startsWith("/account/")) return false;
 
-  if (path === "/account" && req.method === "GET") {
-    const auth = webAuth(ctx, req);
-    if (!auth) {
+  if (path === "/account/login" && req.method === "GET") {
+    await startAccountLogin(ctx, res);
+    return true;
+  }
+
+  const auth = webAuth(ctx, req);
+  if (!auth) {
+    if (path === "/account" && req.method === "GET") {
       sendHtml(
         res,
         200,
@@ -60,26 +71,21 @@ export async function handleAccountRoute(
 <p><a href="${base}/account/login"><button>Sign in</button></a></p>`,
         ),
       );
-      return true;
-    }
-    renderAccountPage(ctx, res, auth);
-    return true;
-  }
-
-  if (path === "/account/login" && req.method === "GET") {
-    await startAccountLogin(ctx, res);
-    return true;
-  }
-
-  if (
-    req.method === "POST" &&
-    ["/account/export", "/account/delete", "/account/logout"].includes(path)
-  ) {
-    const auth = webAuth(ctx, req);
-    if (!auth) {
+    } else {
       redirect(res, `${base}/account`);
+    }
+    return true;
+  }
+
+  if (req.method === "GET") {
+    if (path === "/account") {
+      renderAccountPage(ctx, res, auth);
       return true;
     }
+    return handleDataGet(ctx, res, auth, url);
+  }
+
+  if (req.method === "POST") {
     const form = parseParams(await readBody(req), req.headers["content-type"]);
     if (form.get("csrf") !== auth.csrf) {
       sendHtml(
@@ -105,8 +111,11 @@ export async function handleAccountRoute(
       exportData(ctx, res, auth.userId);
       return true;
     }
-    await deleteAccount(ctx, mcpSessions, res, auth, form.get("confirm_email") ?? "");
-    return true;
+    if (path === "/account/delete") {
+      await deleteAccount(ctx, mcpSessions, res, auth, form.get("confirm_email") ?? "");
+      return true;
+    }
+    return handleDataPost(ctx, res, auth, url, form);
   }
 
   return false;
@@ -154,6 +163,7 @@ function renderAccountPage(ctx: ServeContext, res: ServerResponse, auth: WebAuth
 <tr><th>Open items</th><td>${count("SELECT COUNT(*) AS n FROM open_items WHERE status = 'open'")}</td></tr>
 <tr><th>Database size</th><td>${dbSizeKb} KB</td></tr>
 </table>
+<p><a href="${base}/account/data"><button>View &amp; edit your data</button></a></p>
 <form method="post" action="${base}/account/export">
 <input type="hidden" name="csrf" value="${csrf}">
 <button>Download everything (zip)</button>

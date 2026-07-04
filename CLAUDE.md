@@ -45,7 +45,8 @@ src/auth/oidc.ts    openid-client wrapper (lazy discovery, PKCE toward the IdP, 
 src/auth/allowlist.ts  ALLOWED_EMAILS / ALLOWED_EMAILS_FILE (file re-read per login attempt)
 src/auth/db.ts      DATA_DIR/auth.db — users, clients, pending auth, hashed tokens, web sessions
 src/tenancy.ts      TenantManager: DATA_DIR/users/<id>/skill.db, lazy open/cache, delete
-src/account.ts      /account page: profile, zip export (fflate), delete with confirmation
+src/account.ts      /account router (session + CSRF for all account routes): profile, zip export (fflate), delete
+src/account-data.ts /account/data browse & edit: sections/refs (create/edit/delete, optimistic concurrency), journal, open items
 src/db.ts           coaching DB schema: sections, refs, journal, open_items + FTS5 (per user)
 src/tools/*.ts      the 10 MCP tools — take (server, db); deliberately user-agnostic
 src/snapshot.ts / restore.ts / migrate.ts + *-cli.ts   operational CLIs
@@ -87,7 +88,15 @@ dir into a live DB; it preserves `journal` + `open_items` and has a timestamp cl
 
 **FTS5 external content tables**: `sections_fts`, `refs_fts`, `journal_fts` are external-content
 virtual tables. All three require INSERT + UPDATE + DELETE triggers to stay in sync with their
-base tables. Do not remove any trigger from `db.ts`.
+base tables (`journal_au` arrived with web journal editing in v2.1 — the journal is append-only
+over MCP but editable on the account page). Do not remove any trigger from `db.ts`; because
+`createSchema()` uses `CREATE TRIGGER IF NOT EXISTS` on every open, new triggers self-apply to
+existing per-user DBs.
+
+**Web edits mirror the MCP tool semantics**: the account editor enforces the same rules as the
+tools (`main` undeletable, open-item statuses open/done/dismissed) and adds an
+optimistic-concurrency token (`updated_at`) on section/reference saves so a browser save can
+never silently clobber a concurrent coaching-session write.
 
 **Seed idempotency**: `seedFromDirectory()` checks `COUNT(*) FROM sections` before seeding — safe
 to call on every start. Wrapped in a `db.transaction()` to prevent partial state.
