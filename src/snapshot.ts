@@ -8,8 +8,8 @@ export type SnapshotOptions = {
   seedOnly?: boolean;
 };
 
-type SectionRow = { name: string; content: string };
-type RefRow = { name: string; content: string };
+type SectionRow = { name: string; content: string; updated_at: string };
+type RefRow = { name: string; content: string; updated_at: string };
 type JournalRow = { entry: string; created_at: string };
 type OpenItemRow = {
   id: number;
@@ -59,22 +59,43 @@ export async function runSnapshot(opts: SnapshotOptions): Promise<string[]> {
   const db = new Database(dbPath, { readonly: true, fileMustExist: true });
   try {
     const written: string[] = [];
+    // Sidecar timestamp record. The .md files stay byte-identical to DB content (restore's
+    // "unchanged" detection depends on that), so the per-doc `updated_at` lives here instead of
+    // in per-file frontmatter. It lists exactly the docs whose files were emitted, letting
+    // `coaching-mcp-restore` refuse to overwrite a live doc that is newer than this seed.
+    const manifest: {
+      snapshot_at: string;
+      sections: Record<string, string>;
+      refs: Record<string, string>;
+    } = { snapshot_at: "", sections: {}, refs: {} };
+    manifest.snapshot_at = (
+      db.prepare("SELECT datetime('now') AS now").get() as { now: string }
+    ).now;
 
     const sections = db
-      .prepare("SELECT name, content FROM sections ORDER BY name")
+      .prepare("SELECT name, content, updated_at FROM sections ORDER BY name")
       .all() as SectionRow[];
     for (const s of sections) {
       if (s.name === "main") {
         written.push(writeContent(join(outDir, "SKILL.md"), s.content));
+        manifest.sections[s.name] = s.updated_at;
       } else if (!seedOnly) {
         written.push(writeContent(join(outDir, "sections", `${s.name}.md`), s.content));
+        manifest.sections[s.name] = s.updated_at;
       }
     }
 
-    const refs = db.prepare("SELECT name, content FROM refs ORDER BY name").all() as RefRow[];
+    const refs = db
+      .prepare("SELECT name, content, updated_at FROM refs ORDER BY name")
+      .all() as RefRow[];
     for (const r of refs) {
       written.push(writeContent(join(outDir, "references", `${r.name}.md`), r.content));
+      manifest.refs[r.name] = r.updated_at;
     }
+
+    written.push(
+      writeContent(join(outDir, "seed-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`),
+    );
 
     if (!seedOnly) {
       const journal = db

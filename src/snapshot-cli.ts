@@ -7,7 +7,10 @@ function usage(): void {
     "Usage: coaching-mcp-snapshot [outDir] [--db <path>] [--seed-only]\n" +
       "  outDir       output directory (default: ./snapshots)\n" +
       "  --db <path>  source SQLite file (default: $DATA_DIR/skill.db, else /data/skill.db)\n" +
-      "  --seed-only  emit only SKILL.md + references/*.md (seed files)\n",
+      "  --seed-only  emit only SKILL.md + references/*.md (seed files)\n" +
+      "\n" +
+      "Always writes seed-manifest.json (per-doc updated_at) so coaching-mcp-restore can\n" +
+      "refuse to overwrite a live doc that is newer than this seed.\n",
   );
 }
 

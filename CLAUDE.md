@@ -2,9 +2,15 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **Standalone package — keep it self-contained.** This repo must not reference any specific
+> deployment or sibling repo: no hostnames, no domains, no other repo names or paths, no external
+> `just`/CI recipes, no "the Raspberry Pi". That includes source, CLI output, tests, and this
+> CLAUDE.md. Describe behaviour in terms of this package's own tools/CLIs and use only **generic
+> examples**. Deployment-specific wiring belongs in the deployment repo, never here.
+
 ## What this repo is
 
-Personal coaching MCP server for Claude AI. Serves a `SKILL.md` knowledge base (goals, rules, athlete profile) plus reference documents and a session journal, all stored in SQLite+FTS5 and exposed as 7 MCP tools. Runs as the `coaching_mcp` Docker container on the Raspberry Pi, reachable at `mcp.ponyfreude.de/coaching/` via `coaching_oauth_proxy`.
+Coaching MCP server for Claude AI. Serves a `SKILL.md` knowledge base (goals, rules, athlete profile) plus reference documents and a session journal, all stored in SQLite+FTS5 and exposed as MCP tools. It runs as a Docker container reading its DB from a persistent volume; for remote MCP access it is typically fronted by an OAuth 2.0 proxy (configured by whatever deployment consumes this package).
 
 ## Commands
 
@@ -50,7 +56,9 @@ Seed data flow (first start only):
 
 After first seed, all writes go through the MCP tools. The `/seed` volume is read-only.
 
-`coaching-mcp-restore` (inverse of `coaching-mcp-snapshot`) upserts `sections`/`refs` from a seed dir into a live DB, so edited seed files reach an already-seeded DB; it preserves `journal` + `open_items`. It overwrites section/ref content from files — snapshot first if the live DB may have diverged. **Safe by default:** pass `--dry-run` to open the DB read-only and preview the exact `created`/`changed`/`unchanged` plan without writing anything (no transaction, no upsert, no `updated_at` bump). The Ansible deploy wrapper splits this so the everyday command can't clobber live edits: `just apply-coaching-content` runs the dry-run preview, `just apply-coaching-content-write` performs the write.
+`coaching-mcp-restore` (inverse of `coaching-mcp-snapshot`) upserts `sections`/`refs` from a seed dir into a live DB, so edited seed files reach an already-seeded DB; it preserves `journal` + `open_items`. It overwrites section/ref content from files — snapshot first if the live DB may have diverged. **Safe by default:** pass `--dry-run` to open the DB read-only and preview the exact `created`/`changed`/`unchanged`/`conflicts` plan without writing anything (no transaction, no upsert, no `updated_at` bump). Consuming tooling can split this into a preview step and a write step so an everyday command can't clobber live edits.
+
+**Clobber guard (v1.3.0):** `coaching-mcp-snapshot` writes a `seed-manifest.json` at the seed root recording each doc's `updated_at` (raw SQLite `datetime('now')` strings — fixed-width UTC, so string compare = chronological). The `.md` files stay byte-identical to DB `content` (restore's `unchanged` detection depends on that), so the timestamp lives in the sidecar, not per-file frontmatter. When a manifest is present, `coaching-mcp-restore` treats a content change as a **conflict** if the live `updated_at` is newer than the manifest's timestamp for that doc (or the manifest has no entry for it) — i.e. the seed is stale and would overwrite newer live content. A conflict **aborts the whole write** (exit 1, nothing written) unless `--force` is passed; `--dry-run` reports conflicts as `STALE SEED` warnings but still exits 0, so the preview doubles as a stale-seed drift detector. No manifest → legacy mode (guard off, warns). `created` docs (absent from live) always apply. The guard needs no DB schema change — `updated_at` already exists on `sections`/`refs`; only `updated_by` is intentionally not tracked (single-user system).
 
 ## MCP tools
 

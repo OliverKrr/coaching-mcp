@@ -22,7 +22,7 @@ async function main(): Promise<void> {
   log("database opened");
 
   log("registering tools…");
-  const server = new McpServer({ name: "coaching-mcp", version: "1.2.0" });
+  const server = new McpServer({ name: "coaching-mcp", version: "1.3.0" });
   registerReadTools(server, db);
   registerWriteTools(server, db);
   registerOpsTools(server, db);

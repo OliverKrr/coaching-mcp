@@ -33,6 +33,11 @@ function makeSeedDir(opts: {
   skill?: string;
   refs?: Record<string, string>;
   sections?: Record<string, string>;
+  manifest?: {
+    snapshot_at?: string;
+    sections?: Record<string, string>;
+    refs?: Record<string, string>;
+  };
 }): string {
   const dir = mkdtempSync(join(tmpdir(), "restore-seed-"));
   if (opts.skill !== undefined) writeFileSync(join(dir, "SKILL.md"), opts.skill, "utf8");
@@ -48,7 +53,26 @@ function makeSeedDir(opts: {
       writeFileSync(join(dir, "sections", `${name}.md`), content, "utf8");
     }
   }
+  if (opts.manifest) {
+    writeFileSync(
+      join(dir, "seed-manifest.json"),
+      JSON.stringify({
+        snapshot_at: "2026-01-01 00:00:00",
+        sections: {},
+        refs: {},
+        ...opts.manifest,
+      }),
+      "utf8",
+    );
+  }
   return dir;
+}
+
+/** Force a specific `updated_at` on a live doc so the timestamp guard is deterministic. */
+function setUpdatedAt(dbPath: string, table: "sections" | "refs", name: string, ts: string): void {
+  const db = new Database(dbPath);
+  db.prepare(`UPDATE ${table} SET updated_at = ? WHERE name = ?`).run(ts, name);
+  db.close();
 }
 
 describe("runRestore", () => {
@@ -226,5 +250,163 @@ describe("runRestore", () => {
     expect(result.changed).toContain("main");
 
     holder.close();
+  });
+
+  describe("clobber guard (seed-manifest.json)", () => {
+    it("blocks overwriting a doc whose live updated_at is newer than the seed manifest", () => {
+      const db = makeDb();
+      setUpdatedAt(db, "sections", "main", "2026-07-01 10:00:00"); // live edited after the seed
+      const seed = makeSeedDir({
+        skill: NEW_MAIN,
+        manifest: { sections: { main: "2026-06-01 10:00:00" } }, // seed captured earlier
+      });
+
+      const result = runRestore({ db, seedDir: seed });
+
+      expect(result.conflicts.map((c) => c.name)).toContain("main");
+      expect(result.wrote).toBe(false);
+      // Live content is untouched — nothing was written.
+      const verify = new Database(db, { readonly: true });
+      expect(
+        (
+          verify.prepare("SELECT content FROM sections WHERE name = 'main'").get() as {
+            content: string;
+          }
+        ).content,
+      ).toBe(ORIGINAL_MAIN);
+      verify.close();
+    });
+
+    it("--force overwrites a conflicting doc and reports it as forced", () => {
+      const db = makeDb();
+      setUpdatedAt(db, "sections", "main", "2026-07-01 10:00:00");
+      const seed = makeSeedDir({
+        skill: NEW_MAIN,
+        manifest: { sections: { main: "2026-06-01 10:00:00" } },
+      });
+
+      const result = runRestore({ db, seedDir: seed, force: true });
+
+      expect(result.wrote).toBe(true);
+      expect(result.forced).toBe(true);
+      const verify = new Database(db, { readonly: true });
+      expect(
+        (
+          verify.prepare("SELECT content FROM sections WHERE name = 'main'").get() as {
+            content: string;
+          }
+        ).content,
+      ).toBe(NEW_MAIN);
+      verify.close();
+    });
+
+    it("applies a content change when live updated_at is not newer than the seed manifest", () => {
+      const db = makeDb();
+      setUpdatedAt(db, "sections", "main", "2026-06-01 10:00:00"); // live older than the seed
+      const seed = makeSeedDir({
+        skill: NEW_MAIN,
+        manifest: { sections: { main: "2026-07-01 10:00:00" } }, // seed newer → legit push
+      });
+
+      const result = runRestore({ db, seedDir: seed });
+
+      expect(result.changed).toContain("main");
+      expect(result.conflicts).toHaveLength(0);
+      expect(result.wrote).toBe(true);
+      const verify = new Database(db, { readonly: true });
+      expect(
+        (
+          verify.prepare("SELECT content FROM sections WHERE name = 'main'").get() as {
+            content: string;
+          }
+        ).content,
+      ).toBe(NEW_MAIN);
+      verify.close();
+    });
+
+    it("applies a created doc even when a manifest is present without an entry for it", () => {
+      const db = makeDb();
+      const seed = makeSeedDir({
+        skill: ORIGINAL_MAIN,
+        refs: { squat: "Squat cues", deadlift: "brand new" }, // deadlift absent from live
+        manifest: {
+          sections: { main: "2026-06-01 10:00:00" },
+          refs: { squat: "2026-06-01 10:00:00" },
+        },
+      });
+
+      const result = runRestore({ db, seedDir: seed });
+
+      expect(result.created).toContain("deadlift");
+      expect(result.conflicts).toHaveLength(0);
+      expect(result.wrote).toBe(true);
+    });
+
+    it("treats a to-be-overwritten doc missing from the manifest as a conflict", () => {
+      const db = makeDb();
+      const seed = makeSeedDir({
+        skill: ORIGINAL_MAIN,
+        refs: { squat: "Squat cues CHANGED" }, // squat exists in live and content differs
+        manifest: { sections: { main: "2026-06-01 10:00:00" }, refs: {} }, // no entry for squat
+      });
+
+      const result = runRestore({ db, seedDir: seed });
+
+      expect(result.conflicts.map((c) => c.name)).toContain("squat");
+      expect(result.conflicts.find((c) => c.name === "squat")?.seedUpdatedAt).toBeNull();
+      expect(result.wrote).toBe(false);
+    });
+
+    it("no manifest file → legacy mode: content changes apply and no conflicts are raised", () => {
+      const db = makeDb();
+      setUpdatedAt(db, "sections", "main", "2026-07-01 10:00:00"); // even if 'newer', legacy ignores it
+      const seed = makeSeedDir({ skill: NEW_MAIN }); // no manifest
+
+      const result = runRestore({ db, seedDir: seed });
+
+      expect(result.conflicts).toHaveLength(0);
+      expect(result.changed).toContain("main");
+      expect(result.wrote).toBe(true);
+      const verify = new Database(db, { readonly: true });
+      expect(
+        (
+          verify.prepare("SELECT content FROM sections WHERE name = 'main'").get() as {
+            content: string;
+          }
+        ).content,
+      ).toBe(NEW_MAIN);
+      verify.close();
+    });
+
+    it("dry-run reports conflicts but writes nothing", () => {
+      const db = makeDb();
+      setUpdatedAt(db, "sections", "main", "2026-07-01 10:00:00");
+      const seed = makeSeedDir({
+        skill: NEW_MAIN,
+        manifest: { sections: { main: "2026-06-01 10:00:00" } },
+      });
+
+      const result = runRestore({ db, seedDir: seed, dryRun: true });
+
+      expect(result.conflicts.map((c) => c.name)).toContain("main");
+      expect(result.wrote).toBe(false);
+      const verify = new Database(db, { readonly: true });
+      expect(
+        (
+          verify.prepare("SELECT content FROM sections WHERE name = 'main'").get() as {
+            content: string;
+          }
+        ).content,
+      ).toBe(ORIGINAL_MAIN);
+      verify.close();
+    });
+
+    it("throws on a present-but-unparseable manifest instead of silently disabling the guard", () => {
+      const db = makeDb();
+      const seed = makeSeedDir({ skill: NEW_MAIN });
+      writeFileSync(join(seed, "seed-manifest.json"), "{ not valid json", "utf8");
+
+      expect(() => runRestore({ db, seedDir: seed })).toThrow(/manifest/i);
+    });
   });
 });

@@ -81,4 +81,41 @@ describe("runSnapshot", () => {
       /not found/,
     );
   });
+
+  it("writes seed-manifest.json mapping each emitted doc to its live updated_at (seed-only)", async () => {
+    const src = makeSourceDb();
+    const before = new Database(src, { readonly: true });
+    const mainUpdated = (
+      before.prepare("SELECT updated_at FROM sections WHERE name = 'main'").get() as {
+        updated_at: string;
+      }
+    ).updated_at;
+    const squatUpdated = (
+      before.prepare("SELECT updated_at FROM refs WHERE name = 'squat'").get() as {
+        updated_at: string;
+      }
+    ).updated_at;
+    before.close();
+
+    const out = mkdtempSync(join(tmpdir(), "snap-manifest-"));
+    await runSnapshot({ db: src, outDir: out, seedOnly: true });
+
+    const manifest = JSON.parse(readFileSync(join(out, "seed-manifest.json"), "utf8"));
+    expect(manifest.sections.main).toBe(mainUpdated);
+    expect(manifest.refs.squat).toBe(squatUpdated);
+    expect(typeof manifest.snapshot_at).toBe("string");
+    // seed-only omits non-main sections from both the files and the manifest
+    expect(manifest.sections.nutrition).toBeUndefined();
+  });
+
+  it("full-mode manifest includes non-main sections too", async () => {
+    const src = makeSourceDb();
+    const out = mkdtempSync(join(tmpdir(), "snap-manifest-full-"));
+    await runSnapshot({ db: src, outDir: out });
+
+    const manifest = JSON.parse(readFileSync(join(out, "seed-manifest.json"), "utf8"));
+    expect(manifest.sections.main).toBeDefined();
+    expect(manifest.sections.nutrition).toBeDefined();
+    expect(manifest.refs.squat).toBeDefined();
+  });
 });
