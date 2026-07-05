@@ -259,6 +259,7 @@ ${apps.map((a) => `<p><a href="${base}/apps/${a.name}/">${htmlEscape(a.name)}</a
 <tr><th>Reference documents</th><td>${count("SELECT COUNT(*) AS n FROM refs")}</td></tr>
 <tr><th>Journal entries</th><td>${count("SELECT COUNT(*) AS n FROM journal")}</td></tr>
 <tr><th>Open items</th><td>${count("SELECT COUNT(*) AS n FROM open_items WHERE status = 'open'")}</td></tr>
+<tr><th>Routines</th><td>${count("SELECT COUNT(*) AS n FROM routines")}</td></tr>
 <tr><th>Database size</th><td>${dbSizeKb} KB</td></tr>
 </table>
 <p><a href="${base}/account/data"><button>View &amp; edit your data</button></a></p>

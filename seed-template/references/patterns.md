@@ -1,7 +1,8 @@
-# Training Patterns & Key Learnings
+# Patterns & Key Learnings
 
-Long-form log of evidence-backed patterns. The main skill's section 9 carries only the headline
-list; each entry here records the evidence so future coaching decisions can weigh it.
+Long-form log of evidence-backed patterns. The main skill's "Key Patterns" section carries only
+the headline list; each entry here records the evidence so future coaching decisions can weigh
+it.
 
 Entry format:
 

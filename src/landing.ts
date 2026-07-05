@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ServeContext } from "./context.js";
 import { htmlEscape, page, sendHtml } from "./http-util.js";
-import { ROUTINE_TEMPLATES } from "./routine-templates.js";
+import { allRoutineTemplates } from "./topics.js";
 
 /**
  * Public landing page = the setup guide new users need to get from "invited"
@@ -31,7 +31,7 @@ export function renderLanding(
 
   const projectInstructions =
     lang === "de"
-      ? `Du bist mein persönlicher Ausdauer-Coach. Dein gesamtes Coaching-Wissen liegt im
+      ? `Du bist mein persönlicher Coach. Dein gesamtes Coaching-Wissen liegt im
 Coaching-MCP-Connector — nicht in diesem Prompt.
 
 Zu Beginn JEDER Session — nicht verhandelbar:
@@ -42,7 +42,7 @@ Zu Beginn JEDER Session — nicht verhandelbar:
 
 Datums-Anker: Nimm niemals ein Datum an. Bestätige das heutige Datum (frag mich zur Not), bevor
 du irgendetwas planst, und nenne bei Wochenplänen jeden Tag mit Kalenderdatum.`
-      : `You are my personal endurance coach. All of your coaching knowledge lives in the coaching
+      : `You are my personal coach. All of your coaching knowledge lives in the coaching
 MCP connector — not in this prompt.
 
 At the start of EVERY session — non-negotiable:
@@ -102,7 +102,11 @@ and name every day with its calendar date in weekly plans.`;
   );
 }
 
-/** /routines — the scheduled-task templates, ready to copy, in the page language. */
+/**
+ * /routines — how scheduled check-ins work, plus the topic packs' templates
+ * (English masters) as reference material. A user's own routines — designed in
+ * conversation, in their language — live on their account page.
+ */
 export function renderRoutines(
   ctx: ServeContext,
   req: IncomingMessage,
@@ -113,14 +117,16 @@ export function renderRoutines(
   const lang = pickLang(req, url);
   const t = lang === "de" ? DE : EN;
 
-  const cards = ROUTINE_TEMPLATES.map(
-    (r) => `<div class="card">
-<details${r.id === "weekly-review" ? " open" : ""}>
-<summary style="cursor:pointer"><strong>${htmlEscape(r.title[lang])}</strong> — <span class="muted">${htmlEscape(r.cadence[lang])}</span></summary>
-<pre style="white-space:pre-wrap;background:#f6f6f6;padding:.75rem;border-radius:6px;font-size:.82rem">${htmlEscape(r.prompt[lang])}</pre>
+  const cards = allRoutineTemplates(ctx.cfg.seedDir)
+    .map(
+      (r) => `<div class="card">
+<details>
+<summary style="cursor:pointer"><strong>${htmlEscape(r.title)}</strong> <span class="muted">(${htmlEscape(r.packId)})</span> — <span class="muted">${htmlEscape(r.cadence)}</span></summary>
+<pre style="white-space:pre-wrap;background:#f6f6f6;padding:.75rem;border-radius:6px;font-size:.82rem">${htmlEscape(r.body)}</pre>
 </details>
 </div>`,
-  ).join("\n");
+    )
+    .join("\n");
 
   sendHtml(
     res,
@@ -136,8 +142,10 @@ export function renderRoutines(
 <li>${t.routinesStep2}</li>
 <li>${t.routinesStep3}</li>
 </ol>
-${cards}
-<p class="muted">${t.routinesFooter}</p>`,
+<p class="muted">${t.routinesFooter}</p>
+<h2>${t.routinesTemplatesTitle}</h2>
+<p class="muted">${t.routinesTemplatesIntro}</p>
+${cards || `<p class="muted">${t.routinesNoTemplates}</p>`}`,
     ),
   );
 }
@@ -145,7 +153,7 @@ ${cards}
 const EN = {
   title: "Your AI coaching hub",
   intro:
-    "A personal endurance-coaching memory for Claude: your goals, zones, plans, journal, and open items — private, per person, editable by you. Access is by invitation.",
+    "A personal coaching memory for Claude — training, nutrition, or any life topic you pick: your goals, plans, journal, and open items — private, per person, editable by you. Access is by invitation.",
   setupTitle: "Set up in five steps",
   step1:
     "<strong>Get invited.</strong> Ask the operator of this server to add your Google e-mail address to the invitation list.",
@@ -156,7 +164,7 @@ const EN = {
   step4:
     "<strong>Create a Claude Project</strong> called e.g. “Coaching” and paste the project instructions below into its instructions field. (Optional, but it makes every conversation start correctly.)",
   step5:
-    "<strong>Start your first conversation</strong> in that project. The coach will interview you — language, goals, background, schedule, injuries — and build your personal coaching knowledge base from it. Just answer; nothing to configure.",
+    "<strong>Start your first conversation</strong> in that project. The coach will interview you — language, goals, and which topics you want coaching on (training, nutrition, or anything else) — and build your personal coaching knowledge base from it. Just answer; nothing to configure.",
   projectTitle: "Project instructions (copy & paste)",
   projectIntro: "Paste this into your Claude project's instructions and adapt freely:",
   optionalTitle: "Optional integrations — more data, better coaching",
@@ -166,16 +174,21 @@ const EN = {
     "<strong>Strength logging (Hevy):</strong> connect your own Hevy account on the account page (Integrations — requires Hevy Pro) and the coach can read your workouts and manage routines directly.",
   routinesTitle: "Automatic check-ins (optional)",
   routinesBody:
-    "Let the coach come to you: a weekly review, an evening briefing, a morning readiness check — as scheduled tasks in your own Claude account. Ready-to-copy templates:",
+    "Let the coach come to you: a weekly review, a meal-planning check-in, a morning readiness check — as scheduled tasks in your own Claude account. How it works:",
   routinesIntro:
-    "These run as scheduled tasks in YOUR Claude account — the coaching server never starts conversations itself. Setup per routine:",
-  routinesStep1: "In Claude, create a scheduled task with the cadence shown on the template.",
+    "Routines run as scheduled tasks in YOUR Claude account — the coaching server never starts conversations itself. Setting one up:",
+  routinesStep1:
+    "<strong>Design it with your coach.</strong> In a normal conversation, say what you want (e.g. “a weekly check-in for my meal planning”). The coach designs the prompt with you — in your language, around your goal and timeframe — and stores it under Account → Routines.",
   routinesStep2:
-    "Copy the template below as the task prompt and fill the [placeholders]; if you have no fitness-data connector, delete those steps — the routine degrades gracefully.",
+    "<strong>Schedule it in Claude.</strong> Create a scheduled task with the routine's cadence and paste the stored prompt (from the chat or from your account page).",
   routinesStep3:
-    "Done — output (pushes, journal entries) automatically arrives in your preferred coaching language.",
+    "<strong>Adjust anytime.</strong> Ask the coach to revise or retire a routine, then update the scheduled task with the new prompt.",
   routinesFooter:
-    "The weekly review writes the check-in of record, the evening preview briefs tomorrow's quality session, the morning check raises readiness flags only — no overlaps.",
+    "Routines never ask questions, stay silent when there is nothing actionable, and each has a goal and a review point — no notification noise.",
+  routinesTemplatesTitle: "Templates the coach draws from",
+  routinesTemplatesIntro:
+    "English masters from the topic packs — your own routine is generated in your preferred language and tailored to you:",
+  routinesNoTemplates: "No templates available on this server.",
   backToGuide: "← Back to the setup guide",
   dataTitle: "Your data",
   dataBody:
@@ -186,7 +199,7 @@ const EN = {
 const DE: typeof EN = {
   title: "Dein KI-Coaching-Hub",
   intro:
-    "Ein persönliches Ausdauer-Coaching-Gedächtnis für Claude: deine Ziele, Zonen, Pläne, dein Trainingstagebuch und offene Punkte — privat, pro Person, von dir selbst editierbar. Zugang nur auf Einladung.",
+    "Ein persönliches Coaching-Gedächtnis für Claude — Training, Ernährung oder jedes andere Lebensthema deiner Wahl: deine Ziele, Pläne, dein Journal und offene Punkte — privat, pro Person, von dir selbst editierbar. Zugang nur auf Einladung.",
   setupTitle: "Einrichtung in fünf Schritten",
   step1:
     "<strong>Einladen lassen.</strong> Bitte den Betreiber dieses Servers, deine Google-E-Mail-Adresse auf die Einladungsliste zu setzen.",
@@ -197,7 +210,7 @@ const DE: typeof EN = {
   step4:
     "<strong>Claude-Projekt anlegen</strong>, z. B. „Coaching“, und die Projekt-Anweisungen unten in das Anweisungsfeld einfügen. (Optional, sorgt aber dafür, dass jede Unterhaltung richtig startet.)",
   step5:
-    "<strong>Erste Unterhaltung starten</strong> in diesem Projekt. Der Coach interviewt dich — Sprache, Ziele, Vorgeschichte, Zeitbudget, Verletzungen — und baut daraus deine persönliche Coaching-Wissensbasis auf. Einfach antworten; nichts zu konfigurieren.",
+    "<strong>Erste Unterhaltung starten</strong> in diesem Projekt. Der Coach interviewt dich — Sprache, Ziele und welche Themen du gecoacht haben willst (Training, Ernährung oder etwas ganz anderes) — und baut daraus deine persönliche Coaching-Wissensbasis auf. Einfach antworten; nichts zu konfigurieren.",
   projectTitle: "Projekt-Anweisungen (kopieren & einfügen)",
   projectIntro: "Füge das in die Anweisungen deines Claude-Projekts ein und passe es frei an:",
   optionalTitle: "Optionale Integrationen — mehr Daten, besseres Coaching",
@@ -207,17 +220,21 @@ const DE: typeof EN = {
     "<strong>Krafttraining (Hevy):</strong> verbinde dein eigenes Hevy-Konto auf der Account-Seite (Integrationen — erfordert Hevy Pro), dann kann der Coach deine Workouts lesen und Routinen direkt verwalten.",
   routinesTitle: "Automatische Check-ins (optional)",
   routinesBody:
-    "Lass den Coach auf dich zukommen: Weekly Review, Abend-Briefing, Morgen-Readiness-Check — als geplante Aufgaben in deinem eigenen Claude-Konto. Fertige Vorlagen zum Kopieren:",
+    "Lass den Coach auf dich zukommen: Weekly Review, Meal-Planning-Check-in, Morgen-Readiness-Check — als geplante Aufgaben in deinem eigenen Claude-Konto. So funktioniert es:",
   routinesIntro:
-    "Diese laufen als geplante Aufgaben in DEINEM Claude-Konto — der Coaching-Server startet nie selbst Unterhaltungen. Einrichtung pro Routine:",
+    "Routinen laufen als geplante Aufgaben in DEINEM Claude-Konto — der Coaching-Server startet nie selbst Unterhaltungen. Einrichtung:",
   routinesStep1:
-    "In Claude eine geplante Aufgabe mit dem auf der Vorlage angegebenen Rhythmus anlegen.",
+    "<strong>Mit dem Coach entwerfen.</strong> Sag in einer normalen Unterhaltung, was du willst (z. B. „einen wöchentlichen Check-in für meine Essensplanung“). Der Coach entwirft den Prompt mit dir — in deiner Sprache, um dein Ziel und deinen Zeitrahmen herum — und speichert ihn unter Account → Routines.",
   routinesStep2:
-    "Die Vorlage unten als Aufgaben-Prompt kopieren und die [Platzhalter] ausfüllen; ohne Fitness-Daten-Connector die betreffenden Schritte einfach löschen — die Routine funktioniert auch ohne.",
+    "<strong>In Claude planen.</strong> Eine geplante Aufgabe mit dem Rhythmus der Routine anlegen und den gespeicherten Prompt einfügen (aus dem Chat oder von deiner Account-Seite).",
   routinesStep3:
-    "Fertig — die Ausgaben (Pushes, Journaleinträge) kommen automatisch in deiner bevorzugten Coaching-Sprache.",
+    "<strong>Jederzeit anpassen.</strong> Bitte den Coach, eine Routine zu überarbeiten oder stillzulegen, und aktualisiere dann die geplante Aufgabe mit dem neuen Prompt.",
   routinesFooter:
-    "Der Weekly Review schreibt den offiziellen Check-in, das Abend-Preview brieft die morgige Quality-Session, der Morgen-Check meldet nur Readiness-Flags — keine Überschneidungen.",
+    "Routinen stellen keine Fragen, bleiben still, wenn es nichts Handlungsrelevantes gibt, und haben je ein Ziel und einen Review-Punkt — kein Benachrichtigungslärm.",
+  routinesTemplatesTitle: "Vorlagen, aus denen der Coach schöpft",
+  routinesTemplatesIntro:
+    "Englische Master-Vorlagen aus den Themen-Packs — deine eigene Routine wird in deiner bevorzugten Sprache erstellt und auf dich zugeschnitten:",
+  routinesNoTemplates: "Auf diesem Server sind keine Vorlagen verfügbar.",
   backToGuide: "← Zurück zur Einrichtungs-Anleitung",
   dataTitle: "Deine Daten",
   dataBody:

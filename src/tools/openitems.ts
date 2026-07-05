@@ -9,7 +9,7 @@ export function registerOpenItemsTools(server: McpServer, db: Database.Database)
     "add_open_item",
     {
       description:
-        "Record a coaching commitment (Oliver's if-then next action) or a flag (something to surface). " +
+        "Record a coaching commitment (the user's if-then next action) or a flag (something to surface). " +
         "Set `dedup_key` for flags so a recurring condition isn't raised twice — if an OPEN item with that " +
         "key exists, this is a no-op and returns the existing id. Call at session close (commitments) or " +
         "from routines (flags).",

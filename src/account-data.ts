@@ -7,7 +7,9 @@ import { renderMarkdown } from "./markdown.js";
 /**
  * Browse & edit area under /account/data: every document the server stores
  * about the signed-in user — sections, references, journal entries, open
- * items — viewable and editable in the browser, without a coaching session.
+ * items, routines — viewable and editable in the browser, without a coaching
+ * session. The routines view doubles as the copy source for pasting a stored
+ * prompt into a Claude scheduled task.
  *
  * Server-rendered like the rest of the account surface. Content is shown in
  * textareas/<pre> (it is markdown authored for an LLM — no HTML rendering, no
@@ -29,6 +31,15 @@ type ItemRow = {
   relevant_date: string | null;
   created_at: string;
 };
+type RoutineRow = {
+  name: string;
+  cadence: string;
+  prompt: string;
+  status: string;
+  updated_at: string;
+};
+
+const ROUTINE_STATUSES = ["active", "paused", "retired"];
 
 const JOURNAL_PAGE_SIZE = 20;
 
@@ -86,6 +97,15 @@ export function handleDataGet(
     case "/account/data/open-items/edit":
       renderOpenItemEditor(ctx, res, auth, url);
       return true;
+    case "/account/data/routines":
+      renderRoutines(ctx, res, auth);
+      return true;
+    case "/account/data/routines/edit":
+      renderRoutineEditor(ctx, res, auth, url);
+      return true;
+    case "/account/data/routines/new":
+      renderRoutineEditor(ctx, res, auth, url, { isNew: true });
+      return true;
     default:
       return false;
   }
@@ -117,6 +137,7 @@ function renderOverview(ctx: ServeContext, res: ServerResponse, auth: WebAuth): 
     }
   ).n;
   const itemCount = (db.prepare("SELECT COUNT(*) AS n FROM open_items").get() as { n: number }).n;
+  const routineCount = (db.prepare("SELECT COUNT(*) AS n FROM routines").get() as { n: number }).n;
 
   sendHtml(
     res,
@@ -128,7 +149,8 @@ function renderOverview(ctx: ServeContext, res: ServerResponse, auth: WebAuth): 
 <div class="card"><h2>Knowledge sections</h2><p class="muted"><code>main</code> is your SKILL.md — the primary coaching context.</p>${docTable("section")}</div>
 <div class="card"><h2>Reference documents</h2>${docTable("reference")}</div>
 <div class="card"><h2>Journal</h2><p>${journalCount} entries — <a href="${base}/account/data/journal">browse &amp; edit</a></p></div>
-<div class="card"><h2>Open items</h2><p>${openCount} open of ${itemCount} total — <a href="${base}/account/data/open-items">manage</a></p></div>`,
+<div class="card"><h2>Open items</h2><p>${openCount} open of ${itemCount} total — <a href="${base}/account/data/open-items">manage</a></p></div>
+<div class="card"><h2>Routines</h2><p>${routineCount} stored — <a href="${base}/account/data/routines">view &amp; copy</a></p><p class="muted">Check-in prompts designed with your coach; copy them into scheduled tasks in your Claude account.</p></div>`,
     ),
   );
 }
@@ -384,6 +406,101 @@ function renderOpenItemEditor(
   );
 }
 
+function renderRoutines(ctx: ServeContext, res: ServerResponse, auth: WebAuth): void {
+  const base = ctx.cfg.publicUrl;
+  const db = ctx.tenants.open(auth.userId);
+  const rows = db
+    .prepare(
+      "SELECT name, cadence, prompt, status, updated_at FROM routines ORDER BY (status != 'active'), name",
+    )
+    .all() as RoutineRow[];
+  const body = rows
+    .map(
+      (r) =>
+        `<div class="card"><p><strong>${htmlEscape(r.name)}</strong> <span class="muted">[${htmlEscape(r.status)}] · ${htmlEscape(r.cadence)}</span> — <a href="${base}/account/data/routines/edit?name=${encodeURIComponent(r.name)}">open</a></p></div>`,
+    )
+    .join("\n");
+  sendHtml(
+    res,
+    200,
+    page(
+      "Routines",
+      `${backBar(base)}
+<h1>Routines</h1>
+<p class="muted">Check-in prompts designed with your coach. To run one, copy its prompt into a scheduled task in your own Claude account with the cadence shown — the server never starts conversations itself.</p>
+${body || '<p class="muted">No routines yet — ask your coach for a check-in routine and it will design one with you.</p>'}
+<p><a href="${base}/account/data/routines/new"><button>New routine</button></a></p>`,
+    ),
+  );
+}
+
+function renderRoutineEditor(
+  ctx: ServeContext,
+  res: ServerResponse,
+  auth: WebAuth,
+  url: URL,
+  { isNew = false }: { isNew?: boolean } = {},
+): void {
+  const base = ctx.cfg.publicUrl;
+  const db = ctx.tenants.open(auth.userId);
+  const csrf = htmlEscape(auth.csrf);
+
+  let row: RoutineRow | undefined;
+  if (!isNew) {
+    const name = url.searchParams.get("name") ?? "";
+    row = db
+      .prepare("SELECT name, cadence, prompt, status, updated_at FROM routines WHERE name = ?")
+      .get(name) as RoutineRow | undefined;
+    if (!row) {
+      errorPage(
+        res,
+        404,
+        "Not found",
+        `<p>No routine named <code>${htmlEscape(name)}</code>.</p>${backBar(base, "Routines", "/account/data/routines")}`,
+      );
+      return;
+    }
+  }
+
+  const saved = url.searchParams.get("saved") === "1";
+  const nameField = row
+    ? `<input type="hidden" name="name" value="${htmlEscape(row.name)}"><code>${htmlEscape(row.name)}</code>`
+    : `<input type="text" name="name" placeholder="name (e.g. weekly-review)" required>`;
+  const statusOption = (s: string): string =>
+    `<option value="${s}"${(row?.status ?? "active") === s ? " selected" : ""}>${s}</option>`;
+  const deleteForm = row
+    ? `<form method="post" action="${base}/account/data/routines/delete">
+<input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="name" value="${htmlEscape(row.name)}">
+<button class="danger">Delete this routine</button></form>`
+    : "";
+
+  sendHtml(
+    res,
+    200,
+    page(
+      row ? `routine: ${row.name}` : "New routine",
+      `${backBar(base, "Routines", "/account/data/routines")}
+<h1>${row ? `routine: ${htmlEscape(row.name)}` : "New routine"}</h1>
+${saved ? '<p class="muted">✓ Saved. To apply the change, update the matching scheduled task in your Claude account.</p>' : ""}
+${row ? `<p class="muted">Last updated ${htmlEscape(row.updated_at)} UTC · status <strong>${htmlEscape(row.status)}</strong> · cadence ${htmlEscape(row.cadence)}</p>` : ""}
+<p class="muted">Select the prompt below and copy it into a Claude scheduled task with this cadence.</p>
+<form method="post" action="${base}/account/data/routines/save">
+<input type="hidden" name="csrf" value="${csrf}">
+<input type="hidden" name="expected_updated_at" value="${htmlEscape(row?.updated_at ?? "")}">
+<p>${nameField}</p>
+<p><label>Cadence: <input type="text" name="cadence" value="${htmlEscape(row?.cadence ?? "")}" placeholder="e.g. weekly, Sunday ~19:00" required></label></p>
+<p><label>Status:
+<select name="status">${ROUTINE_STATUSES.map(statusOption).join("")}</select></label>
+<span class="muted">active = scheduled in Claude; paused/retired = not.</span></p>
+<textarea name="prompt" class="editor">${htmlEscape(row?.prompt ?? "")}</textarea>
+<p><button>Save</button></p>
+</form>
+${deleteForm}`,
+      { wide: true },
+    ),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // POST routes (session + CSRF already verified by the account router)
 
@@ -412,6 +529,12 @@ export function handleDataPost(
       return true;
     case "/account/data/open-items/delete":
       deleteOpenItem(ctx, res, auth, form);
+      return true;
+    case "/account/data/routines/save":
+      saveRoutine(ctx, res, auth, form);
+      return true;
+    case "/account/data/routines/delete":
+      deleteRoutine(ctx, res, auth, form);
       return true;
     default:
       return false;
@@ -564,4 +687,72 @@ function deleteOpenItem(
   const db = ctx.tenants.open(auth.userId);
   db.prepare("DELETE FROM open_items WHERE id = ?").run(Number(form.get("id")));
   redirect(res, `${ctx.cfg.publicUrl}/account/data/open-items`);
+}
+
+function saveRoutine(
+  ctx: ServeContext,
+  res: ServerResponse,
+  auth: WebAuth,
+  form: URLSearchParams,
+): void {
+  const base = ctx.cfg.publicUrl;
+  const name = form.get("name") ?? "";
+  const cadence = (form.get("cadence") ?? "").trim();
+  const prompt = form.get("prompt") ?? "";
+  const status = form.get("status") ?? "";
+  const expected = form.get("expected_updated_at") ?? "";
+  if (!isValidDocName(name) || cadence === "" || !ROUTINE_STATUSES.includes(status)) {
+    errorPage(res, 400, "Invalid request", "<p>Invalid routine name, cadence, or status.</p>");
+    return;
+  }
+  const db = ctx.tenants.open(auth.userId);
+
+  if (expected === "") {
+    // create: refuse to clobber an existing routine of the same name
+    try {
+      db.prepare("INSERT INTO routines (name, cadence, prompt, status) VALUES (?, ?, ?, ?)").run(
+        name,
+        cadence,
+        prompt,
+        status,
+      );
+    } catch {
+      errorPage(
+        res,
+        409,
+        "Name already exists",
+        `<p>A routine named <code>${htmlEscape(name)}</code> already exists. <a href="${base}/account/data/routines/edit?name=${encodeURIComponent(name)}">Open it</a> to edit.</p>`,
+      );
+      return;
+    }
+  } else {
+    // update, guarded against a concurrent edit (e.g. from a coaching session)
+    const result = db
+      .prepare(
+        "UPDATE routines SET cadence = ?, prompt = ?, status = ?, updated_at = datetime('now') WHERE name = ? AND updated_at = ?",
+      )
+      .run(cadence, prompt, status, name, expected);
+    if (result.changes === 0) {
+      errorPage(
+        res,
+        409,
+        "Edit conflict",
+        `<p>This routine changed since you opened it — most likely a coaching session updated it. Your edit was <strong>not</strong> saved.</p>
+<p><a href="${base}/account/data/routines/edit?name=${encodeURIComponent(name)}">Reload the current version</a> and re-apply your change.</p>`,
+      );
+      return;
+    }
+  }
+  redirect(res, `${base}/account/data/routines/edit?name=${encodeURIComponent(name)}&saved=1`);
+}
+
+function deleteRoutine(
+  ctx: ServeContext,
+  res: ServerResponse,
+  auth: WebAuth,
+  form: URLSearchParams,
+): void {
+  const db = ctx.tenants.open(auth.userId);
+  db.prepare("DELETE FROM routines WHERE name = ?").run(form.get("name") ?? "");
+  redirect(res, `${ctx.cfg.publicUrl}/account/data/routines`);
 }

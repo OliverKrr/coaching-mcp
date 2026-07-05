@@ -28,7 +28,7 @@ export function registerWriteTools(server: McpServer, db: Database.Database): vo
     "update_reference",
     {
       description:
-        "Update or create a coaching reference document (e.g. zones, strength, workout-construction, patterns, lifestyle).",
+        "Update or create a coaching reference document (core ones like patterns/lifestyle, or topic references like zones or recipes).",
       inputSchema: {
         name: z.string().min(1).describe("Reference name without .md extension"),
         content: z.string().min(1).describe("Full replacement content"),

@@ -1,33 +1,34 @@
-# Scheduled routine templates
+# Scheduled routines
 
-Coaching gets much stronger when Claude doesn't only respond but also _checks in_: a weekly
-review, an evening briefing for tomorrow's session, a morning readiness check. These run as
-**scheduled tasks in each user's own Claude account** — the coaching server is passive and never
-initiates a conversation, so routines are per-user by construction: every athlete schedules their
-own, against their own coaching database.
+Coaching gets much stronger when the assistant doesn't only respond but also _checks in_: a
+weekly review, a meal-planning check-in, a morning readiness check. These run as **scheduled
+tasks in each user's own Claude account** — the coaching server is passive and never initiates a
+conversation, so routines are per-user by construction.
 
-**The templates live in `src/routine-templates.ts`** (single source of truth, English and German)
-and are served ready-to-copy on the server's **`/routines` page** (`<PUBLIC_URL>/routines`,
-bilingual via `?lang=de|en` / Accept-Language, linked from the landing-page setup guide). Point
-users there rather than at this repo.
+## The model (v3)
 
-## Conventions shared by all three templates
+Routines are **per-user documents** stored in the coaching database:
 
-- **Language:** the template _prompt_ exists in English and German; the routine's _output_
-  (pushes, journal entries, summaries) is always written in the athlete's preferred language as
-  recorded in the coaching context, regardless of prompt language.
-- **Unattended:** routines never ask questions. If required data is missing, they degrade or stay
-  silent rather than guess.
-- **Transient-outage guard:** coaching-server calls are retried 2–3× before giving up; a routine
-  never half-produces output.
-- **Division of labour:** the weekly review writes the check-in of record; the evening preview
-  briefs tomorrow's quality session; the morning check raises readiness _flags only_. No
-  double-briefing, no duplicate flags (`dedup_key`).
-- **No fitness connector?** The data-pull steps are marked as `[placeholders]` — users without
-  one delete those steps; the routines still work from the journal and open items.
+1. **Design** — the user asks their coach for recurring support in a normal session. The
+   assistant loads the `routine-design` seed reference (best practices: goal + timeframe,
+   cadence tiers, silence-by-default, lifecycle/retirement) and designs the prompt with the
+   user, in the user's preferred language.
+2. **Store** — `save_routine(name, cadence, prompt, status)`. Listed/edited via
+   `list_routines`/`get_routine`, on the account page (`/account/data/routines`), and included
+   in the data export.
+3. **Schedule** — the user copies the stored prompt into a Claude scheduled task (from the chat
+   or the account page). Scheduled tasks cannot be created programmatically from a connector,
+   so this copy step is deliberate. `status` tracks the bookkeeping: `active` = scheduled,
+   `paused`/`retired` = not.
+4. **Iterate** — adjust = revise + re-save + re-paste; retire = status change + user deletes
+   the scheduled task.
 
-| Template                    | Cadence                                                            |
-| --------------------------- | ------------------------------------------------------------------ |
-| Weekly Review               | weekly, e.g. Sunday evening                                        |
-| Evening Pre-Session Preview | daily, e.g. ~20:30 (push only when tomorrow has a quality session) |
-| Daily Readiness             | daily, shortly after overnight wearable data lands                 |
+**Templates** are raw material behind the MCP: each topic pack ships English master templates
+under `seed-template/topics/<id>/routines/*.md` (`# Title` + `Cadence:` line + prompt body).
+They carry the shared conventions — unattended (never ask questions), transient-outage guard,
+dedup keys via open items, division of labor between routines, insights-first output, one push =
+one action. The assistant tailors and translates them at instantiation time; there are no
+per-language template copies.
+
+The server's `/routines` page explains this flow to users and renders the pack templates as
+reference material.

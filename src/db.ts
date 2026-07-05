@@ -16,6 +16,15 @@ export type OpenItem = {
   created_at: string;
   updated_at: string;
 };
+export type Routine = {
+  name: string;
+  cadence: string;
+  prompt: string;
+  status: "active" | "paused" | "retired";
+  created_at: string;
+  updated_at: string;
+};
+export const ROUTINE_STATUSES = ["active", "paused", "retired"] as const;
 
 const DEFAULT_DATA_DIR = "/data";
 const DEFAULT_SEED_DIR = "/seed";
@@ -63,6 +72,14 @@ export function createSchema(db: Database.Database): void {
 			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 		);
 		CREATE INDEX IF NOT EXISTS open_items_kind_status ON open_items(kind, status);
+		CREATE TABLE IF NOT EXISTS routines (
+			name TEXT PRIMARY KEY,
+			cadence TEXT NOT NULL,
+			prompt TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','retired')),
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);
 		CREATE VIRTUAL TABLE IF NOT EXISTS sections_fts USING fts5(
 			name UNINDEXED, content,
 			content=sections, content_rowid=rowid
@@ -74,6 +91,10 @@ export function createSchema(db: Database.Database): void {
 		CREATE VIRTUAL TABLE IF NOT EXISTS journal_fts USING fts5(
 			entry,
 			content=journal, content_rowid=id
+		);
+		CREATE VIRTUAL TABLE IF NOT EXISTS routines_fts USING fts5(
+			name UNINDEXED, prompt,
+			content=routines, content_rowid=rowid
 		);
 		CREATE TRIGGER IF NOT EXISTS sections_ai AFTER INSERT ON sections BEGIN
 			INSERT INTO sections_fts(rowid, name, content) VALUES (new.rowid, new.name, new.content);
@@ -110,6 +131,18 @@ export function createSchema(db: Database.Database): void {
 		CREATE TRIGGER IF NOT EXISTS journal_ad AFTER DELETE ON journal BEGIN
 			INSERT INTO journal_fts(journal_fts, rowid, entry)
 				VALUES ('delete', old.id, old.entry);
+		END;
+		CREATE TRIGGER IF NOT EXISTS routines_ai AFTER INSERT ON routines BEGIN
+			INSERT INTO routines_fts(rowid, name, prompt) VALUES (new.rowid, new.name, new.prompt);
+		END;
+		CREATE TRIGGER IF NOT EXISTS routines_au AFTER UPDATE ON routines BEGIN
+			INSERT INTO routines_fts(routines_fts, rowid, name, prompt)
+				VALUES ('delete', old.rowid, old.name, old.prompt);
+			INSERT INTO routines_fts(rowid, name, prompt) VALUES (new.rowid, new.name, new.prompt);
+		END;
+		CREATE TRIGGER IF NOT EXISTS routines_ad AFTER DELETE ON routines BEGIN
+			INSERT INTO routines_fts(routines_fts, rowid, name, prompt)
+				VALUES ('delete', old.rowid, old.name, old.prompt);
 		END;
 	`);
 }

@@ -40,6 +40,9 @@ export function registerOpsTools(server: McpServer, db: Database.Database): void
         const journalCount = (
           db.prepare("SELECT COUNT(*) as n FROM journal").get() as { n: number }
         ).n;
+        const routinesCount = (
+          db.prepare("SELECT COUNT(*) as n FROM routines").get() as { n: number }
+        ).n;
         const dbPath = `${process.env.DATA_DIR ?? "/data"}/skill.db`;
         let dbSizeBytes = 0;
         try {
@@ -55,6 +58,7 @@ export function registerOpsTools(server: McpServer, db: Database.Database): void
           sections_count: sectionsCount,
           refs_count: refsCount,
           journal_count: journalCount,
+          routines_count: routinesCount,
           db_size_bytes: dbSizeBytes,
         };
         return toolText(JSON.stringify(info, null, 2));

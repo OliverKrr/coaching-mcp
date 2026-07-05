@@ -6,7 +6,9 @@ import { registerDeleteTools } from "./tools/delete.js";
 import { registerOpenItemsTools } from "./tools/openitems.js";
 import { registerOpsTools } from "./tools/ops.js";
 import { registerReadTools } from "./tools/read.js";
+import { registerRoutineTools } from "./tools/routines.js";
 import { registerWriteTools } from "./tools/write.js";
+import { registerTopicTools } from "./topics.js";
 import { VERSION } from "./version.js";
 
 function log(msg: string): void {
@@ -29,6 +31,8 @@ async function main(): Promise<void> {
   registerOpsTools(server, db);
   registerDeleteTools(server, db);
   registerOpenItemsTools(server, db);
+  registerRoutineTools(server, db);
+  registerTopicTools(server, process.env.SEED_DIR ?? "/seed");
   log("tools registered");
 
   log("connecting stdio transport…");

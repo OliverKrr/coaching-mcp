@@ -11,7 +11,9 @@ import { registerDeleteTools } from "./tools/delete.js";
 import { registerOpenItemsTools } from "./tools/openitems.js";
 import { registerOpsTools } from "./tools/ops.js";
 import { registerReadTools } from "./tools/read.js";
+import { registerRoutineTools } from "./tools/routines.js";
 import { registerWriteTools } from "./tools/write.js";
+import { registerTopicTools } from "./topics.js";
 import { VERSION } from "./version.js";
 
 /**
@@ -79,6 +81,8 @@ export class McpSessionManager {
     registerOpsTools(server, db);
     registerDeleteTools(server, db);
     registerOpenItemsTools(server, db);
+    registerRoutineTools(server, db);
+    registerTopicTools(server, this.ctx.cfg.seedDir);
 
     // Opt-in integrations: tools appear only for users who connected the
     // service on their account page — each user acts with their own key.

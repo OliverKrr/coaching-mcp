@@ -25,11 +25,11 @@ export function registerReadTools(server: McpServer, db: Database.Database): voi
     "search_knowledge",
     {
       description:
-        "Full-text search across coaching knowledge. Optional `type` scopes to one of section/reference/journal; omitted searches all three.",
+        "Full-text search across coaching knowledge. Optional `type` scopes to one of section/reference/journal/routine; omitted searches all four.",
       inputSchema: {
         query: z.string().min(1).describe("Search terms"),
         type: z
-          .enum(["section", "reference", "journal"])
+          .enum(["section", "reference", "journal", "routine"])
           .optional()
           .describe("Filter: search only this table. Omit to search all."),
         limit: z
@@ -100,6 +100,24 @@ export function registerReadTools(server: McpServer, db: Database.Database): voi
           }
         }
 
+        if (type === undefined || type === "routine") {
+          const rows = db
+            .prepare(
+              "SELECT r.name as name, snippet(routines_fts, 1, '**', '**', '...', 32) as snippet, r.updated_at as updated_at " +
+                "FROM routines_fts JOIN routines r ON r.rowid = routines_fts.rowid " +
+                "WHERE routines_fts MATCH ? LIMIT ?",
+            )
+            .all(fts, limit) as Array<{ name: string; snippet: string; updated_at: string }>;
+          for (const r of rows) {
+            hits.push({
+              type: "routine",
+              name: r.name,
+              date: r.updated_at.slice(0, 10),
+              snippet: r.snippet,
+            });
+          }
+        }
+
         return toolText(formatSearchHits(hits, query));
       } catch {
         return toolText(
@@ -113,7 +131,7 @@ export function registerReadTools(server: McpServer, db: Database.Database): voi
     "get_reference",
     {
       description:
-        "Get a full coaching reference document by name (e.g. zones, strength, workout-construction, patterns, lifestyle).",
+        "Get a full coaching reference document by name (core: coaching-method, routine-design, patterns, lifestyle; plus topic-specific ones like zones or recipes).",
       inputSchema: {
         name: z.string().describe("Reference name without .md extension"),
       },
@@ -139,7 +157,7 @@ export function registerReadTools(server: McpServer, db: Database.Database): voi
     "list_references",
     {
       description:
-        "List all available reference documents (zones, patterns, injuries, etc.) with name, last-updated date, and size in bytes.",
+        "List all available reference documents (coaching-method, patterns, topic references, etc.) with name, last-updated date, and size in bytes.",
       inputSchema: {},
     },
     () =>

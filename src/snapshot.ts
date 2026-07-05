@@ -20,6 +20,7 @@ type OpenItemRow = {
   status: string;
   relevant_date: string | null;
 };
+type RoutineRow = { name: string; cadence: string; prompt: string; status: string };
 
 function writeContent(path: string, content: string): string {
   mkdirSync(dirname(path), { recursive: true });
@@ -40,6 +41,14 @@ function formatOpenItems(rows: OpenItemRow[]): string {
       `## #${r.id} [${r.kind}/${r.status}]${r.relevant_date ? ` (${r.relevant_date})` : ""}\n\n${r.content}\n`,
   );
   return `# Open Items\n\n${blocks.join("\n---\n\n")}`;
+}
+
+function formatRoutines(rows: RoutineRow[]): string {
+  if (rows.length === 0) return "# Routines\n\n_No routines._\n";
+  const blocks = rows.map(
+    (r) => `## ${r.name} [${r.status}]\n\nCadence: ${r.cadence}\n\n${r.prompt}\n`,
+  );
+  return `# Routines\n\n${blocks.join("\n---\n\n")}`;
 }
 
 /**
@@ -94,6 +103,11 @@ export function snapshotDocuments(db: Database.Database, seedOnly = false): Snap
       .prepare("SELECT id, kind, content, status, relevant_date FROM open_items ORDER BY id DESC")
       .all() as OpenItemRow[];
     docs.push({ path: "open-items.md", content: formatOpenItems(openItems) });
+
+    const routines = db
+      .prepare("SELECT name, cadence, prompt, status FROM routines ORDER BY name")
+      .all() as RoutineRow[];
+    docs.push({ path: "routines.md", content: formatRoutines(routines) });
   }
 
   return docs;

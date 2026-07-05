@@ -11,7 +11,7 @@ export function sanitizeFtsQuery(query: string): string {
 }
 
 export type SearchHit = {
-  type: "section" | "reference" | "journal";
+  type: "section" | "reference" | "journal" | "routine";
   name: string;
   date: string;
   snippet: string;

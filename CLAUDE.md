@@ -11,12 +11,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this repo is
 
 Multi-user coaching MCP server for Claude AI. Serves a `SKILL.md` knowledge base (goals, rules,
-athlete profile) plus reference documents, a session journal, and open items — stored in
-SQLite+FTS5 and exposed as MCP tools over Streamable HTTP. v2 is multi-tenant: a built-in OAuth
-2.1 authorization server federates login to an OIDC identity provider (Google by default), an
-email allowlist gates access, and every user gets an isolated per-user database seeded from a
-generic template. A self-service `/account` page provides data export and account deletion.
-The bare `coaching-mcp` command remains the v1-style single-user stdio server.
+personal profile) plus reference documents, a session journal, open items, and stored scheduled
+routines — stored in SQLite+FTS5 and exposed as MCP tools over Streamable HTTP. Coaching is
+topic-based: installable **topic packs** (training, nutrition, custom) live under
+`seed-template/topics/` and are delivered on demand via read-only tools, so each user picks
+their own topics during onboarding. v2 is multi-tenant: a built-in OAuth 2.1 authorization
+server federates login to an OIDC identity provider (Google by default), an email allowlist
+gates access, and every user gets an isolated per-user database seeded from a generic template.
+A self-service `/account` page provides data export and account deletion. The bare
+`coaching-mcp` command remains the v1-style single-user stdio server.
 
 ## Commands
 
@@ -46,20 +49,23 @@ src/auth/allowlist.ts  ALLOWED_EMAILS / ALLOWED_EMAILS_FILE (file re-read per lo
 src/auth/db.ts      DATA_DIR/auth.db — users, clients, pending auth, hashed tokens, web sessions
 src/tenancy.ts      TenantManager: DATA_DIR/users/<id>/skill.db, lazy open/cache, delete
 src/account.ts      /account router (session + CSRF for all account routes): profile, zip export (fflate), delete
-src/account-data.ts /account/data browse & edit: sections/refs (create/edit/delete, optimistic concurrency), journal, open items
+src/account-data.ts /account/data browse & edit: sections/refs/routines (create/edit/delete, optimistic concurrency), journal, open items
 src/auth/secrets.ts encrypted per-user secret store (AES-256-GCM under SECRETS_KEY; AAD binds user+slot)
 src/integrations/hevy.ts  Hevy API client + MCP tools, registered per-session only for users with a key
 src/apps-proxy.ts   /apps/<name> authenticated reverse proxy (per-app email allowlist, HTML prefix rewriting)
 src/ratelimit.ts    fixed-window per-IP limiter guarding the auth endpoints
-src/db.ts           coaching DB schema: sections, refs, journal, open_items + FTS5 (per user)
-src/tools/*.ts      the 10 MCP tools — take (server, db); deliberately user-agnostic
+src/db.ts           coaching DB schema: sections, refs, journal, open_items, routines + FTS5 (per user)
+src/tools/*.ts      the MCP tools — take (server, db); deliberately user-agnostic
+src/topics.ts       topic-pack loader (SEED_DIR/topics/<id>/) + list_topic_packs/get_topic_pack
 src/snapshot.ts / restore.ts / migrate.ts + *-cli.ts   operational CLIs
 src/http-util.ts    tiny node:http helpers (no express — keep deps lean)
-seed-template/      generic SKILL.md + reference skeletons, baked into the image as /seed
+seed-template/      generic core SKILL.md + core references + topics/ packs, baked into the image as /seed
 ```
 
 Seed data flow (per user, first login only): `/seed/SKILL.md` → sections(name='main'),
 `/seed/references/*.md` → refs. After that, all writes go through the MCP tools.
+`/seed/topics/**` is **never auto-seeded** — packs are delivered by `get_topic_pack` and
+instantiated by the assistant through the normal write tools during onboarding.
 
 `coaching-mcp-restore` (inverse of `coaching-mcp-snapshot`) upserts `sections`/`refs` from a seed
 dir into a live DB; it preserves `journal` + `open_items` and has a timestamp clobber guard
@@ -68,18 +74,25 @@ dir into a live DB; it preserves `journal` + `open_items` and has a timestamp cl
 
 ## MCP tools
 
-| Tool                   | Direction | Description                                                                   |
-| ---------------------- | --------- | ----------------------------------------------------------------------------- |
-| `get_coaching_context` | read      | Full SKILL.md — call at session start                                         |
-| `search_knowledge`     | read      | FTS5 full-text search across all tables                                       |
-| `get_reference`        | read      | One reference doc by name                                                     |
-| `get_journal`          | read      | Recent journal entries, newest first                                          |
-| `update_section`       | write     | Upsert a knowledge section (use `main` for SKILL.md)                          |
-| `update_reference`     | write     | Upsert a reference doc                                                        |
-| `append_journal`       | write     | Append a coaching journal entry                                               |
-| `add_open_item`        | write     | Record a commitment (if-then next action) or a de-duplicated flag             |
-| `list_open_items`      | read      | List open commitments/flags (defaults to status=open) — call at session start |
-| `resolve_open_item`    | write     | Close an open item (done/dismissed) with an optional note                     |
+| Tool                                  | Direction | Description                                                                    |
+| ------------------------------------- | --------- | ------------------------------------------------------------------------------ |
+| `get_coaching_context`                | read      | Full SKILL.md — call at session start                                          |
+| `search_knowledge`                    | read      | FTS5 full-text search (sections, refs, journal, routines)                      |
+| `get_section` / `list_sections`       | read      | One section / all sections with metadata                                       |
+| `get_reference` / `list_references`   | read      | One reference doc / all references with metadata                               |
+| `get_journal`                         | read      | Recent journal entries, newest first                                           |
+| `update_section`                      | write     | Upsert a knowledge section (use `main` for SKILL.md)                           |
+| `update_reference`                    | write     | Upsert a reference doc                                                         |
+| `append_journal`                      | write     | Append a coaching journal entry                                                |
+| `delete_section` / `delete_reference` | write     | Delete a doc (confirm=true; `main` protected)                                  |
+| `add_open_item`                       | write     | Record a commitment (if-then next action) or a de-duplicated flag              |
+| `list_open_items`                     | read      | List open commitments/flags (defaults to status=open) — call at session start  |
+| `resolve_open_item`                   | write     | Close an open item (done/dismissed) with an optional note                      |
+| `list_topic_packs` / `get_topic_pack` | read      | Installable coaching topics: interview + skeletons + routine templates         |
+| `list_routines` / `get_routine`       | read      | Stored scheduled-routine prompts (users copy them into Claude scheduled tasks) |
+| `save_routine`                        | write     | Upsert a routine (name, cadence, prompt, status; status kept when omitted)     |
+| `delete_routine`                      | write     | Delete a stored routine (confirm=true)                                         |
+| `get_version`                         | read      | Build info + per-table statistics                                              |
 
 ## Environment variables (serve mode)
 
@@ -90,17 +103,30 @@ dir into a live DB; it preserves `journal` + `open_items` and has a timestamp cl
 
 ## Key design decisions
 
-**FTS5 external content tables**: `sections_fts`, `refs_fts`, `journal_fts` are external-content
-virtual tables. All three require INSERT + UPDATE + DELETE triggers to stay in sync with their
-base tables (`journal_au` arrived with web journal editing in v2.1 — the journal is append-only
-over MCP but editable on the account page). Do not remove any trigger from `db.ts`; because
-`createSchema()` uses `CREATE TRIGGER IF NOT EXISTS` on every open, new triggers self-apply to
-existing per-user DBs.
+**FTS5 external content tables**: `sections_fts`, `refs_fts`, `journal_fts`, `routines_fts` are
+external-content virtual tables. All four require INSERT + UPDATE + DELETE triggers to stay in
+sync with their base tables (`journal_au` arrived with web journal editing in v2.1 — the journal
+is append-only over MCP but editable on the account page). Do not remove any trigger from
+`db.ts`; because `createSchema()` uses `CREATE TABLE/TRIGGER IF NOT EXISTS` on every open, new
+tables and triggers self-apply to existing per-user DBs (this is how v2 DBs gained `routines`).
 
 **Web edits mirror the MCP tool semantics**: the account editor enforces the same rules as the
-tools (`main` undeletable, open-item statuses open/done/dismissed) and adds an
-optimistic-concurrency token (`updated_at`) on section/reference saves so a browser save can
-never silently clobber a concurrent coaching-session write.
+tools (`main` undeletable, open-item statuses open/done/dismissed, routine statuses
+active/paused/retired) and adds an optimistic-concurrency token (`updated_at`) on
+section/reference/routine saves so a browser save can never silently clobber a concurrent
+coaching-session write.
+
+**Topic packs are read-only content, not a write path**: `list_topic_packs`/`get_topic_pack`
+only deliver markdown from `SEED_DIR/topics/`; instantiation happens through the existing
+`update_section`/`update_reference`/`save_routine` writes so the assistant tailors skeletons to
+the user and everything stays visible in the account editor. Operators customize packs by
+mounting their own seed dir.
+
+**Routines are runtime state, like journal/open items**: stored per user, exported and
+snapshotted (`routines.md`), never touched by `coaching-mcp-restore` or seeding. Routine
+templates are English masters inside topic packs; the stored per-user routine is generated in
+the user's language. The server never schedules anything — users paste prompts into scheduled
+tasks in their own Claude account, and `status` is bookkeeping for that.
 
 **Seed idempotency**: `seedFromDirectory()` checks `COUNT(*) FROM sections` before seeding — safe
 to call on every start. Wrapped in a `db.transaction()` to prevent partial state.

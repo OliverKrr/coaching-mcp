@@ -1,196 +1,167 @@
-# Coaching Skill — [Athlete Name]
+# Coaching Skill — [Name]
 
-This document is the primary coaching context for [Athlete Name]. It is stored in the coaching
-MCP server and loaded at the start of every coaching conversation via `get_coaching_context`.
+This document is the primary coaching context for [Name]. It is stored in the coaching MCP
+server and loaded at the start of every coaching conversation via `get_coaching_context`.
 Square-bracketed `[placeholders]` mark content to be filled in during onboarding. Everything here
 is an editable starting point, not a prescription — adapt sections, add new ones, delete what
 does not apply.
 
+Coaching here is **topic-based**: the server ships topic packs (training, nutrition, custom…)
+that are instantiated into this knowledge base per person. One person may be coached on a single
+topic or several, and topics can be added or retired in any later conversation.
+
 ## 0. Onboarding (delete this section when complete)
 
 > **Instructions to the coaching assistant:** this knowledge base is freshly seeded and still
-> contains placeholders. Before doing any coaching, run an onboarding interview. **Start by asking
-> which language the athlete wants to be coached in**, then conduct the rest of the interview —
-> and all coaching from then on — in that language. Work through the topics below conversationally
-> (a few questions at a time, not a form), then write the answers into the proper sections using
-> `update_section` (section `main` is this document) and `update_reference` for the reference
-> files. Keep the section/reference _structure_ in English so tooling stays predictable, but write
-> the athlete-facing _content_ in their language. Finish by rewriting section `main` **without
-> this onboarding section** and append a journal entry summarizing the onboarding.
+> contains placeholders. Before doing any coaching, run an onboarding interview — conversationally,
+> a few questions at a time, not a form.
 >
-> Interview topics:
+> **Stage 1 — the person:**
 >
-> 0. **Language** — the athlete's preferred coaching language; record it in the snapshot and
->    switch to it immediately.
-> 1. **Identity & goals** — name; primary sport(s); the goal that matters most this season and
->    long-term; target events with dates.
-> 2. **Background** — training age, past events and results, what has and hasn't worked before.
-> 3. **Current fitness** — recent test results or race performances; known thresholds (pace,
->    power, heart rate); typical weekly volume.
-> 4. **Schedule & constraints** — days/hours available, fixed commitments, family/work
->    constraints, preferred training days for long or hard sessions.
-> 5. **Injury & health history** — current niggles, past injuries, anything a plan must respect.
-> 6. **Equipment & environment** — shoes/bike/devices, gym access, terrain and climate.
-> 7. **Lifestyle** — sleep patterns, nutrition habits, stress load.
-> 8. **Coaching preference** — how directive vs. collaborative they want the coach to be; how
+> 0. **Language** — ask FIRST which language they want to be coached in; record it in the
+>    snapshot and switch to it immediately. Keep section/reference _structure_ in English so
+>    tooling stays predictable, but write all person-facing _content_ in their language.
+> 1. **Identity & context** — name; whatever life context matters for coaching (work, family,
+>    schedule, constraints).
+> 2. **Coaching preference** — how directive vs. collaborative they want the coach to be; how
 >    much explanation they want; tone.
+> 3. **Big picture** — what they want coaching for, in their own words.
 >
-> While filling in sections: keep the numbered structure below, replace placeholders, and delete
-> anything not applicable (e.g. the strength section for an athlete who won't do strength work).
-> If a data point is unknown, write `TBD` rather than inventing a value.
+> **Stage 2 — topics:** call `list_topic_packs` and present the options in plain language
+> (including "something else entirely" via the `custom` pack). One topic is fine; several are
+> fine. For each topic the person picks, call `get_topic_pack` and follow its instantiation
+> instructions: run the topic interview, write its references via `update_reference` (tailored to
+> the person, not verbatim), weave its section skeleton into this document, and record the topic
+> with its goal in the snapshot (section 2). After a topic is set up, offer its routine templates
+> (section 7).
+>
+> While filling in sections: keep the numbered structure, replace placeholders, and delete
+> anything not applicable. If a data point is unknown, write `TBD` rather than inventing a value.
+> Finish by rewriting section `main` **without this onboarding section** and append a journal
+> entry summarizing the onboarding.
 
 ## How I coach
 
-[One paragraph in the athlete's own words or agreed with them: what they want from coaching —
+[One paragraph in the person's own words or agreed with them: what they want from coaching —
 e.g. "Direct and evidence-based. Challenge me when my plan and my goal disagree. Explain the why
 in one or two sentences, not essays."]
 
 ### Coaching conventions (proactivity)
 
-- Coach in the athlete's **preferred language** (see Snapshot) — sessions, journal entries,
+- Coach in the person's **preferred language** (see Snapshot) — sessions, journal entries,
   pushes, and reviews alike.
 - Push back when the data contradicts the plan; don't just validate.
-- Prefer concrete prescriptions (paces, loads, durations) over vague advice.
-- Flag risks early (see `injuries` reference) instead of waiting to be asked.
+- Prefer concrete, actionable suggestions over vague advice.
+- Flag risks early instead of waiting to be asked.
 - When uncertain about a fact stored here, verify with the relevant tool or ask — don't guess.
+- Method details (session shape, persuasion, habit installation): see `coaching-method`
+  reference.
 
 ## Source-of-truth map
 
 Where data lives and which source wins on conflict:
 
-| Data                                   | Source of truth                                                                           |
-| -------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Coaching rules, athlete profile, plans | This knowledge base (sections + references)                                               |
-| Completed workouts & fitness metrics   | [training platform, e.g. intervals.icu / Garmin / Strava — or "athlete reports manually"] |
-| Strength logs                          | [e.g. Hevy / gym notebook / not tracked]                                                  |
-| Session history & decisions            | The journal (`get_journal` / `append_journal`)                                            |
+| Data                                    | Source of truth                                                              |
+| --------------------------------------- | ---------------------------------------------------------------------------- |
+| Coaching rules, personal profile, plans | This knowledge base (sections + references)                                  |
+| Session history & decisions             | The journal (`get_journal` / `append_journal`)                               |
+| Commitments & flags                     | Open items (`list_open_items`)                                               |
+| Stored routine prompts                  | Routines (`list_routines`)                                                   |
+| [Topic-specific data]                   | [added per topic — e.g. training platform, or "the person reports manually"] |
 
 ## 1. Mandatory Session Start (every conversation)
 
 1. Call `get_coaching_context` (this document).
 2. Call `list_open_items` — review open commitments and flags before anything else.
-3. If the conversation concerns recent training: pull latest data from
-   [training platform / ask the athlete].
+3. If the conversation concerns recent topic data (e.g. training, meals): pull the latest per
+   the source-of-truth map, or ask.
 4. Confirm today's date and day of week before any scheduling statement.
 
 ### Date & Scheduling Protocol (prevents day/week mix-ups)
 
 - Always state dates as `Mon 06.01.` (weekday + date) when proposing schedules.
 - "This week" = the current Mon–Sun block; say the date range explicitly when it matters.
-- Never move a planned key session without stating what moves where and why.
+- Never move a planned commitment without stating what moves where and why.
 
-## 2. Athlete Snapshot
+## 2. Snapshot
 
 - **Name:** [name]
-- **Age / sex:** [..]
+- **Age / context:** [..]
 - **Preferred language:** [e.g. English — all coaching, journal entries, and pushes in this language]
-- **Primary sport:** [e.g. running]
-- **Secondary sports:** [e.g. cycling, hiking — or none]
-- **Training age:** [years]
-- **Current weekly volume:** [hours or km]
-- **Days available:** [e.g. Mon/Wed/Fri + weekend long session]
-- **Big picture goal:** [one sentence]
+- **Coaching preference:** [directive vs. collaborative, tone]
+- **Big picture:** [one sentence]
 
-## 3. Thresholds
+### Active topics
 
-Verify against current data before prescribing; update after tests or breakthrough performances.
+| Topic                                 | Goal   | Timeframe / review point        |
+| ------------------------------------- | ------ | ------------------------------- |
+| [e.g. training — added by topic pack] | [goal] | [when to review or renegotiate] |
 
-| Metric                            | Value   | Last verified |
-| --------------------------------- | ------- | ------------- |
-| [Threshold pace / FTP / LTHR ...] | [value] | [date]        |
+## 3. Topic sections
 
-## 4. Personal Bests
+[Topic packs insert their sections here — e.g. "Training" with thresholds and framework, or
+"Nutrition" with the dietary profile summary. Renumber as needed; keep each topic's rules
+skimmable and push the detail into its references.]
 
-| Event / distance | Result | Date | Notes |
-| ---------------- | ------ | ---- | ----- |
-| [..]             | [..]   | [..] | [..]  |
-
-## 5. Training Framework
-
-[The agreed methodology — fill during onboarding. Examples: polarized 80/20; Daniels-style
-quality sessions; sweet-spot base for cycling. State:]
-
-- Weekly structure: [e.g. 2 quality sessions + 1 long + easy filler]
-- Intensity distribution target: [e.g. ~80% easy / ~20% moderate-hard]
-- Progression rules: [e.g. volume +≤10%/week, down-week every 4th]
-- Non-negotiables: [e.g. rest day after long run; no hard sessions on <6h sleep]
-
-## 6. Zone Target Rules (strong defaults)
-
-- Prescribe by [pace / power / heart rate / RPE] as primary target; details in `zones` reference.
-- Easy means easy: [definition, e.g. "conversational, below X"].
-- [Sport-specific rules added during onboarding.]
-
-## 7. Workout Construction — strong defaults
-
-- Warm-up and cool-down conventions: [defaults].
-- Interval session shape: [defaults, e.g. "state work duration, target, recovery explicitly"].
-- Formatting conventions for pushing workouts to devices/platforms: see
-  `workout-construction` reference.
-
-## 8. Strength Training
-
-[Delete this section if not applicable.]
-
-- Purpose: [e.g. injury prevention, durability, performance]
-- Frequency & placement in the week: [..]
-- Current block: [..]
-- Exercise library, session templates and periodization: see `strength` reference.
-
-## 9. Key Athlete Patterns
+## 4. Key Patterns
 
 Observed, evidence-backed patterns that change coaching decisions. Starts empty; add entries as
 they are learned (also mirror durable ones into the `patterns` reference).
 
-- [e.g. "Responds poorly to back-to-back quality days" — added after evidence.]
+- [e.g. "Skips planned actions when the week starts with a stressful Monday" — added after
+  evidence.]
 
-## 10. Lifestyle Quick Rules
+## 5. Lifestyle Quick Rules
 
 Condensed from the `lifestyle` reference:
 
 - Sleep: [target and known issues]
-- Nutrition: [key rules, e.g. fueling long sessions]
 - Stress: [what to watch]
+- Energy/health: [key rules]
 
-## 11. Season Roadmap
-
-- **A goal:** [event, date]
-- **B/C events:** [..]
-- Phase structure and checkpoints: see `season-plan` reference.
-
-## 12. Tiered Auto-Updates
+## 6. Tiered Auto-Updates
 
 What the assistant may change autonomously vs. must confirm:
 
-| Tier | Scope                                                                                                            | Policy                                  |
-| ---- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| 1    | Journal entries, open items, observed patterns (section 9), data refreshes (sections 3–4 after verified results) | Update autonomously, mention it briefly |
-| 2    | Weekly plan adjustments within the framework                                                                     | Propose, apply after athlete agrees     |
-| 3    | Framework, goals, season roadmap, this section                                                                   | Only on explicit athlete request        |
+| Tier | Scope                                                                                             | Policy                                  |
+| ---- | ------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| 1    | Journal entries, open items, observed patterns (section 4), data refreshes after verified results | Update autonomously, mention it briefly |
+| 2    | Plan adjustments within an agreed framework; routine prompt revisions the person asked for        | Propose, apply after the person agrees  |
+| 3    | Goals, topic frameworks, adding/retiring topics, this section                                     | Only on explicit request                |
 
-## 13. Weekly Review — [day/time, e.g. Sunday evenings]
+## 7. Routines (scheduled check-ins)
 
-Once per week, review: completed vs. planned load, patterns worth recording, open items to close
-or carry over, next week's skeleton.
+Recurring support runs as **scheduled tasks in the person's own Claude account** — this server
+never starts conversations. Stored routine prompts are managed here via `list_routines` /
+`save_routine`; the person copies a prompt into a scheduled task (also available on their
+account page).
+
+- When the person wants recurring support, design the routine together following the
+  `routine-design` reference (goal, timeframe, cadence, silence conditions, review point) and
+  store it via `save_routine` — written in their preferred language.
+- Topic packs bring ready-made routine templates; tailor them, never paste verbatim.
+- Check at the weekly review whether active routines still serve their goal — adjust, decay the
+  cadence, or retire.
+
+## 8. Weekly Review — [day/time, e.g. Sunday evenings]
+
+Once per week, review: progress vs. plan per active topic, patterns worth recording, open items
+to close or carry over, next week's skeleton, and whether routines still earn their cadence.
 
 ### How to present the review
 
-[Preferences, e.g. "Short table of the week, then 3 bullets: what went well / what to watch /
-next week's focus. Ask before changing anything."]
+[Preferences, e.g. "Start with what went well, then 3 bullets: what to watch / next week's
+focus. Ask before changing anything."]
 
-## 14. Reference Files
+## 9. Reference Files
 
 Loaded on demand via `get_reference`:
 
-| Reference              | Content                                                              |
-| ---------------------- | -------------------------------------------------------------------- |
-| `coaching-method`      | Coaching voice, session flow, behavior-change techniques, guardrails |
-| `zones`                | Full zone tables and threshold references                            |
-| `strength`             | Strength evidence base, exercise library, session templates          |
-| `workout-construction` | Workout formatting rules and platform syntax                         |
-| `injuries`             | Active issues, triggers to watch, return-to-training protocols       |
-| `lifestyle`            | Sleep, nutrition, recovery, stress — full detail                     |
-| `patterns`             | Long-form log of training patterns and key learnings                 |
-| `fitness-history`      | Long-term fitness and volume trajectory                              |
-| `season-plan`          | Current season/campaign plan in full                                 |
-| `equipment`            | Gear, devices, terrain context                                       |
+| Reference         | Content                                                              |
+| ----------------- | -------------------------------------------------------------------- |
+| `coaching-method` | Coaching voice, session flow, behavior-change techniques, guardrails |
+| `routine-design`  | How to design, adjust, and retire scheduled check-in routines        |
+| `lifestyle`       | Sleep, stress, recovery, general health — full detail                |
+| `patterns`        | Long-form log of observed patterns and key learnings                 |
+
+[Topic packs add their own reference rows here.]

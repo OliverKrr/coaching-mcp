@@ -220,6 +220,16 @@ beforeAll(async () => {
   writeFileSync(join(seedDir, "SKILL.md"), "# Template Skill\n\nOnboarding placeholder.");
   mkdirSync(join(seedDir, "references"));
   writeFileSync(join(seedDir, "references", "zones.md"), "# Zones template");
+  // a minimal topic pack so /routines has templates to render
+  mkdirSync(join(seedDir, "topics", "training", "routines"), { recursive: true });
+  writeFileSync(
+    join(seedDir, "topics", "training", "topic.md"),
+    "# Training\n\nEndurance coaching pack for tests.\n",
+  );
+  writeFileSync(
+    join(seedDir, "topics", "training", "routines", "weekly-review.md"),
+    "# Weekly Review\n\nCadence: weekly, Sunday evening\n\nLoad get_coaching_context, then write the check-in of record.\n",
+  );
 
   process.env.ALLOWED_EMAILS = `${ALICE}, ${BOB}`;
 
@@ -575,15 +585,16 @@ describe("landing page setup guide", () => {
     expect(auto).toContain("Einrichtung in fünf Schritten");
   });
 
-  it("serves copyable routine templates bilingually at /routines", async () => {
+  it("explains the routine flow and renders pack templates at /routines", async () => {
     const en = await (await fetch(`${base}/routines`)).text();
-    expect(en).toContain("Weekly Review");
+    expect(en).toContain("Design it with your coach");
+    expect(en).toContain("Weekly Review"); // template from the topic pack fixture
+    expect(en).toContain("weekly, Sunday evening"); // parsed cadence shown
     expect(en).toContain("get_coaching_context"); // prompt text present
-    expect(en).toContain("check-in of record");
 
     const de = await (await fetch(`${base}/routines?lang=de`)).text();
-    expect(de).toContain("Ausfall-Absicherung");
-    expect(de).toContain("Tägliche Readiness");
+    expect(de).toContain("Mit dem Coach entwerfen");
+    expect(de).toContain("Weekly Review"); // templates stay English masters
 
     // the landing guide links to it
     const landing = await (await fetch(`${base}/`)).text();
@@ -662,6 +673,109 @@ describe("account data editor", () => {
     expect(html).toContain("<strong>boldy</strong>");
     // raw HTML in the document stays escaped in BOTH the textarea and the preview
     expect(html).not.toContain("<script>alert(1)</script>");
+  });
+
+  it("creates, edits, and deletes routines with concurrency + status guards", async () => {
+    const cookie = await accountLogin(ALICE);
+    const csrf = await csrfFor(cookie);
+
+    const save = (body: Record<string, string>): Promise<Response> =>
+      fetch(`${base}/account/data/routines/save`, {
+        method: "POST",
+        headers: { cookie, "content-type": FORM },
+        body: new URLSearchParams({ csrf, ...body }),
+        redirect: "manual",
+      });
+
+    // create
+    const created = await save({
+      name: "meal-plan",
+      cadence: "weekly, Saturday morning",
+      status: "active",
+      prompt: "Plan next week's meals. Grocery list before shopping day.",
+      expected_updated_at: "",
+    });
+    expect(created.status).toBe(302);
+
+    // it shows up on the overview + list + editor
+    const overview = await (await fetch(`${base}/account/data`, { headers: { cookie } })).text();
+    expect(overview).toContain("Routines");
+    const list = await (
+      await fetch(`${base}/account/data/routines`, { headers: { cookie } })
+    ).text();
+    expect(list).toContain("meal-plan");
+    const editor = await (
+      await fetch(`${base}/account/data/routines/edit?name=meal-plan`, { headers: { cookie } })
+    ).text();
+    expect(editor).toContain("Grocery list before shopping day");
+    const token = /name="expected_updated_at" value="([^"]+)"/.exec(editor)?.[1] ?? "";
+    expect(token).not.toBe("");
+
+    // duplicate create refused; invalid status refused
+    expect(
+      (
+        await save({
+          name: "meal-plan",
+          cadence: "daily",
+          status: "active",
+          prompt: "x",
+          expected_updated_at: "",
+        })
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await save({
+          name: "meal-plan",
+          cadence: "daily",
+          status: "bogus",
+          prompt: "x",
+          expected_updated_at: token,
+        })
+      ).status,
+    ).toBe(400);
+
+    // update with the current token works; a stale token conflicts
+    expect(
+      (
+        await save({
+          name: "meal-plan",
+          cadence: "weekly, Friday evening",
+          status: "paused",
+          prompt: "Plan v2.",
+          expected_updated_at: token,
+        })
+      ).status,
+    ).toBe(302);
+    expect(
+      (
+        await save({
+          name: "meal-plan",
+          cadence: "daily",
+          status: "active",
+          prompt: "clobber attempt",
+          expected_updated_at: "2000-01-01 00:00:00",
+        })
+      ).status,
+    ).toBe(409);
+    const after = await (
+      await fetch(`${base}/account/data/routines/edit?name=meal-plan`, { headers: { cookie } })
+    ).text();
+    expect(after).toContain("Plan v2.");
+    expect(after).not.toContain("clobber attempt");
+
+    // delete
+    const del = await fetch(`${base}/account/data/routines/delete`, {
+      method: "POST",
+      headers: { cookie, "content-type": FORM },
+      body: new URLSearchParams({ csrf, name: "meal-plan" }),
+      redirect: "manual",
+    });
+    expect(del.status).toBe(302);
+    const afterDelete = await fetch(`${base}/account/data/routines/edit?name=meal-plan`, {
+      headers: { cookie },
+    });
+    expect(afterDelete.status).toBe(404);
   });
 
   it("saves with the current token and rejects a stale one (optimistic concurrency)", async () => {
@@ -844,6 +958,7 @@ describe("account page", () => {
         "SKILL.md",
         "journal.md",
         "open-items.md",
+        "routines.md",
         "seed-manifest.json",
         "skill.db",
       ]),

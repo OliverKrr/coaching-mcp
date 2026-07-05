@@ -76,6 +76,26 @@ describe("runSnapshot", () => {
     expect(existsSync(join(seedOut, "open-items.md"))).toBe(false);
   });
 
+  it("writes routines.md in full mode and omits it in seed-only", async () => {
+    const src = makeSourceDb();
+    const db = new Database(src);
+    db.prepare(
+      "INSERT INTO routines(name, cadence, prompt, status) VALUES ('weekly-review', 'weekly, Sunday', 'review-prompt-marker', 'paused')",
+    ).run();
+    db.close();
+
+    const out = mkdtempSync(join(tmpdir(), "snap-rt-"));
+    await runSnapshot({ db: src, outDir: out });
+    const routines = readFileSync(join(out, "routines.md"), "utf8");
+    expect(routines).toContain("weekly-review [paused]");
+    expect(routines).toContain("Cadence: weekly, Sunday");
+    expect(routines).toContain("review-prompt-marker");
+
+    const seedOut = mkdtempSync(join(tmpdir(), "snap-rt-seed-"));
+    await runSnapshot({ db: src, outDir: seedOut, seedOnly: true });
+    expect(existsSync(join(seedOut, "routines.md"))).toBe(false);
+  });
+
   it("throws a clear error when the DB file is missing", async () => {
     await expect(runSnapshot({ db: "/nonexistent/skill.db", outDir: tmpdir() })).rejects.toThrow(
       /not found/,
