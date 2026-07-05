@@ -173,7 +173,7 @@ function renderDocEditor(
     : `<input type="text" name="name" placeholder="name (e.g. race-plan)" required>`;
   const deleteForm =
     row && !protectedMain
-      ? `<form method="post" action="${base}/account/data/doc/delete" onsubmit="return confirm('Delete ${htmlEscape(row.name)}? This cannot be undone.')">
+      ? `<form method="post" action="${base}/account/data/doc/delete">
 <input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="type" value="${type}"><input type="hidden" name="name" value="${htmlEscape(row.name)}">
 <button class="danger">Delete this ${type}</button></form>`
       : protectedMain
@@ -293,7 +293,7 @@ function renderJournalEditor(
 <textarea name="entry" class="editor" style="height:50vh">${htmlEscape(row.entry)}</textarea>
 <p><button>Save</button></p>
 </form>
-<form method="post" action="${base}/account/data/journal/delete" onsubmit="return confirm('Delete this journal entry? This cannot be undone.')">
+<form method="post" action="${base}/account/data/journal/delete">
 <input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="id" value="${row.id}">
 <button class="danger">Delete entry</button></form>
 </div>
@@ -377,7 +377,7 @@ function renderOpenItemEditor(
 <p><label>Relevant date (optional): <input type="text" name="relevant_date" value="${htmlEscape(row.relevant_date ?? "")}" placeholder="YYYY-MM-DD"></label></p>
 <p><button>Save</button></p>
 </form>
-<form method="post" action="${base}/account/data/open-items/delete" onsubmit="return confirm('Delete open item #${row.id}? This cannot be undone.')">
+<form method="post" action="${base}/account/data/open-items/delete">
 <input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="id" value="${row.id}">
 <button class="danger">Delete item</button></form>`,
     ),

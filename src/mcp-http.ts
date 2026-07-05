@@ -3,7 +3,9 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { authenticateBearer, sendUnauthorized } from "./auth/oauth.js";
+import { getUserSecret } from "./auth/secrets.js";
 import type { ServeContext } from "./context.js";
+import { HevyClient, registerHevyTools } from "./integrations/hevy.js";
 import { sendJson } from "./http-util.js";
 import { registerDeleteTools } from "./tools/delete.js";
 import { registerOpenItemsTools } from "./tools/openitems.js";
@@ -77,6 +79,14 @@ export class McpSessionManager {
     registerOpsTools(server, db);
     registerDeleteTools(server, db);
     registerOpenItemsTools(server, db);
+
+    // Opt-in integrations: tools appear only for users who connected the
+    // service on their account page — each user acts with their own key.
+    const secretsKey = this.ctx.cfg.secretsKey;
+    if (secretsKey) {
+      const hevyKey = getUserSecret(this.ctx.authDb, secretsKey, auth.userId, "hevy_api_key");
+      if (hevyKey) registerHevyTools(server, new HevyClient(hevyKey));
+    }
 
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),

@@ -102,6 +102,38 @@ Privacy baseline: user isolation is structural (one SQLite file per user; the to
 ever sees a DB handle), logs carry user ids and event names but never content, and no per-user
 secrets exist anywhere — identity comes from the IdP, authorization from the allowlist.
 
+## Integrations (optional, per user)
+
+With `SECRETS_KEY` set, each user can connect third-party services on their account page —
+currently **Hevy** (strength logging; requires the user's own Hevy Pro API key). Keys are
+validated live before being stored, sealed with AES-256-GCM under the server master key (a
+leaked database alone yields nothing; the AAD binds every ciphertext to its user), never
+rendered back, and removed with the account. Users with a stored key get Hevy MCP tools in
+their coaching sessions (`hevy_get_workouts`, `hevy_get_workout`, `hevy_get_workout_count`,
+`hevy_get_routines`, `hevy_create_routine`, `hevy_update_routine`,
+`hevy_get_exercise_templates`, `hevy_get_routine_folders`, `hevy_create_routine_folder`);
+users without one see no Hevy tools at all. If Hevy later rejects the key, tools answer with
+plain guidance to update it on the account page.
+
+## Protected apps (operator)
+
+`PROTECTED_APPS="name=http://host:port,…"` serves internal web tools at `/apps/<name>/` behind
+the same Google login — with a **per-app email allowlist**
+(`PROTECTED_APP_<NAME>_EMAILS`), because login alone must not expose personal dashboards to
+every coached user. HTML responses get root-absolute references (`href/src/action/hx-*`),
+`Location` headers, and cookie paths rewritten onto the prefix so small dashboards work
+unmodified; other content streams through untouched. Authorized users see their tools linked on
+the account page. WebSockets are not supported.
+
+## Security posture
+
+Per-user isolation is structural (one SQLite file per user; per-session MCP servers; tools never
+see identity). All HTML pages ship a strict CSP (`script-src 'none'` — the pages contain no
+JavaScript at all), `X-Frame-Options: DENY`, and `Referrer-Policy: no-referrer`. OAuth tokens
+and codes are stored hashed; refresh tokens rotate with reuse-theft revocation; user secrets are
+encrypted at rest; the auth endpoints are rate-limited per client IP. Logs carry ids and events,
+never content or secrets.
+
 ## Default seed template
 
 If you don't mount your own seed data, the image ships a generic coaching template
@@ -147,6 +179,10 @@ MCP tools.
 | `PORT`                | `8000`                        | HTTP listen port                                               |
 | `ACCESS_TOKEN_TTL`    | `3600`                        | Access-token lifetime (seconds)                                |
 | `REFRESH_TOKEN_TTL`   | `7776000`                     | Refresh-token lifetime (seconds, rotated on use)               |
+| `SECRETS_KEY`         | —                             | 32-byte base64 master key for per-user secrets (`openssl rand -base64 32`); unset → integrations disabled |
+| `PROTECTED_APPS`      | —                             | `name=http://host:port,…` internal tools served at `/apps/<name>/` behind the login |
+| `PROTECTED_APP_<NAME>_EMAILS` | —                     | Per-app email allowlist (required for anyone to reach the app) |
+| `HEVY_API_BASE`       | `https://api.hevyapp.com/v1`  | Hevy API base (override for tests)                             |
 
 ## Single-user stdio mode
 

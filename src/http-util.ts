@@ -36,8 +36,24 @@ export function sendJson(
   res.end(JSON.stringify(payload));
 }
 
+/**
+ * Strict security headers for every server-rendered page. `script-src 'none'`
+ * is load-bearing: the pages deliberately contain no JavaScript at all, so any
+ * script that ever slips into rendered content is dead on arrival. Proxied
+ * app responses (apps-proxy) do NOT pass through here — they keep their own
+ * headers, because this CSP would break them.
+ */
+const HTML_SECURITY_HEADERS = {
+  "content-security-policy":
+    "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; " +
+    "form-action 'self'; base-uri 'none'; frame-ancestors 'none'; script-src 'none'",
+  "x-frame-options": "DENY",
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "no-referrer",
+} as const;
+
 export function sendHtml(res: ServerResponse, status: number, html: string): void {
-  res.writeHead(status, { "content-type": "text/html; charset=utf-8" });
+  res.writeHead(status, { "content-type": "text/html; charset=utf-8", ...HTML_SECURITY_HEADERS });
   res.end(html);
 }
 

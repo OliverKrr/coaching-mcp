@@ -47,6 +47,10 @@ src/auth/db.ts      DATA_DIR/auth.db — users, clients, pending auth, hashed to
 src/tenancy.ts      TenantManager: DATA_DIR/users/<id>/skill.db, lazy open/cache, delete
 src/account.ts      /account router (session + CSRF for all account routes): profile, zip export (fflate), delete
 src/account-data.ts /account/data browse & edit: sections/refs (create/edit/delete, optimistic concurrency), journal, open items
+src/auth/secrets.ts encrypted per-user secret store (AES-256-GCM under SECRETS_KEY; AAD binds user+slot)
+src/integrations/hevy.ts  Hevy API client + MCP tools, registered per-session only for users with a key
+src/apps-proxy.ts   /apps/<name> authenticated reverse proxy (per-app email allowlist, HTML prefix rewriting)
+src/ratelimit.ts    fixed-window per-IP limiter guarding the auth endpoints
 src/db.ts           coaching DB schema: sections, refs, journal, open_items + FTS5 (per user)
 src/tools/*.ts      the 10 MCP tools — take (server, db); deliberately user-agnostic
 src/snapshot.ts / restore.ts / migrate.ts + *-cli.ts   operational CLIs
@@ -129,6 +133,19 @@ SQLite `datetime('now')` strings — fixed-width UTC, string compare = chronolog
 files stay byte-identical to DB `content`. `coaching-mcp-restore` treats content changes where
 live `updated_at` is newer than the manifest as conflicts: abort-all unless `--force`;
 `--dry-run` reports `STALE SEED` but exits 0. No manifest → legacy mode (guard off, warns).
+
+**User secrets are sealed, not just stored**: AES-256-GCM under `SECRETS_KEY` with the
+`userId:name` pair as AAD — a leaked auth.db yields nothing and a ciphertext cannot be replayed
+onto another user or slot. Secrets are never logged and never rendered back (the UI shows only
+"connected since"). Integration tools register per session, only for users with a stored key —
+opt-in is structural, not a permission check inside the tool.
+
+**Pages contain zero JavaScript, and CSP enforces it**: `script-src 'none'` on every rendered
+page. Never add inline handlers (`onsubmit=` etc.) — if a page ever needs JS, the CSP decision
+has to be revisited deliberately. Proxied app responses keep their own headers.
+
+**App proxy authorization is allowlist-per-app**: a Google login alone must never expose a
+protected app; the user's email must be on that app's own list (`PROTECTED_APP_<NAME>_EMAILS`).
 
 **Prepared statements**: SQL statements used in loops are hoisted outside the loop.
 

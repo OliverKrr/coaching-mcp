@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ServeConfig } from "../src/context.js";
+import { authRateLimiter } from "../src/ratelimit.js";
 import { buildHttpServer, createContext } from "../src/serve.js";
 
 // ---------------------------------------------------------------------------
@@ -129,6 +130,72 @@ class MockIssuer {
 }
 
 // ---------------------------------------------------------------------------
+// Mock Hevy API + mock protected app (both on 127.0.0.1)
+
+function listen(server: Server): Promise<string> {
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("no address");
+      resolve(`http://127.0.0.1:${address.port}`);
+    });
+  });
+}
+
+const hevyValidKeys = new Set<string>(["valid-hevy-key"]);
+const mockHevy = createServer((req, res) => {
+  if (!hevyValidKeys.has((req.headers["api-key"] as string) ?? "")) {
+    res.writeHead(401, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "unauthorized" }));
+    return;
+  }
+  const url = new URL(req.url ?? "/", "http://hevy");
+  if (url.pathname === "/workouts/count") {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ workout_count: 42 }));
+    return;
+  }
+  if (url.pathname === "/workouts") {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ page: 1, workouts: [{ id: "w1", title: "Bench day" }] }));
+    return;
+  }
+  res.writeHead(404);
+  res.end();
+});
+
+const mockApp = createServer((req, res) => {
+  const url = new URL(req.url ?? "/", "http://app");
+  if (url.pathname === "/" && req.method === "GET") {
+    res.writeHead(200, {
+      "content-type": "text/html; charset=utf-8",
+      "set-cookie": "dash_sid=abc; Path=/; HttpOnly",
+    });
+    res.end('<html><a href="/page">go</a><form action="/login" hx-post="/api/x"></form></html>');
+    return;
+  }
+  if (url.pathname === "/redirect") {
+    res.writeHead(302, { location: "/target" });
+    res.end();
+    return;
+  }
+  if (url.pathname === "/echo" && req.method === "POST") {
+    const chunks: Buffer[] = [];
+    req.on("data", (c: Buffer) => chunks.push(c));
+    req.on("end", () => {
+      res.writeHead(200, {
+        "content-type": "text/plain",
+        "x-seen-prefix": (req.headers["x-forwarded-prefix"] as string) ?? "",
+      });
+      res.end(Buffer.concat(chunks));
+    });
+    return;
+  }
+  res.writeHead(404);
+  res.end();
+});
+
+// ---------------------------------------------------------------------------
 // App under test
 
 const issuer = new MockIssuer();
@@ -137,12 +204,16 @@ let base = "";
 let dataDir = "";
 let closeApp: () => void;
 const savedAllowlist = process.env.ALLOWED_EMAILS;
+const savedHevyBase = process.env.HEVY_API_BASE;
 
 const ALICE = "alice@example.com";
 const BOB = "bob@example.com";
 
 beforeAll(async () => {
   await issuer.start();
+  process.env.HEVY_API_BASE = await listen(mockHevy);
+  const mockAppUrl = await listen(mockApp);
+  authRateLimiter.configure(1_000_000); // the real limit is exercised in its own test
 
   dataDir = mkdtempSync(join(tmpdir(), "serve-data-"));
   const seedDir = mkdtempSync(join(tmpdir(), "serve-seed-"));
@@ -159,6 +230,8 @@ beforeAll(async () => {
     publicUrl: "http://placeholder.invalid",
     accessTokenTtlSec: 3600,
     refreshTokenTtlSec: 7776000,
+    secretsKey: Buffer.alloc(32, 7),
+    apps: [{ name: "testapp", url: mockAppUrl, emails: new Set([ALICE]) }],
   };
   const { ctx, mcpSessions } = createContext(cfg, {
     OIDC_ISSUER: issuer.url,
@@ -187,8 +260,12 @@ afterAll(async () => {
   closeApp();
   await new Promise<void>((resolve) => appServer.close(() => resolve()));
   await issuer.stop();
+  await new Promise<void>((resolve) => mockHevy.close(() => resolve()));
+  await new Promise<void>((resolve) => mockApp.close(() => resolve()));
   if (savedAllowlist === undefined) delete process.env.ALLOWED_EMAILS;
   else process.env.ALLOWED_EMAILS = savedAllowlist;
+  if (savedHevyBase === undefined) delete process.env.HEVY_API_BASE;
+  else process.env.HEVY_API_BASE = savedHevyBase;
 });
 
 // ---------------------------------------------------------------------------
@@ -823,5 +900,176 @@ describe("account page", () => {
     );
     expect(context).toContain("Template Skill");
     await client.close();
+  });
+});
+
+describe("hardening", () => {
+  it("sends strict security headers on every rendered page", async () => {
+    const res = await fetch(`${base}/`);
+    const csp = res.headers.get("content-security-policy") ?? "";
+    expect(csp).toContain("script-src 'none'");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(res.headers.get("x-frame-options")).toBe("DENY");
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+    // and the pages actually contain no scripts, so the CSP costs nothing
+    expect(await res.text()).not.toContain("<script");
+  });
+
+  it("rate-limits the auth endpoints per client IP", async () => {
+    authRateLimiter.configure(3);
+    try {
+      const hit = (): Promise<Response> =>
+        fetch(`${base}/register`, {
+          method: "POST",
+          headers: { "cf-connecting-ip": "203.0.113.9", "content-type": "application/json" },
+          body: "{}",
+        });
+      const statuses: number[] = [];
+      for (let i = 0; i < 5; i++) statuses.push((await hit()).status);
+      expect(statuses.filter((s) => s === 429).length).toBeGreaterThanOrEqual(2);
+      // other clients are unaffected
+      const other = await fetch(`${base}/register`, {
+        method: "POST",
+        headers: { "cf-connecting-ip": "198.51.100.7", "content-type": "application/json" },
+        body: JSON.stringify({ redirect_uris: [REDIRECT_URI] }),
+      });
+      expect(other.status).toBe(201);
+    } finally {
+      authRateLimiter.configure(1_000_000);
+    }
+  });
+});
+
+describe("user secrets & Hevy integration", () => {
+  it("connects Hevy after live validation, rejects bad keys", async () => {
+    const cookie = await accountLogin(ALICE);
+    const csrf =
+      /name="csrf" value="([^"]+)"/.exec(
+        await (await fetch(`${base}/account`, { headers: { cookie } })).text(),
+      )?.[1] ?? "";
+
+    const save = (key: string): Promise<Response> =>
+      fetch(`${base}/account/integrations/hevy`, {
+        method: "POST",
+        headers: { cookie, "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ csrf, api_key: key }),
+        redirect: "manual",
+      });
+
+    expect((await save("wrong-key")).status).toBe(400); // rejected by the Hevy API, not stored
+    let account = await (await fetch(`${base}/account`, { headers: { cookie } })).text();
+    expect(account).toContain("not connected");
+
+    expect((await save("valid-hevy-key")).status).toBe(302);
+    account = await (await fetch(`${base}/account`, { headers: { cookie } })).text();
+    expect(account).toContain("connected");
+    expect(account).not.toContain("valid-hevy-key"); // the key is never rendered back
+  });
+
+  it("registers Hevy tools only for users with a key", async () => {
+    const alice = await oauthLogin(ALICE);
+    const clientA = await mcpClient(alice.access);
+    const toolsA = (await clientA.listTools()).tools.map((t) => t.name);
+    expect(toolsA).toContain("hevy_get_workout_count");
+    expect(toolsA).toContain("hevy_create_routine");
+
+    const count = toolText(
+      await clientA.callTool({ name: "hevy_get_workout_count", arguments: {} }),
+    );
+    expect(count).toContain("42");
+    await clientA.close();
+
+    const bob = await oauthLogin(BOB);
+    const clientB = await mcpClient(bob.access);
+    const toolsB = (await clientB.listTools()).tools.map((t) => t.name);
+    expect(toolsB).not.toContain("hevy_get_workout_count");
+    await clientB.close();
+  });
+
+  it("answers with guidance instead of an error when Hevy revokes the key", async () => {
+    const alice = await oauthLogin(ALICE);
+    const client = await mcpClient(alice.access);
+    hevyValidKeys.delete("valid-hevy-key");
+    try {
+      const out = toolText(
+        await client.callTool({ name: "hevy_get_workout_count", arguments: {} }),
+      );
+      expect(out).toContain("account page");
+    } finally {
+      hevyValidKeys.add("valid-hevy-key");
+      await client.close();
+    }
+  });
+
+  it("disconnects Hevy: tools disappear for new sessions", async () => {
+    const cookie = await accountLogin(ALICE);
+    const csrf =
+      /name="csrf" value="([^"]+)"/.exec(
+        await (await fetch(`${base}/account`, { headers: { cookie } })).text(),
+      )?.[1] ?? "";
+    const res = await fetch(`${base}/account/integrations/hevy/delete`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ csrf }),
+      redirect: "manual",
+    });
+    expect(res.status).toBe(302);
+
+    const alice = await oauthLogin(ALICE);
+    const client = await mcpClient(alice.access);
+    const tools = (await client.listTools()).tools.map((t) => t.name);
+    expect(tools).not.toContain("hevy_get_workout_count");
+    await client.close();
+  });
+});
+
+describe("protected app proxy", () => {
+  it("requires a session", async () => {
+    const res = await fetch(`${base}/apps/testapp/`, { redirect: "manual" });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(`${base}/account`);
+  });
+
+  it("requires the app's own allowlist, not just a login", async () => {
+    const cookie = await accountLogin(BOB);
+    const res = await fetch(`${base}/apps/testapp/`, { headers: { cookie } });
+    expect(res.status).toBe(403);
+  });
+
+  it("proxies for allowlisted users, rewriting HTML/Location/cookies onto the prefix", async () => {
+    const cookie = await accountLogin(ALICE);
+
+    const home = await fetch(`${base}/apps/testapp/`, { headers: { cookie } });
+    expect(home.status).toBe(200);
+    const html = await home.text();
+    expect(html).toContain('href="/apps/testapp/page"');
+    expect(html).toContain('action="/apps/testapp/login"');
+    expect(html).toContain('hx-post="/apps/testapp/api/x"');
+    expect(home.headers.get("set-cookie")).toContain("Path=/apps/testapp/");
+
+    const redirect = await fetch(`${base}/apps/testapp/redirect`, {
+      headers: { cookie },
+      redirect: "manual",
+    });
+    expect(redirect.status).toBe(302);
+    expect(redirect.headers.get("location")).toBe("/apps/testapp/target");
+
+    const echo = await fetch(`${base}/apps/testapp/echo`, {
+      method: "POST",
+      headers: { cookie, "content-type": "text/plain" },
+      body: "ping-through",
+    });
+    expect(await echo.text()).toBe("ping-through");
+    expect(echo.headers.get("x-seen-prefix")).toBe("/apps/testapp");
+
+    // the account page lists the tool for authorized users
+    const account = await (await fetch(`${base}/account`, { headers: { cookie } })).text();
+    expect(account).toContain("/apps/testapp/");
+  });
+
+  it("404s for unknown apps", async () => {
+    const cookie = await accountLogin(ALICE);
+    const res = await fetch(`${base}/apps/nope/`, { headers: { cookie } });
+    expect(res.status).toBe(404);
   });
 });

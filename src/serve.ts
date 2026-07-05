@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { handleAccountRoute } from "./account.js";
+import { handleAccountRoute, webAuth } from "./account.js";
+import { handleAppRoute, parseProtectedApps } from "./apps-proxy.js";
 import { allowedEmails } from "./auth/allowlist.js";
 import { openAuthDatabase } from "./auth/db.js";
 import { createOidcProvider } from "./auth/oidc.js";
+import { parseSecretsKey } from "./auth/secrets.js";
+import { authRateLimiter } from "./ratelimit.js";
 import {
   handleAuthorize,
   handleOidcCallback,
@@ -42,6 +45,8 @@ export function loadServeConfig(env: NodeJS.ProcessEnv = process.env): ServeConf
     publicUrl: required("PUBLIC_URL").replace(/\/+$/, ""),
     accessTokenTtlSec: Number(env.ACCESS_TOKEN_TTL ?? 3600),
     refreshTokenTtlSec: Number(env.REFRESH_TOKEN_TTL ?? 7776000),
+    secretsKey: parseSecretsKey(env.SECRETS_KEY),
+    apps: parseProtectedApps(env),
   };
 }
 
@@ -104,6 +109,19 @@ async function route(
       await mcpSessions.handle(req, res);
       return;
     }
+  }
+
+  // Auth endpoints get a per-IP rate limit (defense in depth behind the proxy/CDN).
+  if (["/authorize", "/token", "/register", "/oidc/callback"].includes(path)) {
+    if (!authRateLimiter.allow(req)) {
+      sendJson(res, 429, { error: "rate_limited" });
+      return;
+    }
+  }
+
+  // Internal tools behind the login: /apps/<name>/**
+  if (path.startsWith("/apps/")) {
+    if (handleAppRoute(ctx, req, res, url, webAuth(ctx, req))) return;
   }
 
   // RFC 8414: with a path-suffixed issuer, discovery arrives as

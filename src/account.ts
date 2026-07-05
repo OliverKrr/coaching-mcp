@@ -3,8 +3,16 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { handleDataGet, handleDataPost } from "./account-data.js";
+import { appsForEmail } from "./apps-proxy.js";
 import { startAccountLogin } from "./auth/oauth.js";
 import { deleteUser, deleteWebSession, getUser, getWebSession } from "./auth/db.js";
+import {
+  deleteAllUserSecrets,
+  deleteUserSecret,
+  getUserSecretMeta,
+  setUserSecret,
+} from "./auth/secrets.js";
+import { HevyClient } from "./integrations/hevy.js";
 import type { ServeContext } from "./context.js";
 import {
   clearedCookie,
@@ -30,7 +38,7 @@ const SESSION_COOKIE = "account_session";
 
 export type WebAuth = { sessionId: string; userId: string; csrf: string };
 
-function webAuth(ctx: ServeContext, req: IncomingMessage): WebAuth | undefined {
+export function webAuth(ctx: ServeContext, req: IncomingMessage): WebAuth | undefined {
   const sessionId = parseCookies(req.headers.cookie)[SESSION_COOKIE];
   if (!sessionId) return undefined;
   const session = getWebSession(ctx.authDb, sessionId);
@@ -115,10 +123,62 @@ export async function handleAccountRoute(
       await deleteAccount(ctx, mcpSessions, res, auth, form.get("confirm_email") ?? "");
       return true;
     }
+    if (path === "/account/integrations/hevy") {
+      await saveHevyKey(ctx, res, auth, form.get("api_key") ?? "");
+      return true;
+    }
+    if (path === "/account/integrations/hevy/delete") {
+      deleteUserSecret(ctx.authDb, auth.userId, "hevy_api_key");
+      redirect(res, `${base}/account`);
+      return true;
+    }
     return handleDataPost(ctx, res, auth, url, form);
   }
 
   return false;
+}
+
+async function saveHevyKey(
+  ctx: ServeContext,
+  res: ServerResponse,
+  auth: WebAuth,
+  apiKey: string,
+): Promise<void> {
+  const base = ctx.cfg.publicUrl;
+  const key = apiKey.trim();
+  if (!ctx.cfg.secretsKey || !key) {
+    sendHtml(res, 400, page("Invalid request", "<h1>Invalid request</h1>"));
+    return;
+  }
+  let valid: boolean;
+  try {
+    valid = await new HevyClient(key).validateKey();
+  } catch (err) {
+    ctx.log(`hevy key validation failed: ${err instanceof Error ? err.message : String(err)}`);
+    sendHtml(
+      res,
+      502,
+      page(
+        "Hevy unreachable",
+        `<h1>Hevy is unreachable</h1><p>Could not verify the key right now — nothing was saved. Try again in a minute.</p><p><a href="${base}/account">Back to account</a></p>`,
+      ),
+    );
+    return;
+  }
+  if (!valid) {
+    sendHtml(
+      res,
+      400,
+      page(
+        "Key rejected",
+        `<h1>Hevy rejected this key</h1><p>Check it under hevy.com → Settings → Developer (requires Hevy Pro). Nothing was saved.</p><p><a href="${base}/account">Back to account</a></p>`,
+      ),
+    );
+    return;
+  }
+  setUserSecret(ctx.authDb, ctx.cfg.secretsKey, auth.userId, "hevy_api_key", key);
+  ctx.log(`hevy key configured for ${auth.userId}`);
+  redirect(res, `${base}/account`);
 }
 
 function renderAccountPage(ctx: ServeContext, res: ServerResponse, auth: WebAuth): void {
@@ -138,6 +198,44 @@ function renderAccountPage(ctx: ServeContext, res: ServerResponse, auth: WebAuth
   const dbPath = join(ctx.tenants.userDir(user.id), "skill.db");
   const dbSizeKb = existsSync(dbPath) ? Math.round(statSync(dbPath).size / 1024) : 0;
   const csrf = htmlEscape(auth.csrf);
+
+  let integrationsCard = "";
+  if (ctx.cfg.secretsKey) {
+    const hevyMeta = getUserSecretMeta(ctx.authDb, user.id, "hevy_api_key");
+    const hevyBlock = hevyMeta
+      ? `<p>Hevy: <strong>connected</strong> <span class="muted">(key updated ${htmlEscape(hevyMeta.updated_at)} UTC)</span></p>
+<form method="post" action="${base}/account/integrations/hevy">
+<input type="hidden" name="csrf" value="${csrf}">
+<label for="hevy_key">Replace API key:</label>
+<input type="password" id="hevy_key" name="api_key" autocomplete="off" required>
+<p><button>Update key</button></p>
+</form>
+<form method="post" action="${base}/account/integrations/hevy/delete">
+<input type="hidden" name="csrf" value="${csrf}">
+<button class="danger">Disconnect Hevy</button>
+</form>`
+      : `<p>Hevy: <span class="muted">not connected</span></p>
+<p class="muted">Connect your own Hevy account (requires Hevy Pro) and your coach gains tools to read workouts and manage routines. Key: hevy.com → Settings → Developer.</p>
+<form method="post" action="${base}/account/integrations/hevy">
+<input type="hidden" name="csrf" value="${csrf}">
+<label for="hevy_key">Hevy API key:</label>
+<input type="password" id="hevy_key" name="api_key" autocomplete="off" required>
+<p><button>Connect Hevy</button></p>
+</form>`;
+    integrationsCard = `<div class="card">
+<h2>Integrations</h2>
+${hevyBlock}
+<p class="muted">Keys are stored encrypted, are never shown again, and are removed with your account. New Claude conversations pick changes up immediately.</p>
+</div>`;
+  }
+
+  const apps = appsForEmail(ctx, user.email);
+  const appsCard = apps.length
+    ? `<div class="card">
+<h2>Tools</h2>
+${apps.map((a) => `<p><a href="${base}/apps/${a.name}/">${htmlEscape(a.name)}</a></p>`).join("\n")}
+</div>`
+    : "";
 
   sendHtml(
     res,
@@ -170,6 +268,9 @@ function renderAccountPage(ctx: ServeContext, res: ServerResponse, auth: WebAuth
 </form>
 <p class="muted">The zip contains every document as markdown plus a restorable copy of your database — the complete record this server holds about you.</p>
 </div>
+
+${integrationsCard}
+${appsCard}
 
 <div class="card">
 <h2>Delete account</h2>
@@ -223,6 +324,7 @@ async function deleteAccount(
   }
   await mcpSessions.closeUserSessions(user.id);
   ctx.tenants.deleteUserData(user.id);
+  deleteAllUserSecrets(ctx.authDb, user.id);
   deleteUser(ctx.authDb, user.id); // also removes tokens + web sessions
   ctx.log(`account deleted: ${user.email} (${user.id})`);
   res.writeHead(200, {

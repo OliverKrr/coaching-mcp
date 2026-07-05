@@ -80,6 +80,14 @@ and name every day with its calendar date in weekly plans.`;
 </div>
 
 <div class="card">
+<h2>${t.optionalTitle}</h2>
+<ul>
+<li>${t.optionalFitness}</li>
+<li>${t.optionalHevy}</li>
+</ul>
+</div>
+
+<div class="card">
 <h2>${t.routinesTitle}</h2>
 <p>${t.routinesBody} <a href="${base}/routines?lang=${lang}">${htmlEscape(base.replace(/^https?:\/\//, ""))}/routines</a></p>
 </div>
@@ -151,6 +159,11 @@ const EN = {
     "<strong>Start your first conversation</strong> in that project. The coach will interview you — language, goals, background, schedule, injuries — and build your personal coaching knowledge base from it. Just answer; nothing to configure.",
   projectTitle: "Project instructions (copy & paste)",
   projectIntro: "Paste this into your Claude project's instructions and adapt freely:",
+  optionalTitle: "Optional integrations — more data, better coaching",
+  optionalFitness:
+    '<strong>Fitness data:</strong> connect your training platform as a second Claude connector so the coach sees real load, wellness, and plans — e.g. intervals.icu via an MCP connector such as <a href="https://icusync.icu/" target="_blank" rel="noopener noreferrer">IcuSync</a>. Coaching works without it; data-driven check-ins work better with it.',
+  optionalHevy:
+    "<strong>Strength logging (Hevy):</strong> connect your own Hevy account on the account page (Integrations — requires Hevy Pro) and the coach can read your workouts and manage routines directly.",
   routinesTitle: "Automatic check-ins (optional)",
   routinesBody:
     "Let the coach come to you: a weekly review, an evening briefing, a morning readiness check — as scheduled tasks in your own Claude account. Ready-to-copy templates:",
@@ -187,6 +200,11 @@ const DE: typeof EN = {
     "<strong>Erste Unterhaltung starten</strong> in diesem Projekt. Der Coach interviewt dich — Sprache, Ziele, Vorgeschichte, Zeitbudget, Verletzungen — und baut daraus deine persönliche Coaching-Wissensbasis auf. Einfach antworten; nichts zu konfigurieren.",
   projectTitle: "Projekt-Anweisungen (kopieren & einfügen)",
   projectIntro: "Füge das in die Anweisungen deines Claude-Projekts ein und passe es frei an:",
+  optionalTitle: "Optionale Integrationen — mehr Daten, besseres Coaching",
+  optionalFitness:
+    '<strong>Fitness-Daten:</strong> verbinde deine Trainingsplattform als zweiten Claude-Connector, damit der Coach echte Belastung, Wellness und Pläne sieht — z. B. intervals.icu über einen MCP-Connector wie <a href="https://icusync.icu/" target="_blank" rel="noopener noreferrer">IcuSync</a>. Coaching funktioniert auch ohne; datengetriebene Check-ins werden damit deutlich besser.',
+  optionalHevy:
+    "<strong>Krafttraining (Hevy):</strong> verbinde dein eigenes Hevy-Konto auf der Account-Seite (Integrationen — erfordert Hevy Pro), dann kann der Coach deine Workouts lesen und Routinen direkt verwalten.",
   routinesTitle: "Automatische Check-ins (optional)",
   routinesBody:
     "Lass den Coach auf dich zukommen: Weekly Review, Abend-Briefing, Morgen-Readiness-Check — als geplante Aufgaben in deinem eigenen Claude-Konto. Fertige Vorlagen zum Kopieren:",
