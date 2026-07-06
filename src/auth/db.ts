@@ -115,7 +115,7 @@ export function getUser(db: Database.Database, id: string): User | undefined {
 /**
  * Find-or-create on a verified IdP login. Matches by stable `sub` first (so an
  * email change at the IdP updates the row), then adopts a pre-created row by
- * email (migration path: rows created by `coaching-mcp-migrate` have no sub yet).
+ * email (import path: operator-created rows have no sub until first login).
  */
 export function upsertUserOnLogin(
   db: Database.Database,
@@ -141,13 +141,6 @@ export function upsertUserOnLogin(
   db.prepare(
     "INSERT INTO users (id, email, oidc_sub, last_login_at) VALUES (?, ?, ?, datetime('now'))",
   ).run(id, email, sub);
-  return getUser(db, id) as User;
-}
-
-/** Create a user row without an IdP login (migration/import path). */
-export function createUser(db: Database.Database, email: string): User {
-  const id = newUserId();
-  db.prepare("INSERT INTO users (id, email) VALUES (?, ?)").run(id, email);
   return getUser(db, id) as User;
 }
 

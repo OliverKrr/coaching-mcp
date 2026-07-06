@@ -57,7 +57,7 @@ src/ratelimit.ts    fixed-window per-IP limiter guarding the auth endpoints
 src/db.ts           coaching DB schema: sections, refs, journal, open_items, routines + FTS5 (per user)
 src/tools/*.ts      the MCP tools — take (server, db); deliberately user-agnostic
 src/topics.ts       topic-pack loader (SEED_DIR/topics/<id>/) + list_topic_packs/get_topic_pack
-src/snapshot.ts / restore.ts / migrate.ts + *-cli.ts   operational CLIs
+src/snapshot.ts / restore.ts + *-cli.ts   operational CLIs
 src/http-util.ts    tiny node:http helpers (no express — keep deps lean)
 seed-template/      generic core SKILL.md + core references + topics/ packs, baked into the image as /seed
 ```
@@ -70,7 +70,6 @@ instantiated by the assistant through the normal write tools during onboarding.
 `coaching-mcp-restore` (inverse of `coaching-mcp-snapshot`) upserts `sections`/`refs` from a seed
 dir into a live DB; it preserves `journal` + `open_items` and has a timestamp clobber guard
 (`seed-manifest.json`; conflicts abort unless `--force`; `--dry-run` previews read-only).
-`coaching-mcp-migrate` adopts a v1 single-user `DATA_DIR/skill.db` into the multi-user layout.
 
 ## MCP tools
 

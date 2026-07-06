@@ -14,7 +14,7 @@ import { registerReadTools } from "./tools/read.js";
 import { registerRoutineTools } from "./tools/routines.js";
 import { registerWriteTools } from "./tools/write.js";
 import { registerTopicTools } from "./topics.js";
-import { VERSION } from "./version.js";
+import { SERVER_INSTRUCTIONS, VERSION } from "./version.js";
 
 /**
  * Streamable HTTP MCP endpoint (`/mcp`), multi-tenant: every MCP session is
@@ -75,7 +75,10 @@ export class McpSessionManager {
     }
 
     const db = this.ctx.tenants.open(auth.userId);
-    const server = new McpServer({ name: "coaching-mcp", version: VERSION });
+    const server = new McpServer(
+      { name: "coaching-mcp", version: VERSION },
+      { instructions: SERVER_INSTRUCTIONS },
+    );
     registerReadTools(server, db);
     registerWriteTools(server, db);
     registerOpsTools(server, db);

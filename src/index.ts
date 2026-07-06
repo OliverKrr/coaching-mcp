@@ -9,7 +9,7 @@ import { registerReadTools } from "./tools/read.js";
 import { registerRoutineTools } from "./tools/routines.js";
 import { registerWriteTools } from "./tools/write.js";
 import { registerTopicTools } from "./topics.js";
-import { VERSION } from "./version.js";
+import { SERVER_INSTRUCTIONS, VERSION } from "./version.js";
 
 function log(msg: string): void {
   process.stderr.write(`${new Date().toISOString()} [coaching-mcp] ${msg}\n`);
@@ -25,7 +25,10 @@ async function main(): Promise<void> {
   log("database opened");
 
   log("registering tools…");
-  const server = new McpServer({ name: "coaching-mcp", version: VERSION });
+  const server = new McpServer(
+    { name: "coaching-mcp", version: VERSION },
+    { instructions: SERVER_INSTRUCTIONS },
+  );
   registerReadTools(server, db);
   registerWriteTools(server, db);
   registerOpsTools(server, db);

@@ -120,12 +120,13 @@ With `SECRETS_KEY` set, each user can connect third-party services on their acco
 currently **Hevy** (strength logging; requires the user's own Hevy Pro API key). Keys are
 validated live before being stored, sealed with AES-256-GCM under the server master key (a
 leaked database alone yields nothing; the AAD binds every ciphertext to its user), never
-rendered back, and removed with the account. Users with a stored key get Hevy MCP tools in
-their coaching sessions (`hevy_get_workouts`, `hevy_get_workout`, `hevy_get_workout_count`,
-`hevy_get_routines`, `hevy_create_routine`, `hevy_update_routine`,
-`hevy_get_exercise_templates`, `hevy_get_routine_folders`, `hevy_create_routine_folder`);
-users without one see no Hevy tools at all. If Hevy later rejects the key, tools answer with
-plain guidance to update it on the account page.
+rendered back, and removed with the account. Users with a stored key get the full Hevy API
+surface as `hevy_*` MCP tools in their coaching sessions — workouts (list/get/count/events,
+create, update), routines (list/get, create, update), exercise templates (search across the
+whole catalog, list/get, create custom, per-exercise history), routine folders (list/get,
+create), body measurements (list/get, create, update), and account info. Users without a key
+see no Hevy tools at all. If Hevy later rejects the key, tools answer with plain guidance to
+update it on the account page.
 
 ## Protected apps (operator)
 
@@ -224,19 +225,6 @@ The bare `coaching-mcp` command is the classic single-user stdio server (databas
 `DATA_DIR/skill.db`, seeded once from `SEED_DIR`) — for local use or MCP clients that spawn a
 subprocess. It needs none of the auth configuration.
 
-## Migrating a v1 (single-user) deployment
-
-v1 stored one database at `DATA_DIR/skill.db`. To adopt it into the multi-user layout:
-
-```sh
-coaching-mcp-migrate --email you@example.com --data-dir /data --dry-run  # preview
-coaching-mcp-migrate --email you@example.com --data-dir /data           # move it
-```
-
-This registers the user and moves the database (with all history — journal, open items) to
-`DATA_DIR/users/<id>/skill.db`. The IdP identity links automatically on their first login,
-matched by email.
-
 ## Snapshot & recovery
 
 `coaching-mcp-snapshot` dumps a SQLite database to a local directory — a lossless,
@@ -286,6 +274,15 @@ the write unless `--force` is passed; `--dry-run` reports them as `STALE SEED` w
 
 **Recovery** (any deployment): stop the server, replace the target `skill.db` with the backed-up
 copy (delete any `-wal`/`-shm` sidecars), start the server.
+
+## Feedback & contributions
+
+Issues and pull requests are welcome at
+[github.com/OliverKrr/coaching-mcp](https://github.com/OliverKrr/coaching-mcp). The server
+actively advertises this channel to its users: the MCP server instructions and the seeded
+`SKILL.md` tell each user's assistant that it may offer to file feature requests, bug reports,
+or PRs upstream on the user's behalf — described generically, and **never containing personal or
+coaching data, e-mail addresses, deployment URLs, or API keys** (issues and PRs are public).
 
 ## License
 

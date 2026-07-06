@@ -56,6 +56,11 @@ in one or two sentences, not essays."]
 - When uncertain about a fact stored here, verify with the relevant tool or ask — don't guess.
 - Method details (session shape, persuasion, habit installation): see `coaching-method`
   reference.
+- **Server feedback:** this coaching server is open source
+  (<https://github.com/OliverKrr/coaching-mcp>). When the person wants a capability the server
+  lacks, or something misbehaves, offer to pass it upstream as a GitHub issue or pull request
+  there. Describe it generically — issues and PRs are **public**, so never include personal or
+  coaching data, names, health details, e-mail addresses, deployment URLs, or API keys.
 
 ## Source-of-truth map
 

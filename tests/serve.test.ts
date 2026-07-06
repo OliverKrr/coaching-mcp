@@ -143,6 +143,8 @@ function listen(server: Server): Promise<string> {
 }
 
 const hevyValidKeys = new Set<string>(["valid-hevy-key"]);
+let hevyTemplatePages = 0; // counts catalog page fetches — asserts the search cache works
+let lastHevyBody: unknown; // last JSON body a write endpoint received
 const mockHevy = createServer((req, res) => {
   if (!hevyValidKeys.has((req.headers["api-key"] as string) ?? "")) {
     res.writeHead(401, { "content-type": "application/json" });
@@ -150,14 +152,46 @@ const mockHevy = createServer((req, res) => {
     return;
   }
   const url = new URL(req.url ?? "/", "http://hevy");
+  const json = (status: number, body: unknown): void => {
+    res.writeHead(status, { "content-type": "application/json" });
+    res.end(JSON.stringify(body));
+  };
+  if (req.method === "POST" || req.method === "PUT") {
+    const chunks: Buffer[] = [];
+    req.on("data", (c: Buffer) => chunks.push(c));
+    req.on("end", () => {
+      lastHevyBody = JSON.parse(Buffer.concat(chunks).toString() || "{}");
+      json(201, { ok: true, received: lastHevyBody });
+    });
+    return;
+  }
   if (url.pathname === "/workouts/count") {
-    res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ workout_count: 42 }));
+    json(200, { workout_count: 42 });
     return;
   }
   if (url.pathname === "/workouts") {
-    res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ page: 1, workouts: [{ id: "w1", title: "Bench day" }] }));
+    json(200, { page: 1, workouts: [{ id: "w1", title: "Bench day" }] });
+    return;
+  }
+  if (url.pathname === "/exercise_templates") {
+    // Two catalog pages so allExerciseTemplates() has to paginate.
+    hevyTemplatePages++;
+    const page = Number(url.searchParams.get("page") ?? "1");
+    json(200, {
+      page,
+      page_count: 2,
+      exercise_templates:
+        page === 1
+          ? [
+              { id: "t1", title: "Bench Press (Barbell)", primary_muscle_group: "chest" },
+              { id: "t2", title: "Squat (Barbell)", primary_muscle_group: "quadriceps" },
+            ]
+          : [{ id: "t3", title: "Incline Bench Press (Dumbbell)", primary_muscle_group: "chest" }],
+    });
+    return;
+  }
+  if (url.pathname === "/user/info") {
+    json(200, { data: { id: "u1", name: "Alice", url: "https://hevy.example/alice" } });
     return;
   }
   res.writeHead(404);
@@ -1094,11 +1128,104 @@ describe("user secrets & Hevy integration", () => {
     expect(count).toContain("42");
     await clientA.close();
 
+    // Full parity surface: every resource family is present.
+    for (const name of [
+      "hevy_get_workout_events",
+      "hevy_create_workout",
+      "hevy_update_workout",
+      "hevy_get_routine",
+      "hevy_search_exercise_templates",
+      "hevy_get_exercise_template",
+      "hevy_get_exercise_history",
+      "hevy_create_exercise_template",
+      "hevy_get_routine_folder",
+      "hevy_get_body_measurements",
+      "hevy_create_body_measurement",
+      "hevy_update_body_measurement",
+      "hevy_get_user_info",
+    ]) {
+      expect(toolsA).toContain(name);
+    }
+
     const bob = await oauthLogin(BOB);
     const clientB = await mcpClient(bob.access);
     const toolsB = (await clientB.listTools()).tools.map((t) => t.name);
     expect(toolsB).not.toContain("hevy_get_workout_count");
     await clientB.close();
+  });
+
+  it("searches the template catalog across pages and caches it per session", async () => {
+    const alice = await oauthLogin(ALICE);
+    const client = await mcpClient(alice.access);
+    try {
+      hevyTemplatePages = 0;
+      const hits = toolText(
+        await client.callTool({
+          name: "hevy_search_exercise_templates",
+          arguments: { query: "bench press", muscleGroup: "chest" },
+        }),
+      );
+      expect(hits).toContain("t1");
+      expect(hits).toContain("t3"); // page 2 result — pagination happened
+      expect(hits).not.toContain('"t2"'); // squat filtered out
+      expect(hevyTemplatePages).toBe(2);
+
+      // Second search reuses the session cache — no new catalog fetches.
+      await client.callTool({
+        name: "hevy_search_exercise_templates",
+        arguments: { query: "squat" },
+      });
+      expect(hevyTemplatePages).toBe(2);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("sends the documented wire shapes on writes", async () => {
+    const alice = await oauthLogin(ALICE);
+    const client = await mcpClient(alice.access);
+    try {
+      await client.callTool({
+        name: "hevy_create_workout",
+        arguments: {
+          title: "Push day",
+          startTime: "2026-07-06T10:00:00Z",
+          endTime: "2026-07-06T11:00:00Z",
+          exercises: [
+            { exerciseTemplateId: "t1", sets: [{ type: "normal", weightKg: 80, reps: 5 }] },
+          ],
+        },
+      });
+      const workout = (lastHevyBody as { workout: Record<string, unknown> }).workout;
+      expect(workout.start_time).toBe("2026-07-06T10:00:00Z");
+      expect(workout.is_private).toBe(false);
+      const wSet = (workout.exercises as Array<{ sets: Array<Record<string, unknown>> }>)[0]
+        .sets[0];
+      expect(wSet).toMatchObject({ weight_kg: 80, reps: 5, rpe: null });
+      expect(wSet).not.toHaveProperty("rep_range"); // workout sets: rpe, no rep_range
+
+      await client.callTool({
+        name: "hevy_create_routine",
+        arguments: {
+          title: "5x5",
+          exercises: [{ exerciseTemplateId: "t2", sets: [{ repRange: { start: 5, end: 5 } }] }],
+        },
+      });
+      const routine = (lastHevyBody as { routine: Record<string, unknown> }).routine;
+      const rSet = (routine.exercises as Array<{ sets: Array<Record<string, unknown>> }>)[0]
+        .sets[0];
+      expect(rSet.rep_range).toEqual({ start: 5, end: 5 }); // routine sets: rep_range, no rpe
+      expect(rSet).not.toHaveProperty("rpe");
+
+      await client.callTool({
+        name: "hevy_create_body_measurement",
+        arguments: { date: "2026-07-06", weightKg: 81.5 },
+      });
+      // Flat body: no wrapper, only provided fields (the API rejects nulls here).
+      expect(lastHevyBody).toEqual({ date: "2026-07-06", weight_kg: 81.5 });
+    } finally {
+      await client.close();
+    }
   });
 
   it("answers with guidance instead of an error when Hevy revokes the key", async () => {

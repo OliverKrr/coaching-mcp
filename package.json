@@ -1,6 +1,6 @@
 {
   "name": "coaching-mcp",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "description": "Multi-user coaching MCP server backed by SQLite+FTS5 — SKILL.md knowledge base with built-in OIDC-federated OAuth for Claude AI",
   "keywords": [
     "claude",
@@ -12,7 +12,6 @@
   "license": "MIT",
   "bin": {
     "coaching-mcp": "dist/index.js",
-    "coaching-mcp-migrate": "dist/migrate-cli.js",
     "coaching-mcp-restore": "dist/restore-cli.js",
     "coaching-mcp-snapshot": "dist/snapshot-cli.js"
   },

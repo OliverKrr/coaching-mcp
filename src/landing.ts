@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ServeContext } from "./context.js";
 import { htmlEscape, page, sendHtml } from "./http-util.js";
 import { allRoutineTemplates } from "./topics.js";
+import { REPO_URL } from "./version.js";
 
 /**
  * Public landing page = the setup guide new users need to get from "invited"
@@ -97,7 +98,7 @@ and name every day with its calendar date in weekly plans.`;
 <p>${t.dataBody} <a href="${base}/account">${htmlEscape(base.replace(/^https?:\/\//, ""))}/account</a></p>
 </div>
 
-<p class="muted">${t.footer}</p>`,
+<p class="muted">${t.footer} ${t.openSource.replace("%REPO%", `<a href="${REPO_URL}" target="_blank" rel="noopener noreferrer">GitHub</a>`)}</p>`,
     ),
   );
 }
@@ -194,6 +195,8 @@ const EN = {
   dataBody:
     "Everything the coach knows about you is yours: view and edit every document, download a full export, or delete your account at",
   footer: "Coaching content is stored per user; nobody else can read yours.",
+  openSource:
+    "The server software is open source on %REPO% — feature requests, bug reports, and pull requests welcome (you can even ask your coach to file them; they must never contain personal data).",
 };
 
 const DE: typeof EN = {
@@ -240,4 +243,6 @@ const DE: typeof EN = {
   dataBody:
     "Alles, was der Coach über dich weiß, gehört dir: alle Dokumente ansehen und bearbeiten, einen vollständigen Export herunterladen oder deinen Account löschen unter",
   footer: "Coaching-Inhalte werden pro Person gespeichert; niemand sonst kann deine lesen.",
+  openSource:
+    "Die Server-Software ist Open Source auf %REPO% — Feature-Wünsche, Bug-Reports und Pull Requests willkommen (du kannst sogar deinen Coach bitten, sie einzureichen; sie dürfen nie persönliche Daten enthalten).",
 };
