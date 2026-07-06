@@ -141,8 +141,11 @@ everything. Requires `SECRETS_KEY`.
   (colliding tools are otherwise skipped and logged).
 - **Own account, own credentials.** OAuth upstreams get the standard dance (discovery, dynamic
   client registration, PKCE) started from the account page — the user authorizes with their own
-  account and subscription there; static-token upstreams take a pasted token. Credentials are
-  sealed in the per-user secret store and removed with the account. This is a convenience
+  account and subscription there; static-token upstreams take a pasted token; URLs with an
+  embedded access token (`…/mcp?token=…`) work as pasted — the query part is split off, sealed
+  like any other credential, and re-attached only at connect time (the visible URL and logs
+  never contain it). Credentials are sealed in the per-user secret store and removed with the
+  account. This is a convenience
   gateway, not a way around an upstream's pricing: each user still needs their own access to
   the upstream service.
 - **Failure-tolerant.** An unreachable or unauthorized upstream is skipped for that session and

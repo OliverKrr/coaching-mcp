@@ -1338,6 +1338,7 @@ type MockUpstream = {
 async function startMockUpstream(opts: {
   bearer?: string;
   oauth?: boolean;
+  queryToken?: string;
   instructions?: string;
 }): Promise<MockUpstream> {
   const issuedTokens = new Set<string>();
@@ -1416,6 +1417,10 @@ async function startMockUpstream(opts: {
       }
 
       // Everything else is the MCP endpoint — auth gate first.
+      if (opts.queryToken !== undefined && url.searchParams.get("token") !== opts.queryToken) {
+        json(401, { error: "bad or missing token query parameter" });
+        return;
+      }
       const authHeader = req.headers.authorization;
       if (opts.bearer !== undefined && authHeader !== `Bearer ${opts.bearer}`) {
         json(401, { error: "unauthorized" });
@@ -1630,6 +1635,37 @@ describe("MCP gateways (user-attached upstream servers)", () => {
       }
     } finally {
       await removeAllGateways(session);
+    }
+  });
+
+  it("query-token URL: token split off, sealed, never rendered, re-attached on connect", async () => {
+    const upQuery = await startMockUpstream({ queryToken: "sekret-token-123" });
+    const session = await loginWithCsrf(ALICE);
+    try {
+      const added = await addGateway(session, {
+        name: "IcuLike",
+        url: `${upQuery.url}/mcp?token=sekret-token-123`,
+      });
+      expect(added.status).toBe(302);
+      const account = await accountHtml(session);
+      expect(account).toContain("connected");
+      expect(account).toContain(`${upQuery.url}/mcp`); // clean base URL shown
+      expect(account).toContain("embedded access token stored encrypted");
+      expect(account).not.toContain("sekret-token-123"); // the credential never renders
+
+      const alice = await oauthLogin(ALICE);
+      const client = await mcpClient(alice.access);
+      try {
+        const out = toolText(
+          await client.callTool({ name: "get_activities", arguments: { days: 5 } }),
+        );
+        expect(out).toContain("activities:5"); // query re-attached at connect time
+      } finally {
+        await client.close();
+      }
+    } finally {
+      await removeAllGateways(session);
+      await upQuery.close();
     }
   });
 

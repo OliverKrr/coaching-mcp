@@ -18,6 +18,7 @@ import {
   deleteUserGateways,
   finishGatewayConnect,
   getGateway,
+  hasSealedQuery,
   listGateways,
   startGatewayConnect,
   type Gateway,
@@ -400,7 +401,7 @@ ${hevyBlock}
     const rows = gateways
       .map(
         (g) => `<tr>
-<td><strong>${htmlEscape(g.name)}</strong>${g.prefix ? ` <span class="muted">(tools prefixed ${htmlEscape(g.prefix)}_)</span>` : ""}<br><span class="muted">${htmlEscape(g.url)}</span></td>
+<td><strong>${htmlEscape(g.name)}</strong>${g.prefix ? ` <span class="muted">(tools prefixed ${htmlEscape(g.prefix)}_)</span>` : ""}<br><span class="muted">${htmlEscape(g.url)}${hasSealedQuery(ctx.authDb, g) ? " · embedded access token stored encrypted" : ""}</span></td>
 <td>${gatewayStatusLabel(g)}</td>
 <td>
 <form method="post" action="${base}/account/gateways/${g.id}/connect"><input type="hidden" name="csrf" value="${csrf}"><button>${g.status === "connected" ? "Re-check" : "Connect"}</button></form>
@@ -411,14 +412,18 @@ ${hevyBlock}
       .join("\n");
     gatewaysCard = `<div class="card">
 <h2>Connected MCP servers</h2>
-<p class="muted">Attach other MCP servers here and their tools appear in your coaching conversations — so one Claude connector is enough even on plans that allow only one. You sign in to each server as yourself (your own account and subscription there); credentials are stored encrypted and removed with your account.</p>
+<p class="muted">Attach other MCP servers here and their tools appear in your coaching conversations — so one Claude connector is enough even on plans that allow only one. You sign in to each server as yourself (your own account and subscription there); credentials are stored encrypted, never shown again, and removed with your account.</p>
 ${rows ? `<table>\n${rows}\n</table>` : ""}
 <form method="post" action="${base}/account/gateways">
 <input type="hidden" name="csrf" value="${csrf}">
-<p><label for="gw_name">Name:</label> <input id="gw_name" name="name" required maxlength="40" placeholder="e.g. IcuSync"></p>
-<p><label for="gw_url">Server URL:</label> <input id="gw_url" name="url" type="url" required placeholder="https://…"></p>
-<p><label for="gw_bearer">Access token</label> <span class="muted">(only for servers using a static token)</span>: <input id="gw_bearer" name="bearer" type="password" autocomplete="off"></p>
-<p><label for="gw_prefix">Tool prefix</label> <span class="muted">(optional, a–z 0–9 _; use when tool names clash)</span>: <input id="gw_prefix" name="prefix" maxlength="16" pattern="[a-z0-9_]*"></p>
+<p><label for="gw_name">Name:</label> <input id="gw_name" name="name" required maxlength="40" placeholder="e.g. IcuSync"><br>
+<span class="muted">A label for this list — it does not change any tool names.</span></p>
+<p><label for="gw_url">Server URL:</label> <input id="gw_url" name="url" type="url" required placeholder="https://…"><br>
+<span class="muted">Paste the URL exactly as the service gives it. If it already contains an access token (e.g. <code>…/mcp?token=…</code>), that is all you need — the token part is split off and stored encrypted.</span></p>
+<p><label for="gw_bearer">Access token</label>: <input id="gw_bearer" name="bearer" type="password" autocomplete="off"><br>
+<span class="muted">Only for servers that expect a separate Authorization header. Leave empty when the token is already part of the URL, or when the server signs you in itself.</span></p>
+<p><label for="gw_prefix">Tool prefix</label>: <input id="gw_prefix" name="prefix" maxlength="16" pattern="[a-z0-9_]*"><br>
+<span class="muted">Optional — leave empty to keep the server's original tool names (recommended). Set one (a–z, 0–9, _) only if its tool names clash with existing tools; clashing tools are otherwise skipped.</span></p>
 <p><button>Add &amp; connect</button></p>
 </form>
 <p class="muted">Servers with their own sign-in open an authorization page — like adding a connector in Claude. New Claude conversations pick up the tools immediately.</p>

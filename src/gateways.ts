@@ -20,7 +20,12 @@ import type Database from "better-sqlite3";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { randomToken } from "./auth/db.js";
-import { deleteUserSecret, getUserSecret, setUserSecret } from "./auth/secrets.js";
+import {
+  deleteUserSecret,
+  getUserSecret,
+  getUserSecretMeta,
+  setUserSecret,
+} from "./auth/secrets.js";
 import type { ServeContext } from "./context.js";
 import { VERSION } from "./version.js";
 
@@ -166,17 +171,49 @@ export function createGateway(
   if (listGateways(ctx.authDb, userId).length >= MAX_GATEWAYS_PER_USER) {
     throw new Error(`at most ${MAX_GATEWAYS_PER_USER} connected servers per account`);
   }
+  // Split any query string off the URL and seal it: services like fitness
+  // connectors hand out URLs with an embedded access token (…/mcp?token=…).
+  // The stored/displayed URL must never contain that credential.
+  let parsed: URL;
+  try {
+    parsed = new URL(input.url.trim());
+  } catch {
+    throw new Error("invalid URL");
+  }
+  const query = parsed.search;
+  parsed.search = "";
+  parsed.hash = "";
+
   const bearer = input.bearer.trim();
   const id = `gw_${randomToken(6)}`;
   ctx.authDb
     .prepare(
       "INSERT INTO gateways (id, user_id, name, url, prefix, auth_kind) VALUES (?, ?, ?, ?, ?, ?)",
     )
-    .run(id, userId, name, input.url.trim(), prefix, bearer ? "bearer" : "none");
-  if (bearer && ctx.cfg.secretsKey) {
-    setUserSecret(ctx.authDb, ctx.cfg.secretsKey, userId, `gateway:${id}:bearer`, bearer);
+    .run(id, userId, name, parsed.href, prefix, bearer ? "bearer" : "none");
+  const key = ctx.cfg.secretsKey;
+  if (key) {
+    if (bearer) setUserSecret(ctx.authDb, key, userId, `gateway:${id}:bearer`, bearer);
+    if (query) setUserSecret(ctx.authDb, key, userId, `gateway:${id}:query`, query);
   }
   return getGateway(ctx.authDb, userId, id) as Gateway;
+}
+
+/** True when the gateway's URL carries sealed embedded query parameters (e.g. ?token=…). */
+export function hasSealedQuery(db: Database.Database, gw: Gateway): boolean {
+  return getUserSecretMeta(db, gw.user_id, `gateway:${gw.id}:query`) !== undefined;
+}
+
+/** The connect-time URL: stored base URL + re-attached sealed query parameters. */
+function gatewayUrl(ctx: ServeContext, gw: Gateway): URL {
+  const url = new URL(gw.url);
+  const key = requireKey(ctx);
+  const query = getUserSecret(ctx.authDb, key, gw.user_id, `gateway:${gw.id}:query`);
+  if (query) {
+    const params = new URLSearchParams(query.startsWith("?") ? query.slice(1) : query);
+    for (const [name, value] of params) url.searchParams.append(name, value);
+  }
+  return url;
 }
 
 export function deleteGateway(ctx: ServeContext, userId: string, id: string): void {
@@ -184,7 +221,7 @@ export function deleteGateway(ctx: ServeContext, userId: string, id: string): vo
   ctx.authDb
     .prepare("DELETE FROM gateway_pending WHERE gateway_id = ? AND user_id = ?")
     .run(id, userId);
-  for (const slot of ["bearer", "tokens", "client"]) {
+  for (const slot of ["bearer", "tokens", "client", "query"]) {
     deleteUserSecret(ctx.authDb, userId, `gateway:${id}:${slot}`);
   }
 }
@@ -343,10 +380,11 @@ function makeTransport(
   flowState?: string,
 ): { transport: StreamableHTTPClientTransport; provider?: GatewayAuthProvider } {
   const key = requireKey(ctx);
+  const url = gatewayUrl(ctx, gw);
   if (gw.auth_kind === "bearer") {
     const bearer = getUserSecret(ctx.authDb, key, gw.user_id, `gateway:${gw.id}:bearer`);
     return {
-      transport: new StreamableHTTPClientTransport(new URL(gw.url), {
+      transport: new StreamableHTTPClientTransport(url, {
         fetch: guardedFetch,
         requestInit: bearer ? { headers: { authorization: `Bearer ${bearer}` } } : undefined,
       }),
@@ -354,7 +392,7 @@ function makeTransport(
   }
   const provider = new GatewayAuthProvider(ctx.authDb, key, gw, ctx.cfg.publicUrl, flowState);
   return {
-    transport: new StreamableHTTPClientTransport(new URL(gw.url), {
+    transport: new StreamableHTTPClientTransport(url, {
       fetch: guardedFetch,
       authProvider: provider,
     }),
@@ -449,7 +487,7 @@ export async function finishGatewayConnect(
   await assertSafeGatewayUrl(gw.url);
   const key = requireKey(ctx);
   const provider = new GatewayAuthProvider(ctx.authDb, key, gw, ctx.cfg.publicUrl, state);
-  const transport = new StreamableHTTPClientTransport(new URL(gw.url), {
+  const transport = new StreamableHTTPClientTransport(gatewayUrl(ctx, gw), {
     fetch: guardedFetch,
     authProvider: provider,
   });
