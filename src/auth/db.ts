@@ -76,6 +76,26 @@ export function openAuthDatabase(dataDir: string): Database.Database {
 			csrf TEXT NOT NULL,
 			expires_at INTEGER NOT NULL
 		);
+		CREATE TABLE IF NOT EXISTS gateways (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			url TEXT NOT NULL,
+			prefix TEXT NOT NULL DEFAULT '',
+			auth_kind TEXT NOT NULL DEFAULT 'none' CHECK (auth_kind IN ('none','bearer','oauth')),
+			status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','connected','needs_auth','error')),
+			last_error TEXT,
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			last_connected_at TEXT
+		);
+		CREATE INDEX IF NOT EXISTS gateways_user ON gateways(user_id);
+		CREATE TABLE IF NOT EXISTS gateway_pending (
+			state TEXT PRIMARY KEY,
+			gateway_id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			code_verifier TEXT,
+			expires_at INTEGER NOT NULL
+		);
 	`);
   return db;
 }
@@ -101,6 +121,7 @@ function pruneExpired(db: Database.Database): void {
   db.prepare("DELETE FROM pending_auth WHERE expires_at < ?").run(t);
   db.prepare("DELETE FROM auth_codes WHERE expires_at < ?").run(t);
   db.prepare("DELETE FROM web_sessions WHERE expires_at < ?").run(t);
+  db.prepare("DELETE FROM gateway_pending WHERE expires_at < ?").run(t);
   // Expired/revoked tokens are kept 30 days for refresh-reuse detection, then dropped.
   db.prepare("DELETE FROM tokens WHERE expires_at < ? - 2592000").run(t);
 }

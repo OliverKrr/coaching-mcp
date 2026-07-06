@@ -12,6 +12,16 @@ import {
   getUserSecretMeta,
   setUserSecret,
 } from "./auth/secrets.js";
+import {
+  createGateway,
+  deleteGateway,
+  deleteUserGateways,
+  finishGatewayConnect,
+  getGateway,
+  listGateways,
+  startGatewayConnect,
+  type Gateway,
+} from "./gateways.js";
 import { HevyClient } from "./integrations/hevy.js";
 import type { ServeContext } from "./context.js";
 import {
@@ -90,6 +100,10 @@ export async function handleAccountRoute(
       renderAccountPage(ctx, res, auth);
       return true;
     }
+    if (path === "/account/gateways/callback") {
+      await handleGatewayCallback(ctx, res, auth, url);
+      return true;
+    }
     return handleDataGet(ctx, res, auth, url);
   }
 
@@ -130,6 +144,21 @@ export async function handleAccountRoute(
     if (path === "/account/integrations/hevy/delete") {
       deleteUserSecret(ctx.authDb, auth.userId, "hevy_api_key");
       redirect(res, `${base}/account`);
+      return true;
+    }
+    if (path === "/account/gateways") {
+      await addGateway(ctx, res, auth, form);
+      return true;
+    }
+    const gatewayAction = /^\/account\/gateways\/(gw_[A-Za-z0-9_-]+)\/(connect|delete)$/.exec(path);
+    if (gatewayAction) {
+      await handleGatewayAction(
+        ctx,
+        res,
+        auth,
+        gatewayAction[1] as string,
+        gatewayAction[2] as "connect" | "delete",
+      );
       return true;
     }
     return handleDataPost(ctx, res, auth, url, form);
@@ -181,6 +210,142 @@ async function saveHevyKey(
   redirect(res, `${base}/account`);
 }
 
+function accountError(ctx: ServeContext, res: ServerResponse, title: string, msg: string): void {
+  sendHtml(
+    res,
+    400,
+    page(
+      title,
+      `<h1>${htmlEscape(title)}</h1><p>${htmlEscape(msg)}</p><p><a href="${ctx.cfg.publicUrl}/account">Back to account</a></p>`,
+    ),
+  );
+}
+
+async function addGateway(
+  ctx: ServeContext,
+  res: ServerResponse,
+  auth: WebAuth,
+  form: URLSearchParams,
+): Promise<void> {
+  if (!ctx.cfg.secretsKey) {
+    accountError(ctx, res, "Unavailable", "Connected servers are disabled on this deployment.");
+    return;
+  }
+  let gateway: Gateway;
+  try {
+    gateway = createGateway(ctx, auth.userId, {
+      name: form.get("name") ?? "",
+      url: form.get("url") ?? "",
+      prefix: form.get("prefix") ?? "",
+      bearer: form.get("bearer") ?? "",
+    });
+  } catch (err) {
+    accountError(
+      ctx,
+      res,
+      "Could not add server",
+      err instanceof Error ? err.message : "invalid input",
+    );
+    return;
+  }
+  await connectAndRedirect(ctx, res, gateway);
+}
+
+async function handleGatewayAction(
+  ctx: ServeContext,
+  res: ServerResponse,
+  auth: WebAuth,
+  id: string,
+  action: "connect" | "delete",
+): Promise<void> {
+  const base = ctx.cfg.publicUrl;
+  const gateway = getGateway(ctx.authDb, auth.userId, id);
+  if (!gateway) {
+    accountError(ctx, res, "Not found", "This connected server no longer exists.");
+    return;
+  }
+  if (action === "delete") {
+    deleteGateway(ctx, auth.userId, id);
+    ctx.log(`gateway removed: ${id} for ${auth.userId}`);
+    redirect(res, `${base}/account`);
+    return;
+  }
+  await connectAndRedirect(ctx, res, gateway);
+}
+
+/** Try to connect; OAuth upstreams 302 the browser to their authorize page. */
+async function connectAndRedirect(
+  ctx: ServeContext,
+  res: ServerResponse,
+  gateway: Gateway,
+): Promise<void> {
+  const base = ctx.cfg.publicUrl;
+  try {
+    const outcome = await startGatewayConnect(ctx, gateway);
+    if (outcome.kind === "redirect") {
+      redirect(res, outcome.url);
+      return;
+    }
+    ctx.log(`gateway connected: ${gateway.id} (${outcome.toolCount} tools) for ${gateway.user_id}`);
+  } catch (err) {
+    ctx.log(
+      `gateway connect failed: ${gateway.id} — ${err instanceof Error ? err.message : String(err)}`,
+    );
+    // Status + error are recorded on the row; the account page shows them.
+  }
+  redirect(res, `${base}/account`);
+}
+
+async function handleGatewayCallback(
+  ctx: ServeContext,
+  res: ServerResponse,
+  auth: WebAuth,
+  url: URL,
+): Promise<void> {
+  const base = ctx.cfg.publicUrl;
+  const upstreamError = url.searchParams.get("error");
+  if (upstreamError) {
+    accountError(
+      ctx,
+      res,
+      "Authorization declined",
+      `The server declined the authorization: ${upstreamError}. Nothing was connected.`,
+    );
+    return;
+  }
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  if (!code || !state) {
+    accountError(ctx, res, "Invalid callback", "Missing code or state parameter.");
+    return;
+  }
+  try {
+    const { gateway, toolCount } = await finishGatewayConnect(ctx, auth.userId, state, code);
+    ctx.log(`gateway authorized: ${gateway.id} (${toolCount} tools) for ${auth.userId}`);
+    redirect(res, `${base}/account`);
+  } catch (err) {
+    accountError(
+      ctx,
+      res,
+      "Authorization failed",
+      err instanceof Error ? err.message : "token exchange failed",
+    );
+  }
+}
+
+function gatewayStatusLabel(g: Gateway): string {
+  switch (g.status) {
+    case "connected":
+      return `<strong>connected</strong> <span class="muted">(${htmlEscape(g.last_connected_at ?? "")} UTC)</span>`;
+    case "needs_auth":
+      return `sign-in required`;
+    case "error":
+      return `error <span class="muted">${htmlEscape(g.last_error ?? "")}</span>`;
+    default:
+      return `<span class="muted">not connected yet</span>`;
+  }
+}
+
 function renderAccountPage(ctx: ServeContext, res: ServerResponse, auth: WebAuth): void {
   const base = ctx.cfg.publicUrl;
   const user = getUser(ctx.authDb, auth.userId);
@@ -229,6 +394,37 @@ ${hevyBlock}
 </div>`;
   }
 
+  let gatewaysCard = "";
+  if (ctx.cfg.secretsKey) {
+    const gateways = listGateways(ctx.authDb, user.id);
+    const rows = gateways
+      .map(
+        (g) => `<tr>
+<td><strong>${htmlEscape(g.name)}</strong>${g.prefix ? ` <span class="muted">(tools prefixed ${htmlEscape(g.prefix)}_)</span>` : ""}<br><span class="muted">${htmlEscape(g.url)}</span></td>
+<td>${gatewayStatusLabel(g)}</td>
+<td>
+<form method="post" action="${base}/account/gateways/${g.id}/connect"><input type="hidden" name="csrf" value="${csrf}"><button>${g.status === "connected" ? "Re-check" : "Connect"}</button></form>
+<form method="post" action="${base}/account/gateways/${g.id}/delete"><input type="hidden" name="csrf" value="${csrf}"><button class="danger">Remove</button></form>
+</td>
+</tr>`,
+      )
+      .join("\n");
+    gatewaysCard = `<div class="card">
+<h2>Connected MCP servers</h2>
+<p class="muted">Attach other MCP servers here and their tools appear in your coaching conversations — so one Claude connector is enough even on plans that allow only one. You sign in to each server as yourself (your own account and subscription there); credentials are stored encrypted and removed with your account.</p>
+${rows ? `<table>\n${rows}\n</table>` : ""}
+<form method="post" action="${base}/account/gateways">
+<input type="hidden" name="csrf" value="${csrf}">
+<p><label for="gw_name">Name:</label> <input id="gw_name" name="name" required maxlength="40" placeholder="e.g. IcuSync"></p>
+<p><label for="gw_url">Server URL:</label> <input id="gw_url" name="url" type="url" required placeholder="https://…"></p>
+<p><label for="gw_bearer">Access token</label> <span class="muted">(only for servers using a static token)</span>: <input id="gw_bearer" name="bearer" type="password" autocomplete="off"></p>
+<p><label for="gw_prefix">Tool prefix</label> <span class="muted">(optional, a–z 0–9 _; use when tool names clash)</span>: <input id="gw_prefix" name="prefix" maxlength="16" pattern="[a-z0-9_]*"></p>
+<p><button>Add &amp; connect</button></p>
+</form>
+<p class="muted">Servers with their own sign-in open an authorization page — like adding a connector in Claude. New Claude conversations pick up the tools immediately.</p>
+</div>`;
+  }
+
   const apps = appsForEmail(ctx, user.email);
   const appsCard = apps.length
     ? `<div class="card">
@@ -271,6 +467,7 @@ ${apps.map((a) => `<p><a href="${base}/apps/${a.name}/">${htmlEscape(a.name)}</a
 </div>
 
 ${integrationsCard}
+${gatewaysCard}
 ${appsCard}
 
 <div class="card">
@@ -325,6 +522,7 @@ async function deleteAccount(
   }
   await mcpSessions.closeUserSessions(user.id);
   ctx.tenants.deleteUserData(user.id);
+  deleteUserGateways(ctx.authDb, user.id);
   deleteAllUserSecrets(ctx.authDb, user.id);
   deleteUser(ctx.authDb, user.id); // also removes tokens + web sessions
   ctx.log(`account deleted: ${user.email} (${user.id})`);

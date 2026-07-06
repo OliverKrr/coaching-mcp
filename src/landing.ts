@@ -170,7 +170,7 @@ const EN = {
   projectIntro: "Paste this into your Claude project's instructions and adapt freely:",
   optionalTitle: "Optional integrations — more data, better coaching",
   optionalFitness:
-    '<strong>Fitness data:</strong> connect your training platform as a second Claude connector so the coach sees real load, wellness, and plans — e.g. intervals.icu via an MCP connector such as <a href="https://icusync.icu/" target="_blank" rel="noopener noreferrer">IcuSync</a>. Coaching works without it; data-driven check-ins work better with it.',
+    '<strong>Fitness data:</strong> connect your training platform so the coach sees real load, wellness, and plans — e.g. intervals.icu via an MCP connector such as <a href="https://icusync.icu/" target="_blank" rel="noopener noreferrer">IcuSync</a>. Attach it on your account page under <em>Connected MCP servers</em> and its tools ride along in this one connector — so this works even on Claude plans that allow only a single custom connector. (You sign in to that service as yourself, with your own account there; on paid Claude plans you can alternatively add it as a second connector directly.) Coaching works without it; data-driven check-ins work better with it.',
   optionalHevy:
     "<strong>Strength logging (Hevy):</strong> connect your own Hevy account on the account page (Integrations — requires Hevy Pro) and the coach can read your workouts and manage routines directly.",
   routinesTitle: "Automatic check-ins (optional)",
@@ -218,7 +218,7 @@ const DE: typeof EN = {
   projectIntro: "Füge das in die Anweisungen deines Claude-Projekts ein und passe es frei an:",
   optionalTitle: "Optionale Integrationen — mehr Daten, besseres Coaching",
   optionalFitness:
-    '<strong>Fitness-Daten:</strong> verbinde deine Trainingsplattform als zweiten Claude-Connector, damit der Coach echte Belastung, Wellness und Pläne sieht — z. B. intervals.icu über einen MCP-Connector wie <a href="https://icusync.icu/" target="_blank" rel="noopener noreferrer">IcuSync</a>. Coaching funktioniert auch ohne; datengetriebene Check-ins werden damit deutlich besser.',
+    '<strong>Fitness-Daten:</strong> verbinde deine Trainingsplattform, damit der Coach echte Belastung, Wellness und Pläne sieht — z. B. intervals.icu über einen MCP-Connector wie <a href="https://icusync.icu/" target="_blank" rel="noopener noreferrer">IcuSync</a>. Hänge ihn auf deiner Account-Seite unter <em>Connected MCP servers</em> an, dann laufen seine Tools in diesem einen Connector mit — das funktioniert also auch mit Claude-Tarifen, die nur einen einzigen eigenen Connector erlauben. (Du meldest dich bei dem Dienst als du selbst an, mit deinem eigenen Konto dort; mit bezahltem Claude-Tarif kannst du ihn alternativ direkt als zweiten Connector hinzufügen.) Coaching funktioniert auch ohne; datengetriebene Check-ins werden damit deutlich besser.',
   optionalHevy:
     "<strong>Krafttraining (Hevy):</strong> verbinde dein eigenes Hevy-Konto auf der Account-Seite (Integrationen — erfordert Hevy Pro), dann kann der Coach deine Workouts lesen und Routinen direkt verwalten.",
   routinesTitle: "Automatische Check-ins (optional)",

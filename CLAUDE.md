@@ -53,6 +53,7 @@ src/account-data.ts /account/data browse & edit: sections/refs/routines (create/
 src/auth/secrets.ts encrypted per-user secret store (AES-256-GCM under SECRETS_KEY; AAD binds user+slot)
 src/integrations/hevy.ts  Hevy API client + MCP tools, registered per-session only for users with a key
 src/apps-proxy.ts   /apps/<name> authenticated reverse proxy (per-app email allowlist, HTML prefix rewriting)
+src/gateways.ts     per-user MCP gateway: users attach upstream MCP servers on /account; sessions mount their tools verbatim
 src/ratelimit.ts    fixed-window per-IP limiter guarding the auth endpoints
 src/db.ts           coaching DB schema: sections, refs, journal, open_items, routines + FTS5 (per user)
 src/tools/*.ts      the MCP tools — take (server, db); deliberately user-agnostic
@@ -168,6 +169,18 @@ opt-in is structural, not a permission check inside the tool.
 **Pages contain zero JavaScript, and CSP enforces it**: `script-src 'none'` on every rendered
 page. Never add inline handlers (`onsubmit=` etc.) — if a page ever needs JS, the CSP decision
 has to be revisited deliberately. Proxied app responses keep their own headers.
+
+**Gateway passthrough is verbatim and protocol-level (pinned SDK internals)**: upstream tools
+must reach Claude with their exact JSON schemas, descriptions, and annotations — a curated
+upstream's per-endpoint guidance is its value. `registerTool` is zod-only in SDK 1.29 and would
+re-serialize schemas, so `attachGatewayTools` wraps the underlying `Server`'s stored `tools/list`
+and `tools/call` handlers (private `_requestHandlers` / `_registeredTools`, guarded by a test
+that fails loudly on SDK upgrades). Gateway URLs are SSRF-guarded (https-only, no
+private/internal targets, re-checked per request and per redirect hop;
+`GATEWAY_ALLOW_INSECURE=1` relaxes this for 127.0.0.1 mock upstreams in tests only). Upstream
+credentials (OAuth tokens, DCR client info, static bearer) live in the sealed per-user secret
+store; a failed upstream is skipped for the session and surfaced on the account page, never
+breaking coaching.
 
 **App proxy authorization is allowlist-per-app**: a Google login alone must never expose a
 protected app; the user's email must be on that app's own list (`PROTECTED_APP_<NAME>_EMAILS`).

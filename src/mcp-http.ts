@@ -5,6 +5,12 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { authenticateBearer, sendUnauthorized } from "./auth/oauth.js";
 import { getUserSecret } from "./auth/secrets.js";
 import type { ServeContext } from "./context.js";
+import {
+  attachGatewayTools,
+  closeMountedGateways,
+  mountUserGateways,
+  type MountedGateway,
+} from "./gateways.js";
 import { HevyClient, registerHevyTools } from "./integrations/hevy.js";
 import { sendJson } from "./http-util.js";
 import { registerDeleteTools } from "./tools/delete.js";
@@ -27,6 +33,7 @@ type McpSession = {
   transport: StreamableHTTPServerTransport;
   server: McpServer;
   userId: string;
+  mounted: MountedGateway[];
 };
 
 export class McpSessionManager {
@@ -75,10 +82,18 @@ export class McpSessionManager {
     }
 
     const db = this.ctx.tenants.open(auth.userId);
-    const server = new McpServer(
-      { name: "coaching-mcp", version: VERSION },
-      { instructions: SERVER_INSTRUCTIONS },
-    );
+
+    // User-attached upstream MCP servers connect first: their instructions
+    // join the session instructions, their tools mount after the native ones.
+    const mounted = await mountUserGateways(this.ctx, auth.userId);
+    let instructions = SERVER_INSTRUCTIONS;
+    for (const m of mounted) {
+      if (m.instructions) {
+        instructions += `\n\n## Connected server "${m.gateway.name}" (attached by the user)\n\n${m.instructions}`;
+      }
+    }
+
+    const server = new McpServer({ name: "coaching-mcp", version: VERSION }, { instructions });
     registerReadTools(server, db);
     registerWriteTools(server, db);
     registerOpsTools(server, db);
@@ -95,16 +110,24 @@ export class McpSessionManager {
       if (hevyKey) registerHevyTools(server, new HevyClient(hevyKey));
     }
 
+    if (mounted.length > 0) {
+      const { mountedTools } = attachGatewayTools(server, mounted, this.ctx.log);
+      this.ctx.log(
+        `mounted ${mountedTools} gateway tool(s) from ${mounted.length} server(s) for ${auth.userId}`,
+      );
+    }
+
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (sid) => {
-        this.sessions.set(sid, { transport, server, userId: auth.userId });
+        this.sessions.set(sid, { transport, server, userId: auth.userId, mounted });
         this.ctx.log(`mcp session ${sid} opened for ${auth.userId}`);
       },
     });
     transport.onclose = () => {
       const sid = transport.sessionId;
       if (sid && this.sessions.delete(sid)) this.ctx.log(`mcp session ${sid} closed`);
+      void closeMountedGateways(mounted);
     };
 
     await server.connect(transport);
@@ -118,6 +141,7 @@ export class McpSessionManager {
       this.sessions.delete(sid);
       await session.transport.close().catch(() => {});
       await session.server.close().catch(() => {});
+      await closeMountedGateways(session.mounted);
     }
   }
 
@@ -126,6 +150,7 @@ export class McpSessionManager {
       this.sessions.delete(sid);
       await session.transport.close().catch(() => {});
       await session.server.close().catch(() => {});
+      await closeMountedGateways(session.mounted);
     }
   }
 }

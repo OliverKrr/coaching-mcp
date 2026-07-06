@@ -128,6 +128,30 @@ create), body measurements (list/get, create, update), and account info. Users w
 see no Hevy tools at all. If Hevy later rejects the key, tools answer with plain guidance to
 update it on the account page.
 
+## Connected MCP servers — the per-user gateway
+
+Free-plan Claude accounts allow only **one** custom MCP connector. So each user can attach
+further MCP servers on their account page ("Connected MCP servers"), and their coaching
+sessions mount those servers' tools alongside the native ones — one connector carries
+everything. Requires `SECRETS_KEY`.
+
+- **Verbatim passthrough.** Upstream tool names, descriptions, input schemas, annotations, and
+  server instructions reach the assistant untouched — a curated upstream (rich per-endpoint
+  guidance) keeps its full value. Optional per-server tool prefix for name collisions
+  (colliding tools are otherwise skipped and logged).
+- **Own account, own credentials.** OAuth upstreams get the standard dance (discovery, dynamic
+  client registration, PKCE) started from the account page — the user authorizes with their own
+  account and subscription there; static-token upstreams take a pasted token. Credentials are
+  sealed in the per-user secret store and removed with the account. This is a convenience
+  gateway, not a way around an upstream's pricing: each user still needs their own access to
+  the upstream service.
+- **Failure-tolerant.** An unreachable or unauthorized upstream is skipped for that session and
+  its status (with "Reconnect") shows on the account page — coaching never breaks.
+- **SSRF-guarded.** Gateway URLs must be https and must not resolve to private/internal
+  addresses (checked at save time and on every request, including redirects). DNS-rebinding is
+  neutralized by TLS: internal services cannot present a valid certificate for a hostile name.
+  Caps: 5 servers per user, 200 mounted tools per session.
+
 ## Protected apps (operator)
 
 `PROTECTED_APPS="name=http://host:port,…"` serves internal web tools at `/apps/<name>/` behind
@@ -218,6 +242,7 @@ from `/account/data/routines`. Topic packs ship English master templates as raw 
 | `PROTECTED_APPS`              | —                             | `name=http://host:port,…` internal tools served at `/apps/<name>/` behind the login                       |
 | `PROTECTED_APP_<NAME>_EMAILS` | —                             | Per-app email allowlist (required for anyone to reach the app)                                            |
 | `HEVY_API_BASE`               | `https://api.hevyapp.com/v1`  | Hevy API base (override for tests)                                                                        |
+| `GATEWAY_ALLOW_INSECURE`      | —                             | `1` relaxes the gateway SSRF policy (http + private hosts) — tests only, never production                 |
 
 ## Single-user stdio mode
 

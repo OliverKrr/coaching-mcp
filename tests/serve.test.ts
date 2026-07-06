@@ -4,6 +4,10 @@
 // delete). No network beyond 127.0.0.1.
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { z } from "zod";
+import { assertSafeGatewayUrl, sdkInternals } from "../src/gateways.js";
 import { unzipSync, strFromU8 } from "fflate";
 import { createHash, createSign, generateKeyPairSync, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
@@ -1313,5 +1317,393 @@ describe("protected app proxy", () => {
     const cookie = await accountLogin(ALICE);
     const res = await fetch(`${base}/apps/nope/`, { headers: { cookie } });
     expect(res.status).toBe(404);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MCP gateways — user-attached upstream MCP servers, mounted verbatim
+
+type MockUpstream = {
+  url: string;
+  issuedTokens: Set<string>;
+  close: () => Promise<void>;
+};
+
+/**
+ * A minimal upstream MCP server over Streamable HTTP: two tools (one of which
+ * deliberately collides with a native coaching tool name), optional static
+ * bearer auth, optional full OAuth AS (metadata + DCR + authorize + token with
+ * PKCE verification).
+ */
+async function startMockUpstream(opts: {
+  bearer?: string;
+  oauth?: boolean;
+  instructions?: string;
+}): Promise<MockUpstream> {
+  const issuedTokens = new Set<string>();
+  const authCodes = new Map<string, { challenge: string }>();
+  const transports = new Map<string, StreamableHTTPServerTransport>();
+  let baseUrl = "http://pending";
+
+  const httpServer = createServer((req, res) => {
+    void (async () => {
+      const url = new URL(req.url ?? "/", baseUrl);
+      const json = (status: number, body: unknown, headers: Record<string, string> = {}): void => {
+        res.writeHead(status, { "content-type": "application/json", ...headers });
+        res.end(JSON.stringify(body));
+      };
+
+      if (opts.oauth) {
+        if (url.pathname.startsWith("/.well-known/oauth-authorization-server")) {
+          json(200, {
+            issuer: baseUrl,
+            authorization_endpoint: `${baseUrl}/authorize`,
+            token_endpoint: `${baseUrl}/token`,
+            registration_endpoint: `${baseUrl}/register`,
+            response_types_supported: ["code"],
+            grant_types_supported: ["authorization_code", "refresh_token"],
+            code_challenge_methods_supported: ["S256"],
+            token_endpoint_auth_methods_supported: ["none"],
+          });
+          return;
+        }
+        if (url.pathname.startsWith("/.well-known/oauth-protected-resource")) {
+          json(200, { resource: baseUrl, authorization_servers: [baseUrl] });
+          return;
+        }
+        if (url.pathname === "/register" && req.method === "POST") {
+          let body = "";
+          for await (const chunk of req) body += chunk;
+          json(201, {
+            ...(JSON.parse(body) as Record<string, unknown>),
+            client_id: "upstream-client",
+          });
+          return;
+        }
+        if (url.pathname === "/authorize" && req.method === "GET") {
+          const code = randomBytes(8).toString("hex");
+          authCodes.set(code, { challenge: url.searchParams.get("code_challenge") ?? "" });
+          const target = new URL(url.searchParams.get("redirect_uri") ?? "");
+          target.searchParams.set("code", code);
+          const state = url.searchParams.get("state");
+          if (state) target.searchParams.set("state", state);
+          res.writeHead(302, { location: target.href });
+          res.end();
+          return;
+        }
+        if (url.pathname === "/token" && req.method === "POST") {
+          let body = "";
+          for await (const chunk of req) body += chunk;
+          const params = new URLSearchParams(body);
+          const grant = authCodes.get(params.get("code") ?? "");
+          const expected = createHash("sha256")
+            .update(params.get("code_verifier") ?? "")
+            .digest("base64url");
+          if (!grant || grant.challenge !== expected) {
+            json(400, { error: "invalid_grant" });
+            return;
+          }
+          const token = `up-${randomBytes(8).toString("hex")}`;
+          issuedTokens.add(token);
+          json(200, {
+            access_token: token,
+            token_type: "bearer",
+            expires_in: 3600,
+            refresh_token: "up-refresh",
+          });
+          return;
+        }
+      }
+
+      // Everything else is the MCP endpoint — auth gate first.
+      const authHeader = req.headers.authorization;
+      if (opts.bearer !== undefined && authHeader !== `Bearer ${opts.bearer}`) {
+        json(401, { error: "unauthorized" });
+        return;
+      }
+      if (opts.oauth) {
+        const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
+        if (!token || !issuedTokens.has(token)) {
+          json(
+            401,
+            { error: "unauthorized" },
+            {
+              "www-authenticate": `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource"`,
+            },
+          );
+          return;
+        }
+      }
+
+      const sessionId = req.headers["mcp-session-id"];
+      if (typeof sessionId === "string") {
+        const transport = transports.get(sessionId);
+        if (!transport) {
+          json(404, { error: "unknown session" });
+          return;
+        }
+        await transport.handleRequest(req, res);
+        return;
+      }
+
+      const upstream = new McpServer(
+        { name: "mock-upstream", version: "1.0.0" },
+        opts.instructions ? { instructions: opts.instructions } : undefined,
+      );
+      upstream.registerTool(
+        "get_activities",
+        {
+          description: "UPSTREAM-DESC: list recent activities",
+          inputSchema: { days: z.number().int().describe("How many days back") },
+        },
+        ({ days }) => ({ content: [{ type: "text", text: `activities:${days}` }] }),
+      );
+      // Deliberate collision with the native coaching tool of the same name.
+      upstream.registerTool(
+        "get_version",
+        { description: "upstream version", inputSchema: {} },
+        () => ({ content: [{ type: "text", text: "upstream-version" }] }),
+      );
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomBytes(8).toString("hex"),
+        onsessioninitialized: (sid) => transports.set(sid, transport),
+      });
+      await upstream.connect(transport);
+      await transport.handleRequest(req, res);
+    })().catch(() => {
+      if (!res.headersSent) {
+        res.writeHead(500);
+        res.end();
+      }
+    });
+  });
+  const url = await listen(httpServer);
+  baseUrl = url;
+  return {
+    url,
+    issuedTokens,
+    close: () =>
+      new Promise((resolve) => {
+        httpServer.closeAllConnections();
+        httpServer.close(() => resolve());
+      }),
+  };
+}
+
+describe("MCP gateways (user-attached upstream servers)", () => {
+  let upOpen: MockUpstream;
+  let upBearer: MockUpstream;
+  let upOauth: MockUpstream;
+
+  beforeAll(async () => {
+    process.env.GATEWAY_ALLOW_INSECURE = "1"; // mock upstreams are http://127.0.0.1
+    upOpen = await startMockUpstream({
+      instructions: "UPSTREAM-INSTRUCTIONS: check wellness before prescribing.",
+    });
+    upBearer = await startMockUpstream({ bearer: "up-secret" });
+    upOauth = await startMockUpstream({ oauth: true });
+  });
+
+  afterAll(async () => {
+    delete process.env.GATEWAY_ALLOW_INSECURE;
+    await upOpen.close();
+    await upBearer.close();
+    await upOauth.close();
+  });
+
+  async function loginWithCsrf(email: string): Promise<{ cookie: string; csrf: string }> {
+    const cookie = await accountLogin(email);
+    const html = await (await fetch(`${base}/account`, { headers: { cookie } })).text();
+    const csrf = /name="csrf" value="([^"]+)"/.exec(html)?.[1] ?? "";
+    return { cookie, csrf };
+  }
+
+  async function addGateway(
+    session: { cookie: string; csrf: string },
+    fields: Record<string, string>,
+  ): Promise<Response> {
+    return fetch(`${base}/account/gateways`, {
+      method: "POST",
+      headers: { cookie: session.cookie, "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ csrf: session.csrf, ...fields }),
+      redirect: "manual",
+    });
+  }
+
+  async function accountHtml(session: { cookie: string }): Promise<string> {
+    return (await fetch(`${base}/account`, { headers: { cookie: session.cookie } })).text();
+  }
+
+  async function removeAllGateways(session: { cookie: string; csrf: string }): Promise<void> {
+    const html = await accountHtml(session);
+    const ids = new Set(
+      [...html.matchAll(/gateways\/(gw_[A-Za-z0-9_-]+)\/delete/g)].map((m) => m[1] as string),
+    );
+    for (const id of ids) {
+      await fetch(`${base}/account/gateways/${id}/delete`, {
+        method: "POST",
+        headers: { cookie: session.cookie, "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ csrf: session.csrf }),
+        redirect: "manual",
+      });
+    }
+  }
+
+  it("holds the pinned-SDK internals contract the passthrough depends on", () => {
+    const probe = new McpServer({ name: "probe", version: "0.0.0" });
+    probe.registerTool("noop", { description: "noop", inputSchema: {} }, () => ({
+      content: [],
+    }));
+    const { handlers, nativeNames } = sdkInternals(probe);
+    expect(handlers.has("tools/list")).toBe(true);
+    expect(handlers.has("tools/call")).toBe(true);
+    expect(nativeNames.has("noop")).toBe(true);
+  });
+
+  it("rejects unsafe URLs outside test mode", async () => {
+    delete process.env.GATEWAY_ALLOW_INSECURE;
+    try {
+      await expect(assertSafeGatewayUrl("http://example.com/mcp")).rejects.toThrow(/https/);
+      await expect(assertSafeGatewayUrl("https://127.0.0.1/mcp")).rejects.toThrow(/private/);
+      await expect(assertSafeGatewayUrl("https://[::1]/mcp")).rejects.toThrow(/private/);
+      await expect(assertSafeGatewayUrl("https://169.254.169.254/meta")).rejects.toThrow(/private/);
+      await expect(assertSafeGatewayUrl("https://10.0.0.8/mcp")).rejects.toThrow(/private/);
+      await expect(assertSafeGatewayUrl("not a url")).rejects.toThrow(/invalid/);
+    } finally {
+      process.env.GATEWAY_ALLOW_INSECURE = "1";
+    }
+  });
+
+  it("mounts an open upstream verbatim: schema, instructions, calls, collisions", async () => {
+    const session = await loginWithCsrf(ALICE);
+    try {
+      const added = await addGateway(session, { name: "Fitness", url: upOpen.url });
+      expect(added.status).toBe(302);
+      expect(added.headers.get("location")).toBe(`${base}/account`);
+      const account = await accountHtml(session);
+      expect(account).toContain("Fitness");
+      expect(account).toContain("connected");
+
+      const alice = await oauthLogin(ALICE);
+      const client = await mcpClient(alice.access);
+      try {
+        const tools = (await client.listTools()).tools;
+        expect(tools.map((t) => t.name)).toContain("get_coaching_context"); // natives intact
+        const mountedTool = tools.find((t) => t.name === "get_activities");
+        expect(mountedTool?.description).toBe("UPSTREAM-DESC: list recent activities");
+        const schema = mountedTool?.inputSchema as {
+          properties?: Record<string, { description?: string }>;
+        };
+        expect(schema.properties?.days?.description).toBe("How many days back"); // verbatim
+        expect(client.getInstructions()).toContain("UPSTREAM-INSTRUCTIONS");
+
+        const out = toolText(
+          await client.callTool({ name: "get_activities", arguments: { days: 7 } }),
+        );
+        expect(out).toContain("activities:7");
+
+        // Collision: the upstream's get_version is skipped, the native one answers.
+        const version = toolText(await client.callTool({ name: "get_version", arguments: {} }));
+        expect(version).not.toContain("upstream-version");
+      } finally {
+        await client.close();
+      }
+    } finally {
+      await removeAllGateways(session);
+    }
+  });
+
+  it("a tool prefix sidesteps collisions and renames the mounted tools", async () => {
+    const session = await loginWithCsrf(ALICE);
+    try {
+      await addGateway(session, { name: "Prefixed", url: upOpen.url, prefix: "fit" });
+      const alice = await oauthLogin(ALICE);
+      const client = await mcpClient(alice.access);
+      try {
+        const names = (await client.listTools()).tools.map((t) => t.name);
+        expect(names).toContain("fit_get_activities");
+        expect(names).toContain("fit_get_version"); // no longer colliding
+        const version = toolText(await client.callTool({ name: "fit_get_version", arguments: {} }));
+        expect(version).toContain("upstream-version");
+      } finally {
+        await client.close();
+      }
+    } finally {
+      await removeAllGateways(session);
+    }
+  });
+
+  it("bearer upstream: wrong token surfaces as an error, right token mounts", async () => {
+    const session = await loginWithCsrf(ALICE);
+    try {
+      await addGateway(session, { name: "WrongTok", url: upBearer.url, bearer: "nope" });
+      expect(await accountHtml(session)).toContain("error");
+      await removeAllGateways(session);
+
+      await addGateway(session, { name: "TokenServer", url: upBearer.url, bearer: "up-secret" });
+      expect(await accountHtml(session)).toContain("connected");
+      const alice = await oauthLogin(ALICE);
+      const client = await mcpClient(alice.access);
+      try {
+        const out = toolText(
+          await client.callTool({ name: "get_activities", arguments: { days: 3 } }),
+        );
+        expect(out).toContain("activities:3");
+      } finally {
+        await client.close();
+      }
+    } finally {
+      await removeAllGateways(session);
+    }
+  });
+
+  it("oauth upstream: full authorize dance from the account page, tokens sealed and used", async () => {
+    const session = await loginWithCsrf(BOB);
+    try {
+      const added = await addGateway(session, { name: "OAuthUp", url: upOauth.url });
+      expect(added.status).toBe(302);
+      const authorizeUrl = added.headers.get("location") ?? "";
+      expect(authorizeUrl.startsWith(`${upOauth.url}/authorize`)).toBe(true);
+
+      const upstreamRedirect = await fetch(authorizeUrl, { redirect: "manual" });
+      expect(upstreamRedirect.status).toBe(302);
+      const callbackUrl = upstreamRedirect.headers.get("location") ?? "";
+      expect(callbackUrl.startsWith(`${base}/account/gateways/callback`)).toBe(true);
+
+      const callback = await fetch(callbackUrl, {
+        headers: { cookie: session.cookie },
+        redirect: "manual",
+      });
+      expect(callback.status).toBe(302); // success → back to the account page
+      expect(await accountHtml(session)).toContain("connected");
+      expect(upOauth.issuedTokens.size).toBeGreaterThan(0);
+
+      const bob = await oauthLogin(BOB);
+      const client = await mcpClient(bob.access);
+      try {
+        const out = toolText(
+          await client.callTool({ name: "get_activities", arguments: { days: 1 } }),
+        );
+        expect(out).toContain("activities:1");
+      } finally {
+        await client.close();
+      }
+    } finally {
+      await removeAllGateways(session);
+    }
+  });
+
+  it("removed gateways disappear from new sessions", async () => {
+    const session = await loginWithCsrf(ALICE);
+    await addGateway(session, { name: "Temp", url: upOpen.url });
+    await removeAllGateways(session);
+    const alice = await oauthLogin(ALICE);
+    const client = await mcpClient(alice.access);
+    try {
+      const names = (await client.listTools()).tools.map((t) => t.name);
+      expect(names).not.toContain("get_activities");
+    } finally {
+      await client.close();
+    }
   });
 });
