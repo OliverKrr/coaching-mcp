@@ -1458,6 +1458,7 @@ async function startMockUpstream(opts: {
       upstream.registerTool(
         "get_activities",
         {
+          title: "Get Activities",
           description: "UPSTREAM-DESC: list recent activities",
           inputSchema: { days: z.number().int().describe("How many days back") },
         },
@@ -1579,7 +1580,7 @@ describe("MCP gateways (user-attached upstream servers)", () => {
     }
   });
 
-  it("mounts an open upstream verbatim: schema, instructions, calls, collisions", async () => {
+  it("mounts an upstream: derived prefix, attributed title/description, verbatim schema", async () => {
     const session = await loginWithCsrf(ALICE);
     try {
       const added = await addGateway(session, { name: "Fitness", url: upOpen.url });
@@ -1587,6 +1588,7 @@ describe("MCP gateways (user-attached upstream servers)", () => {
       expect(added.headers.get("location")).toBe(`${base}/account`);
       const account = await accountHtml(session);
       expect(account).toContain("Fitness");
+      expect(account).toContain("fitness_*"); // derived prefix shown on the card
       expect(account).toContain("connected");
 
       const alice = await oauthLogin(ALICE);
@@ -1594,22 +1596,29 @@ describe("MCP gateways (user-attached upstream servers)", () => {
       try {
         const tools = (await client.listTools()).tools;
         expect(tools.map((t) => t.name)).toContain("get_coaching_context"); // natives intact
-        const mountedTool = tools.find((t) => t.name === "get_activities");
-        expect(mountedTool?.description).toBe("UPSTREAM-DESC: list recent activities");
+        const mountedTool = tools.find((t) => t.name === "fitness_get_activities");
+        // Attribution: server name leads description AND title (permission UIs show titles).
+        expect(mountedTool?.description).toBe("Fitness: UPSTREAM-DESC: list recent activities");
+        expect(mountedTool?.title).toBe("Fitness: Get Activities");
         const schema = mountedTool?.inputSchema as {
           properties?: Record<string, { description?: string }>;
         };
         expect(schema.properties?.days?.description).toBe("How many days back"); // verbatim
         expect(client.getInstructions()).toContain("UPSTREAM-INSTRUCTIONS");
+        expect(client.getInstructions()).toContain('"fitness_" prefix');
 
         const out = toolText(
-          await client.callTool({ name: "get_activities", arguments: { days: 7 } }),
+          await client.callTool({ name: "fitness_get_activities", arguments: { days: 7 } }),
         );
         expect(out).toContain("activities:7");
 
-        // Collision: the upstream's get_version is skipped, the native one answers.
-        const version = toolText(await client.callTool({ name: "get_version", arguments: {} }));
-        expect(version).not.toContain("upstream-version");
+        // The upstream's get_version mounts prefixed; the native one stays native.
+        const native = toolText(await client.callTool({ name: "get_version", arguments: {} }));
+        expect(native).not.toContain("upstream-version");
+        const mounted = toolText(
+          await client.callTool({ name: "fitness_get_version", arguments: {} }),
+        );
+        expect(mounted).toContain("upstream-version");
       } finally {
         await client.close();
       }
@@ -1618,16 +1627,19 @@ describe("MCP gateways (user-attached upstream servers)", () => {
     }
   });
 
-  it("a tool prefix sidesteps collisions and renames the mounted tools", async () => {
+  it("an explicit prefix overrides the derived one; duplicate prefixes are rejected", async () => {
     const session = await loginWithCsrf(ALICE);
     try {
       await addGateway(session, { name: "Prefixed", url: upOpen.url, prefix: "fit" });
+      const dup = await addGateway(session, { name: "Other", url: upOpen.url, prefix: "fit" });
+      expect(dup.status).toBe(400); // prefix uniqueness enforced
+
       const alice = await oauthLogin(ALICE);
       const client = await mcpClient(alice.access);
       try {
         const names = (await client.listTools()).tools.map((t) => t.name);
         expect(names).toContain("fit_get_activities");
-        expect(names).toContain("fit_get_version"); // no longer colliding
+        expect(names).toContain("fit_get_version");
         const version = toolText(await client.callTool({ name: "fit_get_version", arguments: {} }));
         expect(version).toContain("upstream-version");
       } finally {
@@ -1657,7 +1669,7 @@ describe("MCP gateways (user-attached upstream servers)", () => {
       const client = await mcpClient(alice.access);
       try {
         const out = toolText(
-          await client.callTool({ name: "get_activities", arguments: { days: 5 } }),
+          await client.callTool({ name: "iculike_get_activities", arguments: { days: 5 } }),
         );
         expect(out).toContain("activities:5"); // query re-attached at connect time
       } finally {
@@ -1682,7 +1694,7 @@ describe("MCP gateways (user-attached upstream servers)", () => {
       const client = await mcpClient(alice.access);
       try {
         const out = toolText(
-          await client.callTool({ name: "get_activities", arguments: { days: 3 } }),
+          await client.callTool({ name: "tokenserver_get_activities", arguments: { days: 3 } }),
         );
         expect(out).toContain("activities:3");
       } finally {
@@ -1718,7 +1730,7 @@ describe("MCP gateways (user-attached upstream servers)", () => {
       const client = await mcpClient(bob.access);
       try {
         const out = toolText(
-          await client.callTool({ name: "get_activities", arguments: { days: 1 } }),
+          await client.callTool({ name: "oauthup_get_activities", arguments: { days: 1 } }),
         );
         expect(out).toContain("activities:1");
       } finally {
@@ -1737,7 +1749,7 @@ describe("MCP gateways (user-attached upstream servers)", () => {
     const client = await mcpClient(alice.access);
     try {
       const names = (await client.listTools()).tools.map((t) => t.name);
-      expect(names).not.toContain("get_activities");
+      expect(names).not.toContain("temp_get_activities");
     } finally {
       await client.close();
     }

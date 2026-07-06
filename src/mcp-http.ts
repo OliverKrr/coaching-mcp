@@ -9,6 +9,7 @@ import {
   attachGatewayTools,
   closeMountedGateways,
   mountUserGateways,
+  toolPrefix,
   type MountedGateway,
 } from "./gateways.js";
 import { HevyClient, registerHevyTools } from "./integrations/hevy.js";
@@ -88,9 +89,9 @@ export class McpSessionManager {
     const mounted = await mountUserGateways(this.ctx, auth.userId);
     let instructions = SERVER_INSTRUCTIONS;
     for (const m of mounted) {
-      if (m.instructions) {
-        instructions += `\n\n## Connected server "${m.gateway.name}" (attached by the user)\n\n${m.instructions}`;
-      }
+      const prefix = toolPrefix(m.gateway);
+      instructions += `\n\n## Connected server "${m.gateway.name}" (attached by the user)\n\nIts tools are mounted with the "${prefix}_" prefix — where its documentation names a tool, prepend "${prefix}_".`;
+      if (m.instructions) instructions += `\n\n${m.instructions}`;
     }
 
     const server = new McpServer({ name: "coaching-mcp", version: VERSION }, { instructions });

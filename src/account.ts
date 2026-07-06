@@ -21,6 +21,7 @@ import {
   hasSealedQuery,
   listGateways,
   startGatewayConnect,
+  toolPrefix,
   type Gateway,
 } from "./gateways.js";
 import { HevyClient } from "./integrations/hevy.js";
@@ -401,7 +402,7 @@ ${hevyBlock}
     const rows = gateways
       .map(
         (g) => `<tr>
-<td><strong>${htmlEscape(g.name)}</strong>${g.prefix ? ` <span class="muted">(tools prefixed ${htmlEscape(g.prefix)}_)</span>` : ""}<br><span class="muted">${htmlEscape(g.url)}${hasSealedQuery(ctx.authDb, g) ? " · embedded access token stored encrypted" : ""}</span></td>
+<td><strong>${htmlEscape(g.name)}</strong> <span class="muted">(tools: ${htmlEscape(toolPrefix(g))}_*)</span><br><span class="muted">${htmlEscape(g.url)}${hasSealedQuery(ctx.authDb, g) ? " · embedded access token stored encrypted" : ""}</span></td>
 <td>${gatewayStatusLabel(g)}</td>
 <td>
 <form method="post" action="${base}/account/gateways/${g.id}/connect"><input type="hidden" name="csrf" value="${csrf}"><button>${g.status === "connected" ? "Re-check" : "Connect"}</button></form>
@@ -422,8 +423,8 @@ ${rows ? `<table>\n${rows}\n</table>` : ""}
 <span class="muted">Paste the URL exactly as the service gives it. If it already contains an access token (e.g. <code>…/mcp?token=…</code>), that is all you need — the token part is split off and stored encrypted.</span></p>
 <p><label for="gw_bearer">Access token</label>: <input id="gw_bearer" name="bearer" type="password" autocomplete="off"><br>
 <span class="muted">Only for servers that expect a separate Authorization header. Leave empty when the token is already part of the URL, or when the server signs you in itself.</span></p>
-<p><label for="gw_prefix">Tool prefix</label>: <input id="gw_prefix" name="prefix" maxlength="16" pattern="[a-z0-9_]*"><br>
-<span class="muted">Optional — leave empty to keep the server's original tool names (recommended). Set one (a–z, 0–9, _) only if its tool names clash with existing tools; clashing tools are otherwise skipped.</span></p>
+<p><label for="gw_prefix">Tool prefix</label>: <input id="gw_prefix" name="prefix" maxlength="16" pattern="[a-z0-9_]*" placeholder="defaults to the name"><br>
+<span class="muted">This server's tools appear as <code>prefix_toolname</code> so you can always tell which server a tool comes from (e.g. <code>icusync_get_activities</code>). Left empty, it is derived from the name. Must be unique among your servers; a–z, 0–9, _.</span></p>
 <p><button>Add &amp; connect</button></p>
 </form>
 <p class="muted">Servers with their own sign-in open an authorization page — like adding a connector in Claude. New Claude conversations pick up the tools immediately.</p>

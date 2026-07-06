@@ -36,9 +36,11 @@ import { VERSION } from "./version.js";
  * free-plan Claude accounts allow only ONE custom connector.
  *
  * Principles:
- * - Verbatim passthrough — upstream tool names, descriptions, input schemas,
- *   annotations, and server instructions reach Claude untouched (that curated
- *   context is the upstream's value; we must not re-model it).
+ * - Verbatim schemas, attributed names — upstream input schemas, annotations,
+ *   and server instructions reach Claude untouched (that curated context is
+ *   the upstream's value), while tool names carry a mandatory per-server
+ *   prefix and descriptions/titles a "Server: " attribution so every tool
+ *   stays traceable to its server.
  * - Every user authenticates to the upstream as themselves (own subscription,
  *   own OAuth grant); credentials live in the sealed per-user secret store.
  * - A dead or unauthorized upstream degrades to "tools absent + status on the
@@ -157,6 +159,26 @@ export function getGateway(db: Database.Database, userId: string, id: string): G
     | undefined;
 }
 
+/** Name → usable tool prefix: "IcuSync" → "icusync". Empty when nothing survives. */
+export function slugifyPrefix(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 16)
+    .replace(/_+$/g, "");
+}
+
+/**
+ * Every gateway's tools are mounted as `<prefix>_<name>` — mandatory, so the
+ * user (and the assistant) can always tell which server a tool belongs to,
+ * and different servers' similar tool names can never shadow each other.
+ * Pre-prefix rows (empty column) derive theirs from the gateway name.
+ */
+export function toolPrefix(gw: Gateway): string {
+  return gw.prefix || slugifyPrefix(gw.name) || "server";
+}
+
 export function createGateway(
   ctx: ServeContext,
   userId: string,
@@ -164,12 +186,21 @@ export function createGateway(
 ): Gateway {
   const name = input.name.trim();
   if (!name || name.length > 40) throw new Error("name must be 1–40 characters");
-  const prefix = input.prefix.trim();
+  let prefix = input.prefix.trim();
   if (!/^[a-z0-9_]{0,16}$/.test(prefix)) {
-    throw new Error("prefix must match [a-z0-9_]{0,16}");
+    throw new Error("prefix must match [a-z0-9_]{1,16}");
   }
-  if (listGateways(ctx.authDb, userId).length >= MAX_GATEWAYS_PER_USER) {
+  if (!prefix) prefix = slugifyPrefix(name);
+  if (!prefix) {
+    throw new Error("set a tool prefix — the name yields no usable characters (a–z, 0–9, _)");
+  }
+  const existing = listGateways(ctx.authDb, userId);
+  if (existing.length >= MAX_GATEWAYS_PER_USER) {
     throw new Error(`at most ${MAX_GATEWAYS_PER_USER} connected servers per account`);
+  }
+  const clash = existing.find((g) => toolPrefix(g) === prefix);
+  if (clash) {
+    throw new Error(`tool prefix '${prefix}' is already used by '${clash.name}' — choose another`);
   }
   // Split any query string off the URL and seal it: services like fitness
   // connectors hand out URLs with an embedded access token (…/mcp?token=…).
@@ -602,8 +633,9 @@ export function attachGatewayTools(
   const extraTools: Tool[] = [];
   const skipped: string[] = [];
   for (const m of mounted) {
+    const prefix = toolPrefix(m.gateway);
     for (const tool of m.tools) {
-      const exposed = m.gateway.prefix ? `${m.gateway.prefix}_${tool.name}` : tool.name;
+      const exposed = `${prefix}_${tool.name}`;
       if (nativeNames.has(exposed) || routes.has(exposed)) {
         skipped.push(`${m.gateway.name}: ${exposed}`);
         continue;
@@ -617,7 +649,24 @@ export function attachGatewayTools(
         upstreamName: tool.name,
         gatewayName: m.gateway.name,
       });
-      extraTools.push(exposed === tool.name ? tool : { ...tool, name: exposed });
+      // Attribution: prefix name + server name in description AND title —
+      // permission UIs render titles, so the title must carry the source too.
+      extraTools.push({
+        ...tool,
+        name: exposed,
+        description: tool.description
+          ? `${m.gateway.name}: ${tool.description}`
+          : `Tool from the connected server "${m.gateway.name}".`,
+        ...(tool.title ? { title: `${m.gateway.name}: ${tool.title}` } : {}),
+        ...(tool.annotations?.title
+          ? {
+              annotations: {
+                ...tool.annotations,
+                title: `${m.gateway.name}: ${tool.annotations.title}`,
+              },
+            }
+          : {}),
+      });
     }
   }
   if (skipped.length > 0) log(`gateway tools skipped (name collision/cap): ${skipped.join(", ")}`);

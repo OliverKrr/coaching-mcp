@@ -135,10 +135,14 @@ further MCP servers on their account page ("Connected MCP servers"), and their c
 sessions mount those servers' tools alongside the native ones — one connector carries
 everything. Requires `SECRETS_KEY`.
 
-- **Verbatim passthrough.** Upstream tool names, descriptions, input schemas, annotations, and
-  server instructions reach the assistant untouched — a curated upstream (rich per-endpoint
-  guidance) keeps its full value. Optional per-server tool prefix for name collisions
-  (colliding tools are otherwise skipped and logged).
+- **Verbatim schemas, attributed names.** Upstream input schemas, annotations, and server
+  instructions reach the assistant untouched — a curated upstream (rich per-endpoint guidance)
+  keeps its full value. Tool names carry a mandatory per-server prefix (derived from the
+  server's name unless set explicitly; unique per user), and descriptions/titles are prepended
+  with the server name — so in tool lists and permission dialogs every tool is traceable to its
+  server, and similar names from different servers can never be confused. The session
+  instructions tell the assistant about each prefix, so upstream docs referencing original
+  names still resolve.
 - **Own account, own credentials.** OAuth upstreams get the standard dance (discovery, dynamic
   client registration, PKCE) started from the account page — the user authorizes with their own
   account and subscription there; static-token upstreams take a pasted token; URLs with an
