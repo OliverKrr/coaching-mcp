@@ -1,7 +1,8 @@
 import type { ServerResponse } from "node:http";
 import type { WebAuth } from "./account.js";
 import type { ServeContext } from "./context.js";
-import { htmlEscape, page, redirect, sendHtml } from "./http-util.js";
+import { htmlEscape, redirect, sendHtml } from "./http-util.js";
+import { page } from "./web/layout.js";
 import { renderMarkdown } from "./markdown.js";
 
 /**
@@ -151,6 +152,7 @@ function renderOverview(ctx: ServeContext, res: ServerResponse, auth: WebAuth): 
 <div class="card"><h2>Journal</h2><p>${journalCount} entries — <a href="${base}/account/data/journal">browse &amp; edit</a></p></div>
 <div class="card"><h2>Open items</h2><p>${openCount} open of ${itemCount} total — <a href="${base}/account/data/open-items">manage</a></p></div>
 <div class="card"><h2>Routines</h2><p>${routineCount} stored — <a href="${base}/account/data/routines">view &amp; copy</a></p><p class="muted">Check-in prompts designed with your coach; copy them into scheduled tasks in your Claude account.</p></div>`,
+      { nav: { base, active: "account" } },
     ),
   );
 }
@@ -232,7 +234,7 @@ ${deleteForm}
 </div>
 ${previewColumn}
 </div>`,
-      { wide: true },
+      { wide: true, nav: { base, active: "account" } },
     ),
   );
 }
@@ -274,6 +276,7 @@ function renderJournal(ctx: ServeContext, res: ServerResponse, auth: WebAuth, ur
 <p class="muted">${total} entries, newest first. Entries are written by your coaching sessions; you can correct or remove them here.</p>
 ${entries || '<p class="muted">No entries yet.</p>'}
 <p>${nav}</p>`,
+      { nav: { base, active: "account" } },
     ),
   );
 }
@@ -312,7 +315,7 @@ function renderJournalEditor(
 <div>
 <form method="post" action="${base}/account/data/journal/save">
 <input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="id" value="${row.id}">
-<textarea name="entry" class="editor" style="height:50vh">${htmlEscape(row.entry)}</textarea>
+<textarea name="entry" class="editor short">${htmlEscape(row.entry)}</textarea>
 <p><button>Save</button></p>
 </form>
 <form method="post" action="${base}/account/data/journal/delete">
@@ -324,7 +327,7 @@ function renderJournalEditor(
 <div class="preview">${renderMarkdown(row.entry)}</div>
 </div>
 </div>`,
-      { wide: true },
+      { wide: true, nav: { base, active: "account" } },
     ),
   );
 }
@@ -353,6 +356,7 @@ function renderOpenItems(ctx: ServeContext, res: ServerResponse, auth: WebAuth):
 <h1>Open items</h1>
 <p class="muted">Commitments and flags from your coaching sessions (open first).</p>
 ${body || '<p class="muted">none</p>'}`,
+      { nav: { base, active: "account" } },
     ),
   );
 }
@@ -393,7 +397,7 @@ function renderOpenItemEditor(
 <p class="muted">Created ${htmlEscape(row.created_at)} UTC</p>
 <form method="post" action="${base}/account/data/open-items/save">
 <input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="id" value="${row.id}">
-<textarea name="content" rows="6" style="width:100%;font-family:ui-monospace,monospace;font-size:.9rem">${htmlEscape(row.content)}</textarea>
+<textarea name="content" rows="6" class="mono">${htmlEscape(row.content)}</textarea>
 <p><label>Status:
 <select name="status">${statusOption("open")}${statusOption("done")}${statusOption("dismissed")}</select></label></p>
 <p><label>Relevant date (optional): <input type="text" name="relevant_date" value="${htmlEscape(row.relevant_date ?? "")}" placeholder="YYYY-MM-DD"></label></p>
@@ -402,6 +406,7 @@ function renderOpenItemEditor(
 <form method="post" action="${base}/account/data/open-items/delete">
 <input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="id" value="${row.id}">
 <button class="danger">Delete item</button></form>`,
+      { nav: { base, active: "account" } },
     ),
   );
 }
@@ -430,6 +435,7 @@ function renderRoutines(ctx: ServeContext, res: ServerResponse, auth: WebAuth): 
 <p class="muted">Check-in prompts designed with your coach. To run one, copy its prompt into a scheduled task in your own Claude account with the cadence shown — the server never starts conversations itself.</p>
 ${body || '<p class="muted">No routines yet — ask your coach for a check-in routine and it will design one with you.</p>'}
 <p><a href="${base}/account/data/routines/new"><button>New routine</button></a></p>`,
+      { nav: { base, active: "account" } },
     ),
   );
 }
@@ -496,7 +502,7 @@ ${row ? `<p class="muted">Last updated ${htmlEscape(row.updated_at)} UTC · stat
 <p><button>Save</button></p>
 </form>
 ${deleteForm}`,
-      { wide: true },
+      { wide: true, nav: { base, active: "account" } },
     ),
   );
 }

@@ -1,6 +1,6 @@
 {
   "name": "coaching-mcp",
-  "version": "2.10.0",
+  "version": "2.11.0",
   "description": "Multi-user coaching MCP server backed by SQLite+FTS5 — SKILL.md knowledge base with built-in OIDC-federated OAuth for Claude AI",
   "keywords": [
     "claude",

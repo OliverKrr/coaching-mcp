@@ -2,7 +2,8 @@ import { request as httpRequest } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ProtectedApp, ServeContext } from "./context.js";
 import { getUser } from "./auth/db.js";
-import { page, redirect, sendHtml } from "./http-util.js";
+import { redirect, sendHtml } from "./http-util.js";
+import { page } from "./web/layout.js";
 
 /**
  * Authenticated reverse proxy for internal web tools: /apps/<name>/* requires

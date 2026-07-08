@@ -60,6 +60,7 @@ src/tools/*.ts      the MCP tools — take (server, db); deliberately user-agnos
 src/topics.ts       topic-pack loader (SEED_DIR/topics/<id>/) + list_topic_packs/get_topic_pack
 src/snapshot.ts / restore.ts / backup-db.ts + *-cli.ts   operational CLIs
 src/http-util.ts    tiny node:http helpers (no express — keep deps lean)
+src/web/            page shell for all rendered pages (layout.ts: design tokens, dark mode, site nav; ui.ts: badge) — still zero JS
 seed-template/      generic core SKILL.md + core references + topics/ packs, baked into the image as /seed
 ```
 

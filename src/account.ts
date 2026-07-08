@@ -30,13 +30,14 @@ import type { ServeContext } from "./context.js";
 import {
   clearedCookie,
   htmlEscape,
-  page,
   parseCookies,
   parseParams,
   readBody,
   redirect,
   sendHtml,
 } from "./http-util.js";
+import { page } from "./web/layout.js";
+import { badge } from "./web/ui.js";
 import type { McpSessionManager } from "./mcp-http.js";
 import { snapshotDocuments } from "./snapshot.js";
 
@@ -86,10 +87,11 @@ export async function handleAccountRoute(
         res,
         200,
         page(
-          "Coaching account",
-          `<h1>Coaching account</h1>
+          "Account",
+          `<h1>Account</h1>
 <p>Sign in to view, export, or delete the data this coaching server stores about you.</p>
 <p><a href="${base}/account/login"><button>Sign in</button></a></p>`,
+          { nav: { base, active: "account" } },
         ),
       );
     } else {
@@ -339,13 +341,13 @@ async function handleGatewayCallback(
 function gatewayStatusLabel(g: Gateway): string {
   switch (g.status) {
     case "connected":
-      return `<strong>connected</strong> <span class="muted">(${htmlEscape(g.last_connected_at ?? "")} UTC)</span>`;
+      return `${badge("ok", "connected")} <span class="muted">(${htmlEscape(g.last_connected_at ?? "")} UTC)</span>`;
     case "needs_auth":
-      return `sign-in required`;
+      return badge("warn", "sign-in required");
     case "error":
-      return `error <span class="muted">${htmlEscape(g.last_error ?? "")}</span>`;
+      return `${badge("err", "error")} <span class="muted">${htmlEscape(g.last_error ?? "")}</span>`;
     default:
-      return `<span class="muted">not connected yet</span>`;
+      return badge("muted", "not connected yet");
   }
 }
 
@@ -376,7 +378,7 @@ function renderAccountPage(
   if (ctx.cfg.secretsKey) {
     const hevyMeta = getUserSecretMeta(ctx.authDb, user.id, "hevy_api_key");
     const hevyBlock = hevyMeta
-      ? `<p>Hevy: <strong>connected</strong> <span class="muted">(key updated ${htmlEscape(hevyMeta.updated_at)} UTC)</span></p>
+      ? `<p>Hevy: ${badge("ok", "connected")} <span class="muted">(key updated ${htmlEscape(hevyMeta.updated_at)} UTC)</span></p>
 <form method="post" action="${base}/account/integrations/hevy">
 <input type="hidden" name="csrf" value="${csrf}">
 <label for="hevy_key">Replace API key:</label>
@@ -387,7 +389,7 @@ function renderAccountPage(
 <input type="hidden" name="csrf" value="${csrf}">
 <button class="danger">Disconnect Hevy</button>
 </form>`
-      : `<p>Hevy: <span class="muted">not connected</span></p>
+      : `<p>Hevy: ${badge("muted", "not connected")}</p>
 <p class="muted">Connect your own Hevy account (requires Hevy Pro) and your coach gains tools to read workouts and manage routines. Key: hevy.com → Settings → Developer.</p>
 <form method="post" action="${base}/account/integrations/hevy">
 <input type="hidden" name="csrf" value="${csrf}">
@@ -426,7 +428,7 @@ ${suggestions
 <td><strong>${htmlEscape(g.name)}</strong> <span class="muted">(tools: ${htmlEscape(toolPrefix(g))}_*)</span><br><span class="muted">${htmlEscape(g.url)}${hasSealedQuery(ctx.authDb, g) ? " · embedded access token stored encrypted" : ""}</span></td>
 <td>${gatewayStatusLabel(g)}</td>
 <td>
-<form method="post" action="${base}/account/gateways/${g.id}/connect"><input type="hidden" name="csrf" value="${csrf}"><button>${g.status === "connected" ? "Re-check" : "Connect"}</button></form>
+<form method="post" action="${base}/account/gateways/${g.id}/connect"><input type="hidden" name="csrf" value="${csrf}"><button${g.status === "connected" ? ' class="quiet"' : ""}>${g.status === "connected" ? "Re-check" : "Connect"}</button></form>
 <form method="post" action="${base}/account/gateways/${g.id}/delete"><input type="hidden" name="csrf" value="${csrf}"><button class="danger">Remove</button></form>
 </td>
 </tr>`,
@@ -435,7 +437,7 @@ ${suggestions
     gatewaysCard = `<div class="card">
 <h2>Connected MCP servers</h2>
 <p class="muted">Attach other MCP servers here and their tools appear in your coaching conversations — so one Claude connector is enough even on plans that allow only one. You sign in to each server as yourself (your own account and subscription there); credentials are stored encrypted, never shown again, and removed with your account.</p>
-${rows ? `<table>\n${rows}\n</table>` : ""}
+${rows ? `<div class="scroll"><table>\n${rows}\n</table></div>` : ""}
 ${suggestionsBlock}
 <form method="post" action="${base}/account/gateways" id="add-server">
 <input type="hidden" name="csrf" value="${csrf}">
@@ -465,15 +467,16 @@ ${apps.map((a) => `<p><a href="${base}/apps/${a.name}/">${htmlEscape(a.name)}</a
     res,
     200,
     page(
-      "Coaching account",
-      `<h1>Coaching account</h1>
+      "Account",
+      `<h1>Account</h1>
 <div class="card">
+<h2>Profile</h2>
 <table>
 <tr><th>Signed in as</th><td>${htmlEscape(user.email)}</td></tr>
 <tr><th>Member since</th><td>${htmlEscape(user.created_at)} UTC</td></tr>
 <tr><th>Last login</th><td>${htmlEscape(user.last_login_at ?? "—")} UTC</td></tr>
 </table>
-<form method="post" action="${base}/account/logout"><input type="hidden" name="csrf" value="${csrf}"><button>Sign out</button></form>
+<form method="post" action="${base}/account/logout"><input type="hidden" name="csrf" value="${csrf}"><button class="quiet">Sign out</button></form>
 </div>
 
 <div class="card">
@@ -498,9 +501,9 @@ ${integrationsCard}
 ${gatewaysCard}
 ${appsCard}
 
-<div class="card">
-<h2>Delete account</h2>
-<p>Immediately and irreversibly deletes your coaching database and revokes all connected clients. Operator backups expire on the deployment's own retention schedule.</p>
+<div class="card danger">
+<h2>Danger zone</h2>
+<p>Deleting your account immediately and irreversibly removes your coaching database and revokes all connected clients. Operator backups expire on the deployment's own retention schedule.</p>
 <form method="post" action="${base}/account/delete">
 <input type="hidden" name="csrf" value="${csrf}">
 <label for="confirm_email">Type your email address to confirm:</label>
@@ -508,6 +511,7 @@ ${appsCard}
 <p><button class="danger">Delete my account and all data</button></p>
 </form>
 </div>`,
+      { nav: { base, active: "account" } },
     ),
   );
 }

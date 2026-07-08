@@ -1,15 +1,8 @@
 import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ServeContext } from "../context.js";
-import {
-  htmlEscape,
-  page,
-  parseParams,
-  readBody,
-  redirect,
-  sendHtml,
-  sendJson,
-} from "../http-util.js";
+import { htmlEscape, parseParams, readBody, redirect, sendHtml, sendJson } from "../http-util.js";
+import { page } from "../web/layout.js";
 import { isEmailAllowed } from "./allowlist.js";
 import {
   consumeAuthCode,

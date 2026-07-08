@@ -975,6 +975,7 @@ describe("account page", () => {
     const html = await res.text();
     expect(html).toContain(ALICE);
     expect(html).toContain("Journal entries");
+    expect(html).toContain('<header class="site">'); // shared nav chrome
   });
 
   it("exports a zip containing markdown docs and the database", async () => {

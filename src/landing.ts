@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ServeContext } from "./context.js";
-import { htmlEscape, page, sendHtml } from "./http-util.js";
+import { htmlEscape, sendHtml } from "./http-util.js";
+import { page } from "./web/layout.js";
 import { allRoutineTemplates } from "./topics.js";
 import { REPO_URL } from "./version.js";
 
@@ -59,8 +60,7 @@ and name every day with its calendar date in weekly plans.`;
     200,
     page(
       t.title,
-      `<p class="muted" style="text-align:right"><a href="${base}/?lang=de">Deutsch</a> · <a href="${base}/?lang=en">English</a></p>
-<h1>${t.title}</h1>
+      `<h1>${t.title}</h1>
 <p>${t.intro}</p>
 
 <div class="card">
@@ -77,7 +77,7 @@ and name every day with its calendar date in weekly plans.`;
 <div class="card">
 <h2>${t.projectTitle}</h2>
 <p>${t.projectIntro}</p>
-<pre style="white-space:pre-wrap;background:#f6f6f6;padding:.75rem;border-radius:6px;font-size:.85rem">${htmlEscape(projectInstructions)}</pre>
+<pre class="snippet">${htmlEscape(projectInstructions)}</pre>
 </div>
 
 <div class="card">
@@ -99,8 +99,16 @@ and name every day with its calendar date in weekly plans.`;
 </div>
 
 <p class="muted">${t.footer} ${t.openSource.replace("%REPO%", `<a href="${REPO_URL}" target="_blank" rel="noopener noreferrer">GitHub</a>`)}</p>`,
+      { nav: { base, active: "guide", lang, extra: langSwitch(base, "", lang) } },
     ),
   );
+}
+
+/** DE/EN switch in the header, pointing at this page (`path` = "" or "/routines"). */
+function langSwitch(base: string, path: string, lang: Lang): string {
+  const link = (code: Lang, label: string): string =>
+    `<a class="lang" href="${base}${path || "/"}?lang=${code}"${lang === code ? ' aria-current="true"' : ""} hreflang="${code}">${label}</a>`;
+  return `<span class="sep"></span>${link("de", "DE")}${link("en", "EN")}`;
 }
 
 /**
@@ -122,8 +130,8 @@ export function renderRoutines(
     .map(
       (r) => `<div class="card">
 <details>
-<summary style="cursor:pointer"><strong>${htmlEscape(r.title)}</strong> <span class="muted">(${htmlEscape(r.packId)})</span> — <span class="muted">${htmlEscape(r.cadence)}</span></summary>
-<pre style="white-space:pre-wrap;background:#f6f6f6;padding:.75rem;border-radius:6px;font-size:.82rem">${htmlEscape(r.body)}</pre>
+<summary><strong>${htmlEscape(r.title)}</strong> <span class="muted">(${htmlEscape(r.packId)})</span> — <span class="muted">${htmlEscape(r.cadence)}</span></summary>
+<pre class="snippet">${htmlEscape(r.body)}</pre>
 </details>
 </div>`,
     )
@@ -134,9 +142,7 @@ export function renderRoutines(
     200,
     page(
       t.routinesTitle,
-      `<p class="muted" style="text-align:right"><a href="${base}/routines?lang=de">Deutsch</a> · <a href="${base}/routines?lang=en">English</a></p>
-<p class="muted"><a href="${base}/?lang=${lang}">${t.backToGuide}</a></p>
-<h1>${t.routinesTitle}</h1>
+      `<h1>${t.routinesTitle}</h1>
 <p>${t.routinesIntro}</p>
 <ol>
 <li>${t.routinesStep1}</li>
@@ -147,6 +153,7 @@ export function renderRoutines(
 <h2>${t.routinesTemplatesTitle}</h2>
 <p class="muted">${t.routinesTemplatesIntro}</p>
 ${cards || `<p class="muted">${t.routinesNoTemplates}</p>`}`,
+      { nav: { base, active: "routines", lang, extra: langSwitch(base, "/routines", lang) } },
     ),
   );
 }
@@ -190,7 +197,6 @@ const EN = {
   routinesTemplatesIntro:
     "English masters from the topic packs — your own routine is generated in your preferred language and tailored to you:",
   routinesNoTemplates: "No templates available on this server.",
-  backToGuide: "← Back to the setup guide",
   dataTitle: "Your data",
   dataBody:
     "Everything the coach knows about you is yours: view and edit every document, download a full export, or delete your account at",
@@ -238,7 +244,6 @@ const DE: typeof EN = {
   routinesTemplatesIntro:
     "Englische Master-Vorlagen aus den Themen-Packs — deine eigene Routine wird in deiner bevorzugten Sprache erstellt und auf dich zugeschnitten:",
   routinesNoTemplates: "Auf diesem Server sind keine Vorlagen verfügbar.",
-  backToGuide: "← Zurück zur Einrichtungs-Anleitung",
   dataTitle: "Deine Daten",
   dataBody:
     "Alles, was der Coach über dich weiß, gehört dir: alle Dokumente ansehen und bearbeiten, einen vollständigen Export herunterladen oder deinen Account löschen unter",
