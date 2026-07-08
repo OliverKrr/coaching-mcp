@@ -62,6 +62,34 @@ export type Gateway = {
 
 export const MAX_GATEWAYS_PER_USER = 5;
 export const MAX_GATEWAY_TOOLS = 200;
+
+/**
+ * Suggested servers shown on the account page — public MCP services users
+ * commonly attach. Purely a form-prefill convenience: nothing here grants
+ * access, the user still brings their own account with the service and pastes
+ * their own URL. `id` is the value accepted by /account?preset=….
+ */
+export type SuggestedGateway = {
+  id: string;
+  name: string;
+  prefix: string;
+  website: string;
+  description: string;
+  urlHint: string;
+};
+
+export const SUGGESTED_GATEWAYS: readonly SuggestedGateway[] = [
+  {
+    id: "icusync",
+    name: "IcuSync",
+    prefix: "icusync",
+    website: "https://icusync.icu/",
+    description:
+      "brings your intervals.icu training data (activities, wellness, plans) into coaching conversations",
+    urlHint:
+      "Copy the personal MCP URL from your IcuSync dashboard and paste it here — the access token embedded in it is stored encrypted.",
+  },
+];
 const CONNECT_TIMEOUT_MS = 10_000;
 const CALL_TIMEOUT_MS = 120_000;
 const PENDING_TTL_SEC = 600;

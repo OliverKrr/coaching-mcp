@@ -1754,4 +1754,32 @@ describe("MCP gateways (user-attached upstream servers)", () => {
       await client.close();
     }
   });
+
+  it("suggests known servers and ?preset= prefills the add form", async () => {
+    const session = await loginWithCsrf(BOB);
+    await removeAllGateways(session);
+    const plain = await accountHtml(session);
+    expect(plain).toContain("https://icusync.icu/");
+    expect(plain).not.toContain('value="IcuSync"'); // suggestion listed, form untouched
+    const prefilled = await (
+      await fetch(`${base}/account?preset=icusync`, { headers: { cookie: session.cookie } })
+    ).text();
+    expect(prefilled).toContain('value="IcuSync"');
+    expect(prefilled).toContain('value="icusync"');
+    expect(prefilled).toContain("IcuSync dashboard");
+  });
+
+  it("hides a suggestion once its prefix is attached and ignores unknown presets", async () => {
+    const session = await loginWithCsrf(BOB);
+    await removeAllGateways(session);
+    await addGateway(session, { name: "IcuSync", url: upOpen.url }); // prefix derives to icusync
+    const html = await accountHtml(session);
+    expect(html).not.toContain("https://icusync.icu/");
+    await removeAllGateways(session);
+    const unknown = await (
+      await fetch(`${base}/account?preset=doesnotexist`, { headers: { cookie: session.cookie } })
+    ).text();
+    expect(unknown).toContain("https://icusync.icu/"); // suggestion back after removal
+    expect(unknown).not.toContain('value="IcuSync"'); // unknown preset: no prefill
+  });
 });

@@ -21,6 +21,7 @@ import {
   hasSealedQuery,
   listGateways,
   startGatewayConnect,
+  SUGGESTED_GATEWAYS,
   toolPrefix,
   type Gateway,
 } from "./gateways.js";
@@ -99,7 +100,7 @@ export async function handleAccountRoute(
 
   if (req.method === "GET") {
     if (path === "/account") {
-      renderAccountPage(ctx, res, auth);
+      renderAccountPage(ctx, res, auth, url.searchParams.get("preset"));
       return true;
     }
     if (path === "/account/gateways/callback") {
@@ -348,7 +349,12 @@ function gatewayStatusLabel(g: Gateway): string {
   }
 }
 
-function renderAccountPage(ctx: ServeContext, res: ServerResponse, auth: WebAuth): void {
+function renderAccountPage(
+  ctx: ServeContext,
+  res: ServerResponse,
+  auth: WebAuth,
+  presetId: string | null = null,
+): void {
   const base = ctx.cfg.publicUrl;
   const user = getUser(ctx.authDb, auth.userId);
   if (!user) {
@@ -399,6 +405,21 @@ ${hevyBlock}
   let gatewaysCard = "";
   if (ctx.cfg.secretsKey) {
     const gateways = listGateways(ctx.authDb, user.id);
+    const attachedPrefixes = new Set(gateways.map((g) => toolPrefix(g)));
+    const suggestions = SUGGESTED_GATEWAYS.filter((s) => !attachedPrefixes.has(s.prefix));
+    const preset = suggestions.find((s) => s.id === presetId);
+    const suggestionsBlock = suggestions.length
+      ? `<p class="muted">Suggested:</p>
+${suggestions
+  .map(
+    (s) => `<p><strong>${htmlEscape(s.name)}</strong> — ${htmlEscape(s.description)}.<br>
+<span class="muted">Get your personal MCP URL at <a href="${htmlEscape(s.website)}" target="_blank" rel="noopener noreferrer">${htmlEscape(s.website.replace(/^https?:\/\//, "").replace(/\/$/, ""))}</a>, then</span> <a href="${base}/account?preset=${encodeURIComponent(s.id)}#add-server">prefill the form below</a>.</p>`,
+  )
+  .join("\n")}`
+      : "";
+    const presetUrlHint = preset
+      ? `<br><span class="muted"><strong>${htmlEscape(preset.name)}:</strong> ${htmlEscape(preset.urlHint)}</span>`
+      : "";
     const rows = gateways
       .map(
         (g) => `<tr>
@@ -415,15 +436,16 @@ ${hevyBlock}
 <h2>Connected MCP servers</h2>
 <p class="muted">Attach other MCP servers here and their tools appear in your coaching conversations — so one Claude connector is enough even on plans that allow only one. You sign in to each server as yourself (your own account and subscription there); credentials are stored encrypted, never shown again, and removed with your account.</p>
 ${rows ? `<table>\n${rows}\n</table>` : ""}
-<form method="post" action="${base}/account/gateways">
+${suggestionsBlock}
+<form method="post" action="${base}/account/gateways" id="add-server">
 <input type="hidden" name="csrf" value="${csrf}">
-<p><label for="gw_name">Name:</label> <input id="gw_name" name="name" required maxlength="40" placeholder="e.g. IcuSync"><br>
+<p><label for="gw_name">Name:</label> <input id="gw_name" name="name" required maxlength="40" placeholder="e.g. IcuSync"${preset ? ` value="${htmlEscape(preset.name)}"` : ""}><br>
 <span class="muted">A label for this list — it does not change any tool names.</span></p>
-<p><label for="gw_url">Server URL:</label> <input id="gw_url" name="url" type="url" required placeholder="https://…"><br>
-<span class="muted">Paste the URL exactly as the service gives it. If it already contains an access token (e.g. <code>…/mcp?token=…</code>), that is all you need — the token part is split off and stored encrypted.</span></p>
+<p><label for="gw_url">Server URL:</label> <input id="gw_url" name="url" type="url" required placeholder="https://…"${preset ? " autofocus" : ""}><br>
+<span class="muted">Paste the URL exactly as the service gives it. If it already contains an access token (e.g. <code>…/mcp?token=…</code>), that is all you need — the token part is split off and stored encrypted.</span>${presetUrlHint}</p>
 <p><label for="gw_bearer">Access token</label>: <input id="gw_bearer" name="bearer" type="password" autocomplete="off"><br>
 <span class="muted">Only for servers that expect a separate Authorization header. Leave empty when the token is already part of the URL, or when the server signs you in itself.</span></p>
-<p><label for="gw_prefix">Tool prefix</label>: <input id="gw_prefix" name="prefix" maxlength="16" pattern="[a-z0-9_]*" placeholder="defaults to the name"><br>
+<p><label for="gw_prefix">Tool prefix</label>: <input id="gw_prefix" name="prefix" maxlength="16" pattern="[a-z0-9_]*" placeholder="defaults to the name"${preset ? ` value="${htmlEscape(preset.prefix)}"` : ""}><br>
 <span class="muted">This server's tools appear as <code>prefix_toolname</code> so you can always tell which server a tool comes from (e.g. <code>icusync_get_activities</code>). Left empty, it is derived from the name. Must be unique among your servers; a–z, 0–9, _.</span></p>
 <p><button>Add &amp; connect</button></p>
 </form>
