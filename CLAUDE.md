@@ -176,8 +176,10 @@ page. Never add inline handlers (`onsubmit=` etc.) — if a page ever needs JS, 
 has to be revisited deliberately. Proxied app responses keep their own headers.
 
 **Gateway passthrough is verbatim and protocol-level (pinned SDK internals)**: upstream tools
-must reach Claude with their exact JSON schemas, descriptions, and annotations — a curated
-upstream's per-endpoint guidance is its value. `registerTool` is zod-only in SDK 1.29 and would
+must reach Claude with their exact JSON schemas and annotations — a curated upstream's
+per-endpoint guidance is its value. Tool names get a mandatory per-server prefix (derived from
+the gateway name, unique per user) and descriptions/titles a "Server: " attribution, so every
+tool stays traceable to its server in tool lists and permission UIs. `registerTool` is zod-only in SDK 1.29 and would
 re-serialize schemas, so `attachGatewayTools` wraps the underlying `Server`'s stored `tools/list`
 and `tools/call` handlers (private `_requestHandlers` / `_registeredTools`, guarded by a test
 that fails loudly on SDK upgrades). Gateway URLs are SSRF-guarded (https-only, no
