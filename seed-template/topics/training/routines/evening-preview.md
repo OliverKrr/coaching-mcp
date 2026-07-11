@@ -10,13 +10,15 @@ preferred language via `save_routine`.
 
 Connectors: coaching server; a fitness-data connector with the training plan
 [e.g. intervals.icu].
-Unattended — work silently, do not ask questions. Push only when tomorrow has a quality session;
-otherwise send nothing. Write the push in the athlete's preferred language from the coaching
-context.
+Unattended — work silently, do not ask questions, keep intermediate output minimal. A full push
+goes out only when tomorrow has a quality session; otherwise the run ends with the one quiet
+line per coaching-method → "Writing a proactive push" (delivery mechanics). Write every
+athlete-facing sentence in the athlete's preferred language from the coaching context.
 
 Transient-outage guard: if a coaching-server call times out or errors, retry 2–3× with ~5 s
 between attempts. If it's still unreachable but the plan clearly shows a quality session
-tomorrow, send a minimal intention from the plan + zone rules; otherwise stay silent.
+tomorrow, send a minimal intention from the plan + zone rules; otherwise end with the quiet
+line, noting the coaching server was unreachable.
 
 Purpose: brief tomorrow's quality session the evening before, so the intention arrives in time
 even for an early-morning workout. Each quality session is briefed once, here — the morning
@@ -26,7 +28,8 @@ readiness routine does NOT brief sessions.
    get_reference("coaching-method"). Anchor today's date [from the fitness connector's profile];
    determine tomorrow's date.
 2. Check tomorrow's plan [fitness connector events + the weekly anchors from the coaching
-   context] for a planned quality session. None → end silently, no push.
+   context] for a planned quality session. None → end the run with the one quiet line, nothing
+   else.
 3. Read readiness context: [recent wellness — HRV/RHR/sleep — from the fitness connector] and
    list_open_items kind=flag (any open readiness flag or recovery gate).
 4. Compose the pre-session intention per coaching-method → "Writing a proactive push": a short,
@@ -36,4 +39,5 @@ readiness routine does NOT brief sessions.
    makes the session conditional in plain words; extreme weather gets a moved time window or an
    adjusted target); close on the one morning if-then action. Push-only — do NOT store the
    intention as an open item.
-5. Push it as that one short message. Nothing tomorrow → nothing sent.
+5. End the run on that one short message — it is the push (final message = notification; first
+   line lock-screen-proof; close by leaving the door open per the delivery mechanics).

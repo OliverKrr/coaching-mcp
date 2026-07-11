@@ -40,7 +40,9 @@ push that the coaching server was down.
      injury-risk-<YYYY-Www>. Remove the stacked trigger.
    - Missed quality — a planned quality session in the last few days with no matching completed
      activity → missed-quality-<YYYY-Www>. Surface for rescheduling.
-6. Push ONLY if a NEW flag was raised. First load get_reference("coaching-method"), then compose
-   the push per its "Writing a proactive push": lead with what to DO about it, the single most
-   important flag only, closed with one concrete action. Two plain lines is plenty. Nothing
-   warranted → send nothing and end silently.
+6. A full push goes out ONLY if a NEW flag was raised. First load
+   get_reference("coaching-method"), then compose it per its "Writing a proactive push": lead
+   with what to DO about it (first line lock-screen-proof), the single most important flag only,
+   closed with one concrete action. Two plain lines is plenty. Nothing warranted → end the run
+   with the one quiet line per the delivery mechanics, nothing else. Either way the run's final
+   message is the notification — never end on working notes.

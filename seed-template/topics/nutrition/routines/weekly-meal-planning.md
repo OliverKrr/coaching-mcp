@@ -34,6 +34,8 @@ picks it up. Never write a partial or duplicate plan.
    the new plan, leaving the conventions untouched. Then append_journal a dense entry (plan
    headline, verdicts carried over, one focus for the week — e.g. "record verdicts for the two
    new recipes"). Do NOT prepend a date — the server stamps it.
-6. Push one message: the plan headline (e.g. which new recipe to look forward to), the grocery
-   list, and the one focus. Why-now line: "weekly meal plan before your shopping day". Nothing
-   more — no lectures, no weight talk.
+6. End the run on one message — it is the push (final message = notification, first line
+   lock-screen-proof): the plan headline (e.g. which new recipe to look forward to), the grocery
+   list, and the one focus. Why-now line: "weekly meal plan before your shopping day". Close by
+   leaving the door open per coaching-method's delivery mechanics. Nothing more — no lectures,
+   no weight talk.

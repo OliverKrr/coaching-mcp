@@ -39,6 +39,33 @@ Review them at session start via `list_open_items`; close with `resolve_open_ite
 
 ## Writing a proactive push
 
-When flagging something unprompted: one-line observation → evidence → one concrete suggestion →
-question inviting the person's view. Never more than one push per topic per week unless safety-
-relevant.
+Scheduled routines (and unprompted flags) reach the person as a phone notification, hours away
+from any session. Substance first: every push carries a real payload — a decision, a flag, a
+genuine read; a routine with nothing to say does not invent one. Never more than one unprompted
+push per topic per week unless safety-relevant.
+
+Register:
+
+- **Lead with the call.** The first line answers the person's only question — do it, skip it, or
+  watch this — verdict before reasons.
+- **Translate, don't quote.** Say what a number _means_; keep a number only when it's a target
+  the person will act on. Never expose internal scaffolding (section references, metric
+  acronyms, dedup keys).
+- **Close on one concrete action** anchored to the person's day — one, not a list — then invite
+  the person's view when a reply would genuinely help.
+
+Delivery mechanics — how a scheduled-task run actually reaches the person:
+
+- **The run's final message IS the push.** The app turns it into the notification and it is what
+  the person lands on when they open it; everything before it reads as working noise. Never end
+  a run on analysis or tool narration — end on the complete, self-contained push, and keep
+  intermediate output minimal.
+- **The first line must survive a lock screen.** Keep it under ~70 characters and
+  self-contained; everything after it can elaborate.
+- **Quiet runs still notify.** The app notifies whenever a run completes, so "send nothing" is
+  not possible — when nothing is warranted, end with exactly one fixed quiet line (e.g. "All
+  clear — nothing to do today.") and nothing else, so the lock screen alone tells the person the
+  notification can be dismissed.
+- **Leave the door open.** The run's chat stays usable with the same tools — close with one
+  short clause inviting a reply for detail or adjustment ("Reply here to adjust."). An
+  invitation, not a question that demands an answer.

@@ -638,6 +638,61 @@ describe("landing page setup guide", () => {
     const landing = await (await fetch(`${base}/`)).text();
     expect(landing).toContain("/routines");
   });
+
+  it("persists an explicit ?lang= choice via cookie, all the way into the account area", async () => {
+    const res = await fetch(`${base}/?lang=de`, { redirect: "manual" });
+    const setCookie = res.headers.get("set-cookie") ?? "";
+    expect(setCookie).toContain("lang=de");
+
+    const cookie = await accountLogin(ALICE);
+    const account = await (
+      await fetch(`${base}/account`, { headers: { cookie: `${cookie}; lang=de` } })
+    ).text();
+    expect(account).toContain("Gefahrenzone"); // danger zone, translated
+    expect(account).toContain("Angemeldet als");
+    // and the German choice does not leak into cookie-less requests
+    const en = await (await fetch(`${base}/account`, { headers: { cookie } })).text();
+    expect(en).toContain("Danger zone");
+  });
+
+  it("builds the nav around the signed-in user", async () => {
+    const anon = await (await fetch(`${base}/`)).text();
+    expect(anon).toContain("Sign in</a>");
+    expect(anon).not.toContain(">Data</a>");
+
+    const cookie = await accountLogin(ALICE);
+    const signedIn = await (await fetch(`${base}/`, { headers: { cookie } })).text();
+    expect(signedIn).toContain(">Data</a>");
+    expect(signedIn).toContain(">Account</a>");
+  });
+
+  it("shows the signed-in user's own routines on /routines", async () => {
+    const cookie = await accountLogin(ALICE);
+    const csrf = /name="csrf" value="([^"]+)"/.exec(
+      await (await fetch(`${base}/account`, { headers: { cookie } })).text(),
+    )?.[1] as string;
+    await fetch(`${base}/account/data/routines/save`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        csrf,
+        name: "own-checkin",
+        cadence: "weekly, Friday",
+        prompt: "Review the week and flag anything odd.",
+        status: "active",
+        expected_updated_at: "",
+      }),
+      redirect: "manual",
+    });
+    const signedIn = await (await fetch(`${base}/routines`, { headers: { cookie } })).text();
+    expect(signedIn).toContain("Your routines");
+    expect(signedIn).toContain("own-checkin");
+    expect(signedIn).toContain("Review the week and flag anything odd.");
+    expect(signedIn).toContain("Weekly Review"); // templates still listed below
+
+    const anon = await (await fetch(`${base}/routines`)).text();
+    expect(anon).not.toContain("Your routines");
+  });
 });
 
 describe("account data editor", () => {

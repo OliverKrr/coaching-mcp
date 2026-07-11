@@ -14,18 +14,28 @@ import { htmlEscape } from "../http-util.js";
 export type NavOpts = {
   /** PUBLIC_URL — nav links must be absolute (prefix-stripping reverse proxy). */
   base: string;
-  active?: "guide" | "routines" | "account";
-  /** Landing/routines pages: carry the chosen language into nav links. */
+  active?: "guide" | "routines" | "data" | "account";
   lang?: "en" | "de";
-  /** Extra right-aligned header content, e.g. the language switch. */
-  extra?: string;
+  /** Signed-in users get the Data item and "Account" instead of "Sign in". */
+  signedIn?: boolean;
+  /**
+   * Current path + query relative to base (e.g. "/routines", "/account?preset=x") —
+   * the DE/EN toggle links back to it. Omit to hide the toggle.
+   */
+  path?: string;
 };
 
 export type PageOpts = { wide?: boolean; nav?: NavOpts };
 
 const NAV_LABELS = {
-  en: { guide: "Guide", routines: "Routines", account: "Account" },
-  de: { guide: "Anleitung", routines: "Routinen", account: "Account" },
+  en: { guide: "Guide", routines: "Routines", data: "Data", account: "Account", signIn: "Sign in" },
+  de: {
+    guide: "Anleitung",
+    routines: "Routinen",
+    data: "Daten",
+    account: "Account",
+    signIn: "Anmelden",
+  },
 } as const;
 
 // A rounded square with a "C" arc, in the accent color (# → %23).
@@ -71,6 +81,13 @@ form{margin:1rem 0}
 .muted{color:var(--muted);font-size:.92rem}
 .scroll{overflow-x:auto}
 summary{cursor:pointer}
+.withside{display:flex;gap:1.75rem;align-items:flex-start}
+.withside>.content{flex:1;min-width:0}
+aside.side{flex:0 0 175px;position:sticky;top:1rem;display:flex;flex-direction:column;gap:.15rem;padding-top:.35rem}
+aside.side a{color:var(--muted);text-decoration:none;padding:.3rem .6rem;border-radius:6px;font-size:.95rem}
+aside.side a:hover{color:var(--fg)}
+aside.side a[aria-current]{color:var(--fg);font-weight:600;background:color-mix(in srgb,var(--accent) 12%,transparent)}
+@media (max-width:700px){.withside{flex-direction:column;gap:.5rem}aside.side{position:static;flex-direction:row;flex-wrap:wrap;align-items:flex-start;padding:0}}
 code{background:var(--code-bg);padding:.1rem .35rem;border-radius:4px;font-size:.88em}
 pre{background:var(--code-bg);padding:.75rem .9rem;border-radius:8px;overflow-x:auto}
 pre code{background:none;padding:0}
@@ -91,14 +108,22 @@ textarea.mono{width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace
 .preview h3{font-size:1rem}
 .preview blockquote{border-left:3px solid var(--border);margin:.5rem 0;padding:.1rem 1rem;color:var(--muted)}`;
 
+function langToggle(nav: NavOpts): string {
+  if (nav.path === undefined) return "";
+  const target = (code: "de" | "en"): string =>
+    `${nav.base}${nav.path || "/"}${nav.path?.includes("?") ? "&" : "?"}lang=${code}`;
+  const link = (code: "de" | "en", label: string): string =>
+    `<a class="lang" href="${htmlEscape(target(code))}"${(nav.lang ?? "en") === code ? ' aria-current="true"' : ""} hreflang="${code}">${label}</a>`;
+  return `<span class="sep"></span>${link("de", "DE")}${link("en", "EN")}`;
+}
+
 function renderNav(nav: NavOpts, wide: boolean): string {
   const labels = NAV_LABELS[nav.lang ?? "en"];
-  const q = nav.lang ? `?lang=${nav.lang}` : "";
   const item = (key: NonNullable<NavOpts["active"]>, href: string, label: string): string =>
     `<a href="${href}"${nav.active === key ? ' aria-current="page"' : ""}>${label}</a>`;
   return `<header class="site"><div class="inner${wide ? " wide" : ""}">
-<a class="brand" href="${nav.base}/${q}"><span class="mark"></span>Coaching hub</a>
-<nav>${item("guide", `${nav.base}/${q}`, labels.guide)}${item("routines", `${nav.base}/routines${q}`, labels.routines)}${item("account", `${nav.base}/account`, labels.account)}${nav.extra ?? ""}</nav>
+<a class="brand" href="${nav.base}/"><span class="mark"></span>Coaching hub</a>
+<nav>${item("guide", `${nav.base}/`, labels.guide)}${item("routines", `${nav.base}/routines`, labels.routines)}${nav.signedIn ? item("data", `${nav.base}/account/data`, labels.data) : ""}${item("account", `${nav.base}/account`, nav.signedIn ? labels.account : labels.signIn)}${langToggle(nav)}</nav>
 </div></header>`;
 }
 

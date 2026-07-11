@@ -17,6 +17,7 @@ import {
 } from "./auth/oauth.js";
 import type { ServeConfig, ServeContext } from "./context.js";
 import { sendJson } from "./http-util.js";
+import { langCookieHeader } from "./web/i18n.js";
 import { renderLanding, renderRoutines } from "./landing.js";
 import { McpSessionManager } from "./mcp-http.js";
 import { TenantManager } from "./tenancy.js";
@@ -150,6 +151,11 @@ async function route(
     await handleToken(ctx, req, res);
     return;
   }
+
+  // A ?lang= click on the header toggle persists the choice for every page.
+  const langCookie = langCookieHeader(url);
+  if (langCookie) res.setHeader("set-cookie", langCookie);
+
   if (await handleAccountRoute(ctx, mcpSessions, req, res, url)) return;
 
   if (path === "/health" && method === "GET") {

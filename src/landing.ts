@@ -1,25 +1,20 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { webAuth } from "./account.js";
 import type { ServeContext } from "./context.js";
 import { htmlEscape, sendHtml } from "./http-util.js";
+import { pickLang, type Lang } from "./web/i18n.js";
 import { page } from "./web/layout.js";
+import { badge } from "./web/ui.js";
 import { allRoutineTemplates } from "./topics.js";
 import { REPO_URL } from "./version.js";
 
 /**
  * Public landing page = the setup guide new users need to get from "invited"
- * to "coached". Bilingual (English/German) because that covers the common
- * deployment need without a full i18n layer: the language comes from
- * `?lang=de|en`, falling back to the browser's Accept-Language. Operators
- * share exactly one URL — this page.
+ * to "coached". Bilingual (English/German); the choice persists via the lang
+ * cookie (web/i18n.ts). Operators share exactly one URL — this page. Signed-in
+ * visitors are recognized (web session cookie) so the nav and the routines
+ * page center on them.
  */
-
-type Lang = "en" | "de";
-
-function pickLang(req: IncomingMessage, url: URL): Lang {
-  const q = url.searchParams.get("lang");
-  if (q === "de" || q === "en") return q;
-  return (req.headers["accept-language"] ?? "").toLowerCase().startsWith("de") ? "de" : "en";
-}
 
 export function renderLanding(
   ctx: ServeContext,
@@ -99,16 +94,9 @@ and name every day with its calendar date in weekly plans.`;
 </div>
 
 <p class="muted">${t.footer} ${t.openSource.replace("%REPO%", `<a href="${REPO_URL}" target="_blank" rel="noopener noreferrer">GitHub</a>`)}</p>`,
-      { nav: { base, active: "guide", lang, extra: langSwitch(base, "", lang) } },
+      { nav: { base, active: "guide", lang, signedIn: webAuth(ctx, req) !== undefined, path: "" } },
     ),
   );
-}
-
-/** DE/EN switch in the header, pointing at this page (`path` = "" or "/routines"). */
-function langSwitch(base: string, path: string, lang: Lang): string {
-  const link = (code: Lang, label: string): string =>
-    `<a class="lang" href="${base}${path || "/"}?lang=${code}"${lang === code ? ' aria-current="true"' : ""} hreflang="${code}">${label}</a>`;
-  return `<span class="sep"></span>${link("de", "DE")}${link("en", "EN")}`;
 }
 
 /**
@@ -125,6 +113,29 @@ export function renderRoutines(
   const base = ctx.cfg.publicUrl;
   const lang = pickLang(req, url);
   const t = lang === "de" ? DE : EN;
+  const auth = webAuth(ctx, req);
+
+  let ownSection = "";
+  if (auth) {
+    const rows = ctx.tenants
+      .open(auth.userId)
+      .prepare(
+        "SELECT name, cadence, prompt, status FROM routines ORDER BY (status != 'active'), name",
+      )
+      .all() as Array<{ name: string; cadence: string; prompt: string; status: string }>;
+    const ownCards = rows
+      .map(
+        (r) => `<div class="card">
+<p><strong>${htmlEscape(r.name)}</strong> ${badge(r.status === "active" ? "ok" : "muted", r.status)} <span class="muted">· ${htmlEscape(r.cadence)}</span> — <a href="${base}/account/data/routines/edit?name=${encodeURIComponent(r.name)}">${t.ownEdit}</a></p>
+<details><summary class="muted">${t.ownShowPrompt}</summary><pre class="snippet">${htmlEscape(r.prompt)}</pre></details>
+</div>`,
+      )
+      .join("\n");
+    ownSection = `<h2>${t.ownTitle}</h2>
+<p class="muted">${t.ownIntro}</p>
+${ownCards || `<p class="muted">${t.ownNone}</p>`}
+<h2>${t.howTitle}</h2>`;
+  }
 
   const cards = allRoutineTemplates(ctx.cfg.seedDir)
     .map(
@@ -143,6 +154,7 @@ export function renderRoutines(
     page(
       t.routinesTitle,
       `<h1>${t.routinesTitle}</h1>
+${ownSection}
 <p>${t.routinesIntro}</p>
 <ol>
 <li>${t.routinesStep1}</li>
@@ -153,7 +165,7 @@ export function renderRoutines(
 <h2>${t.routinesTemplatesTitle}</h2>
 <p class="muted">${t.routinesTemplatesIntro}</p>
 ${cards || `<p class="muted">${t.routinesNoTemplates}</p>`}`,
-      { nav: { base, active: "routines", lang, extra: langSwitch(base, "/routines", lang) } },
+      { nav: { base, active: "routines", lang, signedIn: auth !== undefined, path: "/routines" } },
     ),
   );
 }
@@ -192,11 +204,18 @@ const EN = {
   routinesStep3:
     "<strong>Adjust anytime.</strong> Ask the coach to revise or retire a routine, then update the scheduled task with the new prompt.",
   routinesFooter:
-    "Routines never ask questions, stay silent when there is nothing actionable, and each has a goal and a review point — no notification noise.",
+    "Routines never ask questions, send at most one quiet all-clear line when there is nothing actionable, and each has a goal and a review point — no notification noise.",
   routinesTemplatesTitle: "Templates the coach draws from",
   routinesTemplatesIntro:
     "English masters from the topic packs — your own routine is generated in your preferred language and tailored to you:",
   routinesNoTemplates: "No templates available on this server.",
+  ownTitle: "Your routines",
+  ownIntro:
+    "Designed with your coach and stored here. Copy a prompt into a scheduled task in your Claude account (with the cadence shown); edit them on your data pages.",
+  ownNone: "No routines yet — ask your coach to design a check-in with you.",
+  ownEdit: "edit",
+  ownShowPrompt: "Show prompt (copy & paste into a scheduled task)",
+  howTitle: "How it works",
   dataTitle: "Your data",
   dataBody:
     "Everything the coach knows about you is yours: view and edit every document, download a full export, or delete your account at",
@@ -239,11 +258,18 @@ const DE: typeof EN = {
   routinesStep3:
     "<strong>Jederzeit anpassen.</strong> Bitte den Coach, eine Routine zu überarbeiten oder stillzulegen, und aktualisiere dann die geplante Aufgabe mit dem neuen Prompt.",
   routinesFooter:
-    "Routinen stellen keine Fragen, bleiben still, wenn es nichts Handlungsrelevantes gibt, und haben je ein Ziel und einen Review-Punkt — kein Benachrichtigungslärm.",
+    "Routinen stellen keine Fragen, melden ohne Handlungsbedarf höchstens eine kurze Entwarnungszeile und haben je ein Ziel und einen Review-Punkt — kein Benachrichtigungslärm.",
   routinesTemplatesTitle: "Vorlagen, aus denen der Coach schöpft",
   routinesTemplatesIntro:
     "Englische Master-Vorlagen aus den Themen-Packs — deine eigene Routine wird in deiner bevorzugten Sprache erstellt und auf dich zugeschnitten:",
   routinesNoTemplates: "Auf diesem Server sind keine Vorlagen verfügbar.",
+  ownTitle: "Deine Routinen",
+  ownIntro:
+    "Mit deinem Coach entworfen und hier gespeichert. Kopiere einen Prompt in eine geplante Aufgabe in deinem Claude-Konto (mit dem angegebenen Rhythmus); bearbeiten kannst du sie auf deinen Daten-Seiten.",
+  ownNone: "Noch keine Routinen — bitte deinen Coach, einen Check-in mit dir zu entwerfen.",
+  ownEdit: "bearbeiten",
+  ownShowPrompt: "Prompt anzeigen (kopieren & als geplante Aufgabe einfügen)",
+  howTitle: "So funktioniert es",
   dataTitle: "Deine Daten",
   dataBody:
     "Alles, was der Coach über dich weiß, gehört dir: alle Dokumente ansehen und bearbeiten, einen vollständigen Export herunterladen oder deinen Account löschen unter",

@@ -74,8 +74,8 @@ export type SuggestedGateway = {
   name: string;
   prefix: string;
   website: string;
-  description: string;
-  urlHint: string;
+  description: { en: string; de: string };
+  urlHint: { en: string; de: string };
 };
 
 export const SUGGESTED_GATEWAYS: readonly SuggestedGateway[] = [
@@ -84,10 +84,14 @@ export const SUGGESTED_GATEWAYS: readonly SuggestedGateway[] = [
     name: "IcuSync",
     prefix: "icusync",
     website: "https://icusync.icu/",
-    description:
-      "brings your intervals.icu training data (activities, wellness, plans) into coaching conversations",
-    urlHint:
-      "Copy the personal MCP URL from your IcuSync dashboard and paste it here — the access token embedded in it is stored encrypted.",
+    description: {
+      en: "brings your intervals.icu training data (activities, wellness, plans) into coaching conversations",
+      de: "bringt deine intervals.icu-Trainingsdaten (Aktivitäten, Wellness, Pläne) in deine Coaching-Unterhaltungen",
+    },
+    urlHint: {
+      en: "Copy the personal MCP URL from your IcuSync dashboard and paste it here — the access token embedded in it is stored encrypted.",
+      de: "Kopiere die persönliche MCP-URL aus deinem IcuSync-Dashboard und füge sie hier ein — das darin enthaltene Zugriffstoken wird verschlüsselt gespeichert.",
+    },
   },
 ];
 const CONNECT_TIMEOUT_MS = 10_000;

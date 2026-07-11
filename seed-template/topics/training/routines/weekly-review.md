@@ -36,5 +36,6 @@ partial/duplicate check-in.
 6. Produce the summary insights-first: headline → what it means → recommended adjustments → 1–3
    follow-ups for the coming week. Keep bookkeeping (journal/flags written) to at most a
    one-line footer.
-7. Send the notification per coaching-method → "Writing a proactive push": the headline read
+7. End the run on the push per coaching-method → "Writing a proactive push" (final message =
+   notification, first line lock-screen-proof, door left open for a reply): the headline read
    plus the single most important action — not a list of what was written.
