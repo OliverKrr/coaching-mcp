@@ -45,7 +45,7 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^26.0.0",
     "oxfmt": "^0.56.0",
-    "oxlint": "^1.70.0",
+    "oxlint": "^1.72.0",
     "tsdown": "^0.22.3",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
