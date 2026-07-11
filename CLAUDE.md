@@ -16,10 +16,14 @@ routines — stored in SQLite+FTS5 and exposed as MCP tools over Streamable HTTP
 topic-based: installable **topic packs** (training, nutrition, custom) live under
 `seed-template/topics/` and are delivered on demand via read-only tools, so each user picks
 their own topics during onboarding. v2 is multi-tenant: a built-in OAuth 2.1 authorization
-server federates login to an OIDC identity provider (Google by default), an email allowlist
-gates access, and every user gets an isolated per-user database seeded from a generic template.
-A self-service `/account` page provides data export and account deletion. The bare
-`coaching-mcp` command remains the v1-style single-user stdio server.
+server federates login to an OIDC identity provider (Google by default), membership lives in
+auth.db (self-registration with operator approval; `ADMIN_EMAILS` implicitly allowed;
+`ALLOWED_EMAILS` as optional pre-approval bootstrap), and every user gets an isolated per-user
+database seeded from a generic template, governed by a storage quota. A self-service `/account`
+page provides data export and account deletion; `/admin` is the operator console; an optional
+Telegram bot (plus a plain `NOTIFY_URL` webhook) delivers signup/quota notifications with
+inline approve/grant buttons. The bare `coaching-mcp` command remains the v1-style single-user
+stdio server.
 
 ## Commands
 
@@ -46,8 +50,14 @@ src/serve.ts        bin path `coaching-mcp serve` — node:http server + router 
 src/mcp-http.ts     /mcp Streamable HTTP endpoint; per-session McpServer bound to the user's DB
 src/auth/oauth.ts   OAuth 2.1 AS: RFC 8414 metadata, RFC 7591 DCR, /authorize, /oidc/callback, /token
 src/auth/oidc.ts    openid-client wrapper (lazy discovery, PKCE toward the IdP, id_token verify)
-src/auth/allowlist.ts  ALLOWED_EMAILS / ALLOWED_EMAILS_FILE (file re-read per login attempt)
-src/auth/db.ts      DATA_DIR/auth.db — users, clients, pending auth, hashed tokens, web sessions
+src/auth/allowlist.ts  ADMIN_EMAILS + bootstrap ALLOWED_EMAILS / ALLOWED_EMAILS_FILE (file re-read per login) + REGISTRATION toggle
+src/auth/db.ts      DATA_DIR/auth.db — users (with membership status/quota/telegram link), clients, pending auth, hashed tokens, web sessions, telegram_links, quota_requests
+src/membership.ts   resolveLogin decision tree + status transitions (approve/reject/disable/enable/grantQuota/purgeUser) shared by /admin and Telegram
+src/admin.ts        /admin operator console (ADMIN_EMAILS-gated, 404 otherwise, English-only): requests, quotas, users
+src/notify.ts       NotifyService: best-effort Telegram + NOTIFY_URL webhook fan-out; never blocks logins/writes
+src/telegram.ts     minimal Bot API client; per-boot webhook secret, setWebhook/getMe on boot
+src/telegram-webhook.ts  POST /telegram/webhook: secret header + admin-chat check → membership callbacks; /start deep-link linking
+src/quota.ts        storage limits: content_bytes counter access, caps, checkWrite ladder, usage warnings
 src/tenancy.ts      TenantManager: DATA_DIR/users/<id>/skill.db, lazy open/cache, delete
 src/account.ts      /account router (session + CSRF for all account routes): profile, zip export (fflate), delete
 src/account-data.ts /account/data browse & edit: sections/refs/routines (create/edit/delete, optimistic concurrency), journal, open items
@@ -99,12 +109,16 @@ which must be backed up alongside per-user snapshots or a restore can't reconstr
 | `list_routines` / `get_routine`       | read      | Stored scheduled-routine prompts (users copy them into Claude scheduled tasks) |
 | `save_routine`                        | write     | Upsert a routine (name, cadence, prompt, status; status kept when omitted)     |
 | `delete_routine`                      | write     | Delete a stored routine (confirm=true)                                         |
-| `get_version`                         | read      | Build info + per-table statistics                                              |
+| `request_quota_increase`              | write     | Ask the operator for more storage with a reason (serve mode, per-session)      |
+| `get_version`                         | read      | Build info + per-table statistics + storage usage vs. quota                    |
 
 ## Environment variables (serve mode)
 
 `PUBLIC_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` required (fail-fast); `OIDC_ISSUER`
-(default Google), `ALLOWED_EMAILS`/`ALLOWED_EMAILS_FILE`, `DATA_DIR` (/data), `SEED_DIR` (/seed),
+(default Google), `ADMIN_EMAILS` (implicitly allowed + gates /admin), `REGISTRATION`
+(default open; `closed` = invite-only), `ALLOWED_EMAILS`/`ALLOWED_EMAILS_FILE` (bootstrap,
+skips approval), `TELEGRAM_BOT_TOKEN`/`TELEGRAM_ADMIN_CHAT_ID` (+ `TELEGRAM_API_BASE`
+tests-only), `NOTIFY_URL`, `QUOTA_DEFAULT_MB` (50), `DATA_DIR` (/data), `SEED_DIR` (/seed),
 `PORT` (8000), `ACCESS_TOKEN_TTL` (3600), `REFRESH_TOKEN_TTL` (7776000). Stdio mode uses only
 `DATA_DIR`/`SEED_DIR`.
 
@@ -149,9 +163,35 @@ revocation (account deletion, refresh-reuse theft detection) is exact. No JWTs, 
 Refresh tokens rotate on every use; reuse of a rotated token revokes the user+client chain.
 
 **Login is fully delegated to the IdP**: this server never sees passwords; it verifies the
-id_token (issuer, audience, nonce, signature via JWKS — `openid-client`) and applies the email
-allowlist. The OAuth endpoint surface (metadata + DCR + authorize + token, PKCE S256 only)
-matches what MCP connector clients negotiate.
+id_token (issuer, audience, nonce, signature via JWKS — `openid-client`) and applies the
+membership check. The OAuth endpoint surface (metadata + DCR + authorize + token, PKCE S256
+only) matches what MCP connector clients negotiate.
+
+**Membership lives in auth.db, env lists are bootstrap**: `users.status`
+(active/pending/rejected/disabled) is the source of truth; `ADMIN_EMAILS` and the optional
+`ALLOWED_EMAILS` bootstrap deliberately _win over_ stored status (lockout recovery — adding an
+email there auto-approves). Unknown verified logins become `pending` rows (no tenant DB until
+approval, backstop `MAX_PENDING_USERS`); the decision tree is `resolveLogin()` and every status
+transition goes through `membership.ts`, shared by `/admin` forms and Telegram callbacks so the
+two surfaces can never diverge. Disable revokes all tokens + web sessions in the same call —
+never flip status without the side effects.
+
+**Telegram is an optional convenience layer, never load-bearing**: all notifications are
+fire-and-forget (a failed send is logged, never breaks a login or write) and `/admin` can do
+everything the buttons can. Webhook auth is two-layered: a per-boot random `secret_token`
+announced via `setWebhook` (no persisted secret) proves the sender is Telegram, and membership
+actions additionally require `callback_query.from.id` to equal `TELEGRAM_ADMIN_CHAT_ID`.
+User-side messages are strictly opt-in via `/start` deep-link tokens (stored hashed, single
+use) — bots cannot initiate chats, and this design keeps it that way.
+
+**Quotas count stored content, transactionally**: the per-user `meta.content_bytes` counter is
+maintained by `*_bytes_*` triggers (same pattern as the FTS triggers — do not remove them) and
+recomputed on every DB open, so drift self-heals and pre-quota DBs initialize themselves. Write
+tools take an optional `WriteLimits` (quota bytes + rate budget) — identity never enters
+`src/tools/`; stdio mode passes none and stays unlimited. `request_quota_increase` is
+registered per-session in `mcp-http.ts` (needs identity + notifier — the integrations pattern).
+The refusal ladder is rate → per-doc cap → quota, shrinking writes always pass, and the
+account-page editor mirrors the same checks minus the rate limit.
 
 **No express**: the HTTP layer is plain `node:http` + ~100 lines of helpers (`http-util.ts`);
 the MCP SDK's `StreamableHTTPServerTransport` consumes Node req/res directly. Keep it that way —

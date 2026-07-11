@@ -4,6 +4,7 @@ import type Database from "better-sqlite3";
 import { readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { contentBytes, type WriteLimits } from "../quota.js";
 import { toolText, withErrorHandling } from "../utils/errors.js";
 
 function loadVersion(): string {
@@ -23,12 +24,16 @@ function loadVersion(): string {
 
 const PACKAGE_VERSION = loadVersion();
 
-export function registerOpsTools(server: McpServer, db: Database.Database): void {
+export function registerOpsTools(
+  server: McpServer,
+  db: Database.Database,
+  limits?: WriteLimits,
+): void {
   server.registerTool(
     "get_version",
     {
       description:
-        "Get coaching-mcp build info and DB statistics. Useful to confirm deployments and spot-check database health.",
+        "Get coaching-mcp build info and DB statistics, including storage usage against the account's quota. Useful to confirm deployments and spot-check database health.",
       inputSchema: {},
     },
     () =>
@@ -50,6 +55,7 @@ export function registerOpsTools(server: McpServer, db: Database.Database): void
         } catch {
           // in-memory db (tests) — leave at 0
         }
+        const storageBytes = contentBytes(db);
         const info = {
           name: "coaching-mcp",
           version: PACKAGE_VERSION,
@@ -60,6 +66,13 @@ export function registerOpsTools(server: McpServer, db: Database.Database): void
           journal_count: journalCount,
           routines_count: routinesCount,
           db_size_bytes: dbSizeBytes,
+          storage_bytes: storageBytes,
+          ...(limits
+            ? {
+                storage_quota_bytes: limits.quotaBytes,
+                storage_used_percent: Math.round((storageBytes / limits.quotaBytes) * 100),
+              }
+            : {}),
         };
         return toolText(JSON.stringify(info, null, 2));
       }),

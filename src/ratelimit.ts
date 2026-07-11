@@ -33,8 +33,12 @@ export class RateLimiter {
 
   /** Returns true when the request is allowed. */
   allow(req: IncomingMessage, now = Date.now()): boolean {
-    const ip = clientIp(req);
-    const bucket = this.buckets.get(ip);
+    return this.allowKey(clientIp(req), now);
+  }
+
+  /** Same fixed window, arbitrary key — e.g. a user id for per-user budgets. */
+  allowKey(key: string, now = Date.now()): boolean {
+    const bucket = this.buckets.get(key);
     if (!bucket || now - bucket.windowStart >= this.windowMs) {
       // opportunistic cleanup so the map cannot grow unbounded
       if (this.buckets.size > 10_000) {
@@ -42,7 +46,7 @@ export class RateLimiter {
           if (now - b.windowStart >= this.windowMs) this.buckets.delete(k);
         }
       }
-      this.buckets.set(ip, { windowStart: now, count: 1 });
+      this.buckets.set(key, { windowStart: now, count: 1 });
       return true;
     }
     bucket.count++;

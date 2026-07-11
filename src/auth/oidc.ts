@@ -6,7 +6,7 @@ import * as oidc from "openid-client";
  * and callers only ever see the verified identity claims.
  */
 
-export type OidcIdentity = { sub: string; email: string; emailVerified: boolean };
+export type OidcIdentity = { sub: string; email: string; emailVerified: boolean; name?: string };
 
 export type OidcProvider = {
   randomState(): string;
@@ -85,6 +85,7 @@ export function createOidcProvider(opts: {
         sub: claims.sub,
         email,
         emailVerified: claims.email_verified !== false,
+        ...(typeof claims.name === "string" && claims.name ? { name: claims.name } : {}),
       };
     },
   };

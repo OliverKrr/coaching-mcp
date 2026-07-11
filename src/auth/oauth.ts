@@ -2,20 +2,20 @@ import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ServeContext } from "../context.js";
 import { htmlEscape, parseParams, readBody, redirect, sendHtml, sendJson } from "../http-util.js";
+import { resolveLogin } from "../membership.js";
 import { page } from "../web/layout.js";
-import { isEmailAllowed } from "./allowlist.js";
 import {
   consumeAuthCode,
   consumePendingAuth,
   createAuthCode,
   createPendingAuth,
+  createTelegramLinkToken,
   createWebSession,
   getClientRedirectUris,
   issueTokens,
   lookupAccessToken,
   registerClient,
   rotateRefreshToken,
-  upsertUserOnLogin,
 } from "./db.js";
 
 /**
@@ -206,22 +206,48 @@ export async function handleOidcCallback(
     return;
   }
 
-  if (!identity.emailVerified || !isEmailAllowed(identity.email)) {
-    ctx.log(`login denied for ${identity.email} (not on allowlist)`);
-    sendHtml(
-      res,
-      403,
-      page(
-        "Not invited",
-        `<h1>Access is by invitation</h1>
-<p>You signed in as <strong>${htmlEscape(identity.email)}</strong>, but this address is not on the invitation list.</p>
-<p>Ask the operator of this server to add it, then try again.</p>`,
-      ),
-    );
-    return;
+  const decision = resolveLogin(ctx, identity);
+  if (decision.kind !== "active") {
+    switch (decision.kind) {
+      case "pending": {
+        if (decision.created) ctx.notify.signupRequest(decision.user);
+        ctx.log(
+          `login pending for ${identity.email} (${decision.created ? "request created" : "still awaiting approval"})`,
+        );
+        sendHtml(res, 200, pendingPage(ctx, decision.user.id, identity.email, decision.created));
+        return;
+      }
+      case "closed": {
+        ctx.log(`login denied for ${identity.email} (registration closed)`);
+        sendHtml(
+          res,
+          403,
+          page(
+            "Registration closed",
+            `<h1>Registration is closed</h1>
+<p>This server is not accepting new access requests right now. Try again later or contact the operator.</p>`,
+          ),
+        );
+        return;
+      }
+      default: {
+        // rejected/disabled/unverified — deliberately one indistinct page
+        ctx.log(`login denied for ${identity.email}`);
+        sendHtml(
+          res,
+          403,
+          page(
+            "Access not granted",
+            `<h1>Access not granted</h1>
+<p>You signed in as <strong>${htmlEscape(identity.email)}</strong>, but this address does not have access to this server.</p>`,
+          ),
+        );
+        return;
+      }
+    }
   }
 
-  const user = upsertUserOnLogin(ctx.authDb, identity);
+  const user = decision.user;
   ctx.tenants.open(user.id); // first login provisions + seeds the coaching DB
   ctx.log(`login ok: ${user.email} (${user.id})`);
 
@@ -249,6 +275,29 @@ export async function handleOidcCallback(
   const sep = client.redirectUri.includes("?") ? "&" : "?";
   const stateParam = client.clientState ? `&state=${encodeURIComponent(client.clientState)}` : "";
   redirect(res, `${client.redirectUri}${sep}code=${encodeURIComponent(code)}${stateParam}`);
+}
+
+/**
+ * Shown to a self-registered user awaiting approval. When the Telegram bot is
+ * configured, offers the opt-in deep link so approval can be pushed to them —
+ * without it they simply retry later.
+ */
+function pendingPage(ctx: ServeContext, userId: string, email: string, created: boolean): string {
+  const bot = ctx.notify.telegram;
+  const link = bot?.deepLink(createTelegramLinkToken(ctx.authDb, userId));
+  const telegramBlock = link
+    ? `<p>Want a ping when you're in? <a href="${htmlEscape(link)}">Connect this bot on Telegram</a> and it will message you on approval. Otherwise, just try signing in again later.</p>`
+    : `<p>Approval is manual — just try signing in again later.</p>`;
+  return page(
+    "Request received",
+    `<h1>${created ? "Request received" : "Still awaiting approval"}</h1>
+<p>You signed in as <strong>${htmlEscape(email)}</strong>. ${
+      created
+        ? "The operator of this server has been asked to approve your access."
+        : "Your access request is still waiting for the operator's approval."
+    }</p>
+${telegramBlock}`,
+  );
 }
 
 export async function handleToken(

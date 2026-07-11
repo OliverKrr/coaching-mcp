@@ -3,7 +3,8 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type Database from "better-sqlite3";
 import { z } from "zod";
 import { ROUTINE_STATUSES, type Routine } from "../db.js";
-import { toolText, withErrorHandling } from "../utils/errors.js";
+import { checkWrite, ENTRY_MAX_BYTES, usageWarning, type WriteLimits } from "../quota.js";
+import { toolError, toolText, withErrorHandling } from "../utils/errors.js";
 
 /**
  * Scheduled routines as per-user documents. The server stores the routine
@@ -13,7 +14,11 @@ import { toolText, withErrorHandling } from "../utils/errors.js";
  * bookkeeping maintained in conversation: 'active' = scheduled in Claude,
  * 'paused'/'retired' = not.
  */
-export function registerRoutineTools(server: McpServer, db: Database.Database): void {
+export function registerRoutineTools(
+  server: McpServer,
+  db: Database.Database,
+  limits?: WriteLimits,
+): void {
   server.registerTool(
     "list_routines",
     {
@@ -117,13 +122,25 @@ export function registerRoutineTools(server: McpServer, db: Database.Database): 
     },
     ({ name, cadence, prompt, status }) =>
       withErrorHandling("save_routine", () => {
+        const existing =
+          (
+            db.prepare("SELECT LENGTH(prompt) AS n FROM routines WHERE name = ?").get(name) as
+              | { n: number }
+              | undefined
+          )?.n ?? 0;
+        const refused = checkWrite(db, limits, {
+          docBytes: prompt.length,
+          docMax: ENTRY_MAX_BYTES,
+          deltaBytes: prompt.length - existing,
+        });
+        if (refused) return toolError(refused);
         db.prepare(
           "INSERT INTO routines(name, cadence, prompt, status) VALUES (?, ?, ?, COALESCE(?, 'active'))" +
             " ON CONFLICT(name) DO UPDATE SET cadence=excluded.cadence, prompt=excluded.prompt," +
             " status=COALESCE(?, routines.status), updated_at=datetime('now')",
         ).run(name, cadence, prompt, status ?? null, status ?? null);
         return toolText(
-          `Routine '${name}' saved. Remind the user to paste the prompt into a Claude scheduled task (${cadence}) — it is also on their account page under Routines.`,
+          `Routine '${name}' saved. Remind the user to paste the prompt into a Claude scheduled task (${cadence}) — it is also on their account page under Routines.${usageWarning(db, limits)}`,
         );
       }),
   );

@@ -2,10 +2,15 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type Database from "better-sqlite3";
 import { z } from "zod";
 import type { JournalEntry, Reference, Section } from "../db.js";
+import { usageWarning, type WriteLimits } from "../quota.js";
 import { toolText, withErrorHandling } from "../utils/errors.js";
 import { sanitizeFtsQuery, formatSearchHits, type SearchHit } from "../utils/search.js";
 
-export function registerReadTools(server: McpServer, db: Database.Database): void {
+export function registerReadTools(
+  server: McpServer,
+  db: Database.Database,
+  limits?: WriteLimits,
+): void {
   server.registerTool(
     "get_coaching_context",
     {
@@ -17,7 +22,10 @@ export function registerReadTools(server: McpServer, db: Database.Database): voi
       const row = db.prepare("SELECT content FROM sections WHERE name = 'main'").get() as
         | Section
         | undefined;
-      return toolText(row?.content ?? "No coaching context found. Database may not be seeded.");
+      // Session-start is where a near-quota warning reaches the agent earliest.
+      const warning = usageWarning(db, limits);
+      const context = row?.content ?? "No coaching context found. Database may not be seeded.";
+      return toolText(warning ? `${warning.trim()}\n\n---\n\n${context}` : context);
     },
   );
 

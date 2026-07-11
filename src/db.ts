@@ -40,7 +40,32 @@ export function openDatabase(
   db.pragma("busy_timeout = 5000");
   createSchema(db);
   seedFromDirectory(db, seedDir);
+  recomputeContentBytes(db);
   return db;
+}
+
+/**
+ * Quota metric: total stored content characters (SQLite LENGTH semantics)
+ * across every user-authored table. The `*_bytes_*` triggers keep the counter
+ * in the same transaction as each write; this full recompute on every open
+ * self-heals any drift and initializes pre-counter databases.
+ */
+export function recomputeContentBytes(db: Database.Database): void {
+  const n = (
+    db
+      .prepare(
+        `SELECT (SELECT COALESCE(SUM(LENGTH(content)), 0) FROM sections)
+				+ (SELECT COALESCE(SUM(LENGTH(content)), 0) FROM refs)
+				+ (SELECT COALESCE(SUM(LENGTH(entry)), 0) FROM journal)
+				+ (SELECT COALESCE(SUM(LENGTH(prompt)), 0) FROM routines)
+				+ (SELECT COALESCE(SUM(LENGTH(content)), 0) FROM open_items) AS n`,
+      )
+      .get() as { n: number }
+  ).n;
+  db.prepare(
+    "INSERT INTO meta(key, value) VALUES('content_bytes', ?)" +
+      " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+  ).run(n);
 }
 
 export function createSchema(db: Database.Database): void {
@@ -143,6 +168,55 @@ export function createSchema(db: Database.Database): void {
 		CREATE TRIGGER IF NOT EXISTS routines_ad AFTER DELETE ON routines BEGIN
 			INSERT INTO routines_fts(routines_fts, rowid, name, prompt)
 				VALUES ('delete', old.rowid, old.name, old.prompt);
+		END;
+		CREATE TABLE IF NOT EXISTS meta (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL
+		);
+		CREATE TRIGGER IF NOT EXISTS sections_bytes_ai AFTER INSERT ON sections BEGIN
+			UPDATE meta SET value = value + LENGTH(new.content) WHERE key = 'content_bytes';
+		END;
+		CREATE TRIGGER IF NOT EXISTS sections_bytes_au AFTER UPDATE ON sections BEGIN
+			UPDATE meta SET value = value + LENGTH(new.content) - LENGTH(old.content) WHERE key = 'content_bytes';
+		END;
+		CREATE TRIGGER IF NOT EXISTS sections_bytes_ad AFTER DELETE ON sections BEGIN
+			UPDATE meta SET value = value - LENGTH(old.content) WHERE key = 'content_bytes';
+		END;
+		CREATE TRIGGER IF NOT EXISTS refs_bytes_ai AFTER INSERT ON refs BEGIN
+			UPDATE meta SET value = value + LENGTH(new.content) WHERE key = 'content_bytes';
+		END;
+		CREATE TRIGGER IF NOT EXISTS refs_bytes_au AFTER UPDATE ON refs BEGIN
+			UPDATE meta SET value = value + LENGTH(new.content) - LENGTH(old.content) WHERE key = 'content_bytes';
+		END;
+		CREATE TRIGGER IF NOT EXISTS refs_bytes_ad AFTER DELETE ON refs BEGIN
+			UPDATE meta SET value = value - LENGTH(old.content) WHERE key = 'content_bytes';
+		END;
+		CREATE TRIGGER IF NOT EXISTS journal_bytes_ai AFTER INSERT ON journal BEGIN
+			UPDATE meta SET value = value + LENGTH(new.entry) WHERE key = 'content_bytes';
+		END;
+		CREATE TRIGGER IF NOT EXISTS journal_bytes_au AFTER UPDATE ON journal BEGIN
+			UPDATE meta SET value = value + LENGTH(new.entry) - LENGTH(old.entry) WHERE key = 'content_bytes';
+		END;
+		CREATE TRIGGER IF NOT EXISTS journal_bytes_ad AFTER DELETE ON journal BEGIN
+			UPDATE meta SET value = value - LENGTH(old.entry) WHERE key = 'content_bytes';
+		END;
+		CREATE TRIGGER IF NOT EXISTS routines_bytes_ai AFTER INSERT ON routines BEGIN
+			UPDATE meta SET value = value + LENGTH(new.prompt) WHERE key = 'content_bytes';
+		END;
+		CREATE TRIGGER IF NOT EXISTS routines_bytes_au AFTER UPDATE ON routines BEGIN
+			UPDATE meta SET value = value + LENGTH(new.prompt) - LENGTH(old.prompt) WHERE key = 'content_bytes';
+		END;
+		CREATE TRIGGER IF NOT EXISTS routines_bytes_ad AFTER DELETE ON routines BEGIN
+			UPDATE meta SET value = value - LENGTH(old.prompt) WHERE key = 'content_bytes';
+		END;
+		CREATE TRIGGER IF NOT EXISTS open_items_bytes_ai AFTER INSERT ON open_items BEGIN
+			UPDATE meta SET value = value + LENGTH(new.content) WHERE key = 'content_bytes';
+		END;
+		CREATE TRIGGER IF NOT EXISTS open_items_bytes_au AFTER UPDATE ON open_items BEGIN
+			UPDATE meta SET value = value + LENGTH(new.content) - LENGTH(old.content) WHERE key = 'content_bytes';
+		END;
+		CREATE TRIGGER IF NOT EXISTS open_items_bytes_ad AFTER DELETE ON open_items BEGIN
+			UPDATE meta SET value = value - LENGTH(old.content) WHERE key = 'content_bytes';
 		END;
 	`);
 }

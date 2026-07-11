@@ -15,10 +15,12 @@ import { REPO_URL, VERSION } from "../version.js";
 export type NavOpts = {
   /** PUBLIC_URL — nav links must be absolute (prefix-stripping reverse proxy). */
   base: string;
-  active?: "guide" | "routines" | "data" | "account";
+  active?: "guide" | "routines" | "data" | "account" | "admin";
   lang?: "en" | "de";
   /** Signed-in users get the Data item and "Account" instead of "Sign in". */
   signedIn?: boolean;
+  /** Admins additionally get the Admin item. */
+  admin?: boolean;
   /**
    * Current path + query relative to base (e.g. "/routines", "/account?preset=x") —
    * the DE/EN toggle links back to it. Omit to hide the toggle.
@@ -29,12 +31,20 @@ export type NavOpts = {
 export type PageOpts = { wide?: boolean; nav?: NavOpts };
 
 const NAV_LABELS = {
-  en: { guide: "Guide", routines: "Routines", data: "Data", account: "Account", signIn: "Sign in" },
+  en: {
+    guide: "Guide",
+    routines: "Routines",
+    data: "Data",
+    account: "Account",
+    admin: "Admin",
+    signIn: "Sign in",
+  },
   de: {
     guide: "Anleitung",
     routines: "Routinen",
     data: "Daten",
     account: "Account",
+    admin: "Admin",
     signIn: "Anmelden",
   },
 } as const;
@@ -128,7 +138,7 @@ function renderNav(nav: NavOpts, wide: boolean): string {
     `<a href="${href}"${nav.active === key ? ' aria-current="page"' : ""}>${label}</a>`;
   return `<header class="site"><div class="inner${wide ? " wide" : ""}">
 <a class="brand" href="${nav.base}/"><span class="mark"></span>Coaching hub</a>
-<nav>${item("guide", `${nav.base}/`, labels.guide)}${item("routines", `${nav.base}/routines`, labels.routines)}${nav.signedIn ? item("data", `${nav.base}/account/data`, labels.data) : ""}${item("account", `${nav.base}/account`, nav.signedIn ? labels.account : labels.signIn)}${langToggle(nav)}</nav>
+<nav>${item("guide", `${nav.base}/`, labels.guide)}${item("routines", `${nav.base}/routines`, labels.routines)}${nav.signedIn ? item("data", `${nav.base}/account/data`, labels.data) : ""}${item("account", `${nav.base}/account`, nav.signedIn ? labels.account : labels.signIn)}${nav.admin ? item("admin", `${nav.base}/admin`, labels.admin) : ""}${langToggle(nav)}</nav>
 </div></header>`;
 }
 

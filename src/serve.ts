@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { handleAccountRoute, webAuth } from "./account.js";
+import { handleAdminRoute } from "./admin.js";
 import { handleAppRoute, parseProtectedApps } from "./apps-proxy.js";
-import { allowedEmails } from "./auth/allowlist.js";
+import { adminEmails, allowedEmails, registrationOpen } from "./auth/allowlist.js";
 import { openAuthDatabase } from "./auth/db.js";
 import { createOidcProvider } from "./auth/oidc.js";
 import { parseSecretsKey } from "./auth/secrets.js";
+import { NotifyService } from "./notify.js";
 import { authRateLimiter } from "./ratelimit.js";
+import { TelegramBot } from "./telegram.js";
+import { handleTelegramWebhook } from "./telegram-webhook.js";
 import {
   handleAuthorize,
   handleOidcCallback,
@@ -48,6 +52,7 @@ export function loadServeConfig(env: NodeJS.ProcessEnv = process.env): ServeConf
     refreshTokenTtlSec: Number(env.REFRESH_TOKEN_TTL ?? 7776000),
     secretsKey: parseSecretsKey(env.SECRETS_KEY),
     apps: parseProtectedApps(env),
+    quotaDefaultMb: Number(env.QUOTA_DEFAULT_MB ?? 50),
   };
 }
 
@@ -61,6 +66,15 @@ export function createContext(
   if (!oidcClientId || !oidcClientSecret) {
     throw new Error("missing required environment variables: OIDC_CLIENT_ID, OIDC_CLIENT_SECRET");
   }
+  const telegram =
+    env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_ADMIN_CHAT_ID
+      ? new TelegramBot({
+          token: env.TELEGRAM_BOT_TOKEN,
+          adminChatId: env.TELEGRAM_ADMIN_CHAT_ID,
+          apiBase: env.TELEGRAM_API_BASE,
+          log,
+        })
+      : undefined;
   const ctx: ServeContext = {
     cfg,
     authDb: openAuthDatabase(cfg.dataDir),
@@ -70,6 +84,7 @@ export function createContext(
       clientSecret: oidcClientSecret,
     }),
     tenants: new TenantManager(cfg.dataDir, cfg.seedDir),
+    notify: new NotifyService(log, telegram, env.NOTIFY_URL),
     log,
   };
   return { ctx, mcpSessions: new McpSessionManager(ctx) };
@@ -151,12 +166,17 @@ async function route(
     await handleToken(ctx, req, res);
     return;
   }
+  if (path === "/telegram/webhook" && method === "POST") {
+    await handleTelegramWebhook(ctx, req, res);
+    return;
+  }
 
   // A ?lang= click on the header toggle persists the choice for every page.
   const langCookie = langCookieHeader(url);
   if (langCookie) res.setHeader("set-cookie", langCookie);
 
   if (await handleAccountRoute(ctx, mcpSessions, req, res, url)) return;
+  if (await handleAdminRoute(ctx, mcpSessions, req, res, url)) return;
 
   if (path === "/health" && method === "GET") {
     sendJson(res, 200, { ok: true, version: VERSION });
@@ -178,11 +198,24 @@ export async function main(): Promise<void> {
   const cfg = loadServeConfig();
   const { ctx, mcpSessions } = createContext(cfg);
 
-  const emails = allowedEmails();
-  if (emails.size === 0) {
-    log("WARNING: allowlist is empty (ALLOWED_EMAILS / ALLOWED_EMAILS_FILE) — nobody can log in");
-  } else {
-    log(`allowlist has ${emails.size} address(es)`);
+  const admins = adminEmails();
+  const bootstrap = allowedEmails();
+  log(
+    `membership: ${admins.size} admin(s), ${bootstrap.size} bootstrap-allowlisted, ` +
+      `registration ${registrationOpen() ? "open" : "closed"}`,
+  );
+  if (admins.size === 0 && bootstrap.size === 0) {
+    log(
+      "WARNING: ADMIN_EMAILS and ALLOWED_EMAILS are both empty — nobody can log in, and nobody can approve requests on /admin",
+    );
+  }
+  const bot = ctx.notify.telegram;
+  if (bot) {
+    bot.setup(cfg.publicUrl).catch((err: unknown) => {
+      log(
+        `WARNING: telegram setup failed (notifications disabled until restart): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
   }
 
   const server = buildHttpServer(ctx, mcpSessions);

@@ -4,18 +4,22 @@ import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { handleDataGet, handleDataPost } from "./account-data.js";
 import { appsForEmail } from "./apps-proxy.js";
+import { isAdminEmail } from "./auth/allowlist.js";
 import { startAccountLogin } from "./auth/oauth.js";
-import { deleteUser, deleteWebSession, getUser, getWebSession } from "./auth/db.js";
 import {
-  deleteAllUserSecrets,
-  deleteUserSecret,
-  getUserSecretMeta,
-  setUserSecret,
-} from "./auth/secrets.js";
+  createTelegramLinkToken,
+  deleteWebSession,
+  getUser,
+  getWebSession,
+  setUserTelegramChat,
+  type User,
+} from "./auth/db.js";
+import { deleteUserSecret, getUserSecretMeta, setUserSecret } from "./auth/secrets.js";
+import { purgeUser } from "./membership.js";
+import { contentBytes, formatMb, quotaBytesForUser } from "./quota.js";
 import {
   createGateway,
   deleteGateway,
-  deleteUserGateways,
   finishGatewayConnect,
   getGateway,
   hasSealedQuery,
@@ -151,6 +155,11 @@ export async function handleAccountRoute(
     }
     if (path === "/account/integrations/hevy/delete") {
       deleteUserSecret(ctx.authDb, auth.userId, "hevy_api_key");
+      redirect(res, `${base}/account`);
+      return true;
+    }
+    if (path === "/account/telegram/unlink") {
+      setUserTelegramChat(ctx.authDb, auth.userId, null);
       redirect(res, `${base}/account`);
       return true;
     }
@@ -341,6 +350,28 @@ async function handleGatewayCallback(
   }
 }
 
+/**
+ * Telegram opt-in on the account page: post-approval linking (approval itself
+ * offers the same link on the pending page). Hidden when no bot is configured
+ * or the bot's username is not resolved yet (setup pending/failed).
+ */
+function telegramBlock(ctx: ServeContext, user: User, csrf: string, t: AccountStrings): string {
+  const bot = ctx.notify.telegram;
+  if (!bot) return "";
+  if (user.telegram_chat_id) {
+    return `<p>Telegram: ${badge("ok", t.connected)}</p>
+<form method="post" action="${ctx.cfg.publicUrl}/account/telegram/unlink">
+<input type="hidden" name="csrf" value="${csrf}">
+<button class="quiet">${t.telegramUnlink}</button>
+</form>`;
+  }
+  const link = bot.deepLink(createTelegramLinkToken(ctx.authDb, user.id));
+  if (!link) return "";
+  return `<p>Telegram: ${badge("muted", t.notConnected)}</p>
+<p class="muted">${t.telegramIntro}</p>
+<p><a href="${htmlEscape(link)}">${t.telegramConnect}</a></p>`;
+}
+
 function gatewayStatusLabel(g: Gateway, t: AccountStrings): string {
   switch (g.status) {
     case "connected":
@@ -377,6 +408,8 @@ function renderAccountPage(
   const count = (sql: string): number => (db.prepare(sql).get() as { n: number }).n;
   const dbPath = join(ctx.tenants.userDir(user.id), "skill.db");
   const dbSizeKb = existsSync(dbPath) ? Math.round(statSync(dbPath).size / 1024) : 0;
+  const usedBytes = contentBytes(db);
+  const quotaBytes = quotaBytesForUser(user, ctx.cfg.quotaDefaultMb);
   const csrf = htmlEscape(auth.csrf);
 
   let integrationsCard = "";
@@ -481,6 +514,7 @@ ${apps.map((a) => `<p><a href="${base}/apps/${a.name}/">${htmlEscape(a.name)}</a
 <tr><th>${t.memberSince}</th><td>${htmlEscape(user.created_at)} UTC</td></tr>
 <tr><th>${t.lastLogin}</th><td>${htmlEscape(user.last_login_at ?? "—")} UTC</td></tr>
 </table>
+${telegramBlock(ctx, user, csrf, t)}
 <form method="post" action="${base}/account/logout"><input type="hidden" name="csrf" value="${csrf}"><button class="quiet">${t.signOut}</button></form>
 </div>
 
@@ -493,6 +527,7 @@ ${apps.map((a) => `<p><a href="${base}/apps/${a.name}/">${htmlEscape(a.name)}</a
 <tr><th>${t.rowOpenItems}</th><td>${count("SELECT COUNT(*) AS n FROM open_items WHERE status = 'open'")}</td></tr>
 <tr><th>${t.rowRoutines}</th><td>${count("SELECT COUNT(*) AS n FROM routines")}</td></tr>
 <tr><th>${t.rowDbSize}</th><td>${dbSizeKb} KB</td></tr>
+<tr><th>${t.rowStorage}</th><td>${formatMb(usedBytes)} ${t.storageOf} ${formatMb(quotaBytes)} MB (${Math.round((usedBytes / quotaBytes) * 100)}%)</td></tr>
 </table>
 <p><a href="${base}/account/data"><button>${t.viewEdit}</button></a></p>
 <form method="post" action="${base}/account/export">
@@ -522,6 +557,7 @@ ${appsCard}
           active: "account",
           lang,
           signedIn: true,
+          admin: isAdminEmail(user.email),
           path: presetId ? `/account?preset=${encodeURIComponent(presetId)}` : "/account",
         },
       },
@@ -566,12 +602,7 @@ async function deleteAccount(
     );
     return;
   }
-  await mcpSessions.closeUserSessions(user.id);
-  ctx.tenants.deleteUserData(user.id);
-  deleteUserGateways(ctx.authDb, user.id);
-  deleteAllUserSecrets(ctx.authDb, user.id);
-  deleteUser(ctx.authDb, user.id); // also removes tokens + web sessions
-  ctx.log(`account deleted: ${user.email} (${user.id})`);
+  await purgeUser(ctx, mcpSessions, user.id);
   res.writeHead(200, {
     "content-type": "text/html; charset=utf-8",
     "set-cookie": clearedCookie(SESSION_COOKIE),
@@ -596,6 +627,8 @@ const ACCOUNT_EN = {
   rowOpenItems: "Open items",
   rowRoutines: "Routines",
   rowDbSize: "Database size",
+  rowStorage: "Storage used",
+  storageOf: "of",
   viewEdit: "View &amp; edit your data",
   download: "Download everything (zip)",
   zipNote:
@@ -613,6 +646,10 @@ const ACCOUNT_EN = {
   connectHevy: "Connect Hevy",
   keysNote:
     "Keys are stored encrypted, are never shown again, and are removed with your account. New Claude conversations pick changes up immediately.",
+  telegramIntro:
+    "Connect the server's Telegram bot and it will message you when your storage quota changes. It never messages you unasked otherwise.",
+  telegramConnect: "Connect on Telegram →",
+  telegramUnlink: "Disconnect Telegram",
   gwTitle: "Connected MCP servers",
   gwIntro:
     "Attach other MCP servers here and their tools appear in your coaching conversations — so one Claude connector is enough even on plans that allow only one. You sign in to each server as yourself (your own account and subscription there); credentials are stored encrypted, never shown again, and removed with your account.",
@@ -674,6 +711,8 @@ const ACCOUNT_DE: AccountStrings = {
   rowOpenItems: "Offene Punkte",
   rowRoutines: "Routinen",
   rowDbSize: "Datenbankgröße",
+  rowStorage: "Speicher belegt",
+  storageOf: "von",
   viewEdit: "Daten ansehen &amp; bearbeiten",
   download: "Alles herunterladen (zip)",
   zipNote:
@@ -691,6 +730,10 @@ const ACCOUNT_DE: AccountStrings = {
   connectHevy: "Hevy verbinden",
   keysNote:
     "Keys werden verschlüsselt gespeichert, nie wieder angezeigt und mit deinem Account gelöscht. Neue Claude-Unterhaltungen übernehmen Änderungen sofort.",
+  telegramIntro:
+    "Verbinde den Telegram-Bot dieses Servers, dann meldet er sich, wenn sich dein Speicherkontingent ändert. Ungefragt schreibt er dir sonst nie.",
+  telegramConnect: "Auf Telegram verbinden →",
+  telegramUnlink: "Telegram trennen",
   gwTitle: "Verbundene MCP-Server",
   gwIntro:
     "Hänge hier weitere MCP-Server an, dann stehen ihre Tools in deinen Coaching-Unterhaltungen bereit — ein Claude-Connector genügt, auch in Tarifen, die nur einen erlauben. Du meldest dich bei jedem Server als du selbst an (eigenes Konto und Abo dort); Zugangsdaten werden verschlüsselt gespeichert, nie wieder angezeigt und mit deinem Account gelöscht.",

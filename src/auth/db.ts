@@ -13,12 +13,30 @@ import { join } from "node:path";
  * credential.
  */
 
+export type UserStatus = "active" | "pending" | "rejected" | "disabled";
+
 export type User = {
   id: string;
   email: string;
   oidc_sub: string | null;
+  /** Membership state — only 'active' users may log in and get a coaching DB. */
+  status: UserStatus;
+  /** Display name from the IdP profile, for the admin page. */
+  name: string | null;
+  /** Per-user storage quota override in MB; NULL = server default. */
+  quota_mb: number | null;
+  /** Telegram chat linked via the opt-in deep link; NULL = not linked. */
+  telegram_chat_id: string | null;
   created_at: string;
   last_login_at: string | null;
+};
+
+export type QuotaRequest = {
+  user_id: string;
+  reason: string;
+  usage_bytes: number;
+  quota_mb: number;
+  created_at: string;
 };
 
 export type IssuedTokens = {
@@ -37,6 +55,10 @@ export function openAuthDatabase(dataDir: string): Database.Database {
 			id TEXT PRIMARY KEY,
 			email TEXT NOT NULL UNIQUE,
 			oidc_sub TEXT UNIQUE,
+			status TEXT NOT NULL DEFAULT 'active',
+			name TEXT,
+			quota_mb INTEGER,
+			telegram_chat_id TEXT,
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
 			last_login_at TEXT
 		);
@@ -96,8 +118,41 @@ export function openAuthDatabase(dataDir: string): Database.Database {
 			code_verifier TEXT,
 			expires_at INTEGER NOT NULL
 		);
+		CREATE TABLE IF NOT EXISTS telegram_links (
+			token_hash TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			expires_at INTEGER NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS quota_requests (
+			user_id TEXT PRIMARY KEY,
+			reason TEXT NOT NULL,
+			usage_bytes INTEGER NOT NULL,
+			quota_mb INTEGER NOT NULL,
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);
 	`);
+  migrateUsersTable(db);
   return db;
+}
+
+/**
+ * Additive users-table migration: DBs created before the membership columns
+ * gain them in place. DEFAULT 'active' deliberately grandfathers every
+ * pre-existing user — they were allowlisted when the row was created.
+ */
+function migrateUsersTable(db: Database.Database): void {
+  const existing = new Set(
+    (db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>).map((c) => c.name),
+  );
+  const wanted: Array<[string, string]> = [
+    ["status", "TEXT NOT NULL DEFAULT 'active'"],
+    ["name", "TEXT"],
+    ["quota_mb", "INTEGER"],
+    ["telegram_chat_id", "TEXT"],
+  ];
+  for (const [column, decl] of wanted) {
+    if (!existing.has(column)) db.exec(`ALTER TABLE users ADD COLUMN ${column} ${decl}`);
+  }
 }
 
 export function sha256Hex(value: string): string {
@@ -122,6 +177,7 @@ function pruneExpired(db: Database.Database): void {
   db.prepare("DELETE FROM auth_codes WHERE expires_at < ?").run(t);
   db.prepare("DELETE FROM web_sessions WHERE expires_at < ?").run(t);
   db.prepare("DELETE FROM gateway_pending WHERE expires_at < ?").run(t);
+  db.prepare("DELETE FROM telegram_links WHERE expires_at < ?").run(t);
   // Expired/revoked tokens are kept 30 days for refresh-reuse detection, then dropped.
   db.prepare("DELETE FROM tokens WHERE expires_at < ? - 2592000").run(t);
 }
@@ -137,32 +193,86 @@ export function getUser(db: Database.Database, id: string): User | undefined {
  * Find-or-create on a verified IdP login. Matches by stable `sub` first (so an
  * email change at the IdP updates the row), then adopts a pre-created row by
  * email (import path: operator-created rows have no sub until first login).
+ * Only called once membership is settled — it forces status to 'active'
+ * (bootstrap-allowlisted and admin logins auto-approve a pending row).
  */
 export function upsertUserOnLogin(
   db: Database.Database,
-  { sub, email }: { sub: string; email: string },
+  { sub, email, name }: { sub: string; email: string; name?: string },
 ): User {
-  const bySub = db.prepare("SELECT * FROM users WHERE oidc_sub = ?").get(sub) as User | undefined;
-  if (bySub) {
-    db.prepare("UPDATE users SET email = ?, last_login_at = datetime('now') WHERE id = ?").run(
-      email,
-      bySub.id,
-    );
-    return getUser(db, bySub.id) as User;
-  }
-  const byEmail = db.prepare("SELECT * FROM users WHERE email = ?").get(email) as User | undefined;
-  if (byEmail) {
-    db.prepare("UPDATE users SET oidc_sub = ?, last_login_at = datetime('now') WHERE id = ?").run(
-      sub,
-      byEmail.id,
-    );
-    return getUser(db, byEmail.id) as User;
+  const existing = findUserBySubOrEmail(db, sub, email);
+  if (existing) {
+    db.prepare(
+      "UPDATE users SET email = ?, oidc_sub = ?, name = COALESCE(?, name), status = 'active', last_login_at = datetime('now') WHERE id = ?",
+    ).run(email, sub, name ?? null, existing.id);
+    return getUser(db, existing.id) as User;
   }
   const id = newUserId();
   db.prepare(
-    "INSERT INTO users (id, email, oidc_sub, last_login_at) VALUES (?, ?, ?, datetime('now'))",
-  ).run(id, email, sub);
+    "INSERT INTO users (id, email, oidc_sub, name, status, last_login_at) VALUES (?, ?, ?, ?, 'active', datetime('now'))",
+  ).run(id, email, sub, name ?? null);
   return getUser(db, id) as User;
+}
+
+export function findUserBySubOrEmail(
+  db: Database.Database,
+  sub: string,
+  email: string,
+): User | undefined {
+  const bySub = db.prepare("SELECT * FROM users WHERE oidc_sub = ?").get(sub) as User | undefined;
+  return bySub ?? findUserByEmail(db, email);
+}
+
+/** A self-registration request: a user row that cannot log in yet. */
+export function createPendingUser(
+  db: Database.Database,
+  { sub, email, name }: { sub: string; email: string; name?: string },
+): User {
+  const id = newUserId();
+  db.prepare(
+    "INSERT INTO users (id, email, oidc_sub, name, status) VALUES (?, ?, ?, ?, 'pending')",
+  ).run(id, email, sub, name ?? null);
+  return getUser(db, id) as User;
+}
+
+export function setUserStatus(db: Database.Database, id: string, status: UserStatus): void {
+  db.prepare("UPDATE users SET status = ? WHERE id = ?").run(status, id);
+}
+
+export function setUserQuota(db: Database.Database, id: string, quotaMb: number | null): void {
+  db.prepare("UPDATE users SET quota_mb = ? WHERE id = ?").run(quotaMb, id);
+}
+
+export function setUserTelegramChat(
+  db: Database.Database,
+  id: string,
+  chatId: string | null,
+): void {
+  db.prepare("UPDATE users SET telegram_chat_id = ? WHERE id = ?").run(chatId, id);
+}
+
+export function listUsers(db: Database.Database): User[] {
+  return db
+    .prepare("SELECT * FROM users ORDER BY (status != 'pending'), created_at DESC")
+    .all() as User[];
+}
+
+export function countPendingUsers(db: Database.Database): number {
+  return (
+    db.prepare("SELECT COUNT(*) AS n FROM users WHERE status = 'pending'").get() as { n: number }
+  ).n;
+}
+
+/** Immediately sign the user out everywhere: tokens + web sessions (disable). */
+export function revokeUserAccess(db: Database.Database, userId: string): void {
+  db.transaction(() => {
+    db.prepare("UPDATE tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL").run(
+      now(),
+      userId,
+    );
+    db.prepare("DELETE FROM web_sessions WHERE user_id = ?").run(userId);
+    db.prepare("DELETE FROM auth_codes WHERE user_id = ?").run(userId);
+  })();
 }
 
 export function findUserByEmail(db: Database.Database, email: string): User | undefined {
@@ -175,8 +285,73 @@ export function deleteUser(db: Database.Database, id: string): void {
     db.prepare("DELETE FROM tokens WHERE user_id = ?").run(id);
     db.prepare("DELETE FROM web_sessions WHERE user_id = ?").run(id);
     db.prepare("DELETE FROM auth_codes WHERE user_id = ?").run(id);
+    db.prepare("DELETE FROM telegram_links WHERE user_id = ?").run(id);
+    db.prepare("DELETE FROM quota_requests WHERE user_id = ?").run(id);
     db.prepare("DELETE FROM users WHERE id = ?").run(id);
   })();
+}
+
+// ---------------------------------------------------------------------------
+// quota-increase requests (at most one open request per user)
+
+export function createQuotaRequest(
+  db: Database.Database,
+  userId: string,
+  reason: string,
+  usageBytes: number,
+  quotaMb: number,
+): boolean {
+  try {
+    db.prepare(
+      "INSERT INTO quota_requests (user_id, reason, usage_bytes, quota_mb) VALUES (?, ?, ?, ?)",
+    ).run(userId, reason, usageBytes, quotaMb);
+    return true;
+  } catch {
+    return false; // one open request per user
+  }
+}
+
+export function listQuotaRequests(db: Database.Database): QuotaRequest[] {
+  return db.prepare("SELECT * FROM quota_requests ORDER BY created_at").all() as QuotaRequest[];
+}
+
+export function getQuotaRequest(db: Database.Database, userId: string): QuotaRequest | undefined {
+  return db.prepare("SELECT * FROM quota_requests WHERE user_id = ?").get(userId) as
+    | QuotaRequest
+    | undefined;
+}
+
+export function deleteQuotaRequest(db: Database.Database, userId: string): void {
+  db.prepare("DELETE FROM quota_requests WHERE user_id = ?").run(userId);
+}
+
+// ---------------------------------------------------------------------------
+// Telegram opt-in deep-link tokens (stored hashed, single use)
+
+export function createTelegramLinkToken(
+  db: Database.Database,
+  userId: string,
+  ttlSec = 7 * 86400,
+): string {
+  pruneExpired(db);
+  const token = randomToken();
+  db.prepare("INSERT INTO telegram_links (token_hash, user_id, expires_at) VALUES (?, ?, ?)").run(
+    sha256Hex(token),
+    userId,
+    now() + ttlSec,
+  );
+  return token;
+}
+
+/** Single use: the row is deleted whether or not it is still valid. */
+export function consumeTelegramLinkToken(db: Database.Database, token: string): string | undefined {
+  const hash = sha256Hex(token);
+  const row = db
+    .prepare("SELECT user_id, expires_at FROM telegram_links WHERE token_hash = ?")
+    .get(hash) as { user_id: string; expires_at: number } | undefined;
+  db.prepare("DELETE FROM telegram_links WHERE token_hash = ?").run(hash);
+  if (!row || row.expires_at < now()) return undefined;
+  return row.user_id;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,9 +1,27 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type Database from "better-sqlite3";
 import { z } from "zod";
-import { toolText, withErrorHandling } from "../utils/errors.js";
+import {
+  checkWrite,
+  DOC_MAX_BYTES,
+  ENTRY_MAX_BYTES,
+  usageWarning,
+  type WriteLimits,
+} from "../quota.js";
+import { toolError, toolText, withErrorHandling } from "../utils/errors.js";
 
-export function registerWriteTools(server: McpServer, db: Database.Database): void {
+export function registerWriteTools(
+  server: McpServer,
+  db: Database.Database,
+  limits?: WriteLimits,
+): void {
+  const existingLength = (table: "sections" | "refs", name: string): number =>
+    (
+      db.prepare(`SELECT LENGTH(content) AS n FROM ${table} WHERE name = ?`).get(name) as
+        | { n: number }
+        | undefined
+    )?.n ?? 0;
+
   server.registerTool(
     "update_section",
     {
@@ -16,11 +34,17 @@ export function registerWriteTools(server: McpServer, db: Database.Database): vo
     },
     ({ name, content }) =>
       withErrorHandling("update_section", () => {
+        const refused = checkWrite(db, limits, {
+          docBytes: content.length,
+          docMax: DOC_MAX_BYTES,
+          deltaBytes: content.length - existingLength("sections", name),
+        });
+        if (refused) return toolError(refused);
         db.prepare(
           "INSERT INTO sections(name, content) VALUES (?, ?)" +
             " ON CONFLICT(name) DO UPDATE SET content=excluded.content, updated_at=datetime('now')",
         ).run(name, content);
-        return toolText(`Section '${name}' updated.`);
+        return toolText(`Section '${name}' updated.${usageWarning(db, limits)}`);
       }),
   );
 
@@ -36,11 +60,17 @@ export function registerWriteTools(server: McpServer, db: Database.Database): vo
     },
     ({ name, content }) =>
       withErrorHandling("update_reference", () => {
+        const refused = checkWrite(db, limits, {
+          docBytes: content.length,
+          docMax: DOC_MAX_BYTES,
+          deltaBytes: content.length - existingLength("refs", name),
+        });
+        if (refused) return toolError(refused);
         db.prepare(
           "INSERT INTO refs(name, content) VALUES (?, ?)" +
             " ON CONFLICT(name) DO UPDATE SET content=excluded.content, updated_at=datetime('now')",
         ).run(name, content);
-        return toolText(`Reference '${name}' updated.`);
+        return toolText(`Reference '${name}' updated.${usageWarning(db, limits)}`);
       }),
   );
 
@@ -55,8 +85,16 @@ export function registerWriteTools(server: McpServer, db: Database.Database): vo
     },
     ({ entry }) =>
       withErrorHandling("append_journal", () => {
+        const refused = checkWrite(db, limits, {
+          docBytes: entry.length,
+          docMax: ENTRY_MAX_BYTES,
+          deltaBytes: entry.length,
+        });
+        if (refused) return toolError(refused);
         const result = db.prepare("INSERT INTO journal(entry) VALUES (?)").run(entry);
-        return toolText(`Journal entry #${result.lastInsertRowid} saved.`);
+        return toolText(
+          `Journal entry #${result.lastInsertRowid} saved.${usageWarning(db, limits)}`,
+        );
       }),
   );
 }

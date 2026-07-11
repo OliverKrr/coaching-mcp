@@ -30,8 +30,9 @@ Claude (per-user MCP connector, OAuth 2.1 + PKCE)
    ▼
 coaching-mcp serve (one container)
    ├── /mcp          Streamable HTTP MCP endpoint
-   ├── /authorize …  built-in OAuth AS → OIDC login (e.g. Google) → email allowlist
+   ├── /authorize …  built-in OAuth AS → OIDC login (e.g. Google) → membership check
    ├── /account      self-service page: export all data, delete account
+   ├── /admin        operator page: approve registrations, quotas, users
    └── /data/users/<id>/skill.db   one coaching DB per user
 ```
 
@@ -56,7 +57,8 @@ coaching-mcp serve (one container)
 | `list_routines` / `get_routine`       | The user's stored scheduled-routine prompts                                    |
 | `save_routine`                        | Upserts a routine (name, cadence, prompt, status) designed with the user       |
 | `delete_routine`                      | Deletes a stored routine (confirm required)                                    |
-| `get_version`                         | Build info + per-table statistics                                              |
+| `request_quota_increase`              | Asks the operator for more storage, with a reason (multi-user mode)            |
+| `get_version`                         | Build info + per-table statistics incl. storage usage vs. quota                |
 
 ## Quick start (multi-user, Docker Compose)
 
@@ -70,7 +72,7 @@ services:
       PUBLIC_URL: "https://coaching.example.com" # external URL (may include a path prefix)
       OIDC_CLIENT_ID: "${OIDC_CLIENT_ID}"
       OIDC_CLIENT_SECRET: "${OIDC_CLIENT_SECRET}"
-      ALLOWED_EMAILS: "you@example.com, friend@example.com"
+      ADMIN_EMAILS: "you@example.com" # always allowed; other users self-register
     volumes:
       - coaching_data:/data
 
@@ -78,9 +80,11 @@ volumes:
   coaching_data:
 ```
 
-Then each allowlisted user adds `https://coaching.example.com` as a custom connector in Claude
-(Settings → Connectors → Add custom connector), signs in with the identity provider, and starts
-coaching. Their database is created on first login, seeded from the built-in template (below).
+Then each user adds `https://coaching.example.com` as a custom connector in Claude
+(Settings → Connectors → Add custom connector) and signs in with the identity provider. Admins
+are in immediately; everyone else lands as a pending request the admin approves (see "Who can
+log in"). A user's database is created on first successful login, seeded from the built-in
+template (below).
 
 ### Identity provider setup (Google example)
 
@@ -94,10 +98,47 @@ Any OIDC-discoverable issuer works — set `OIDC_ISSUER` to override the Google 
 
 ### Who can log in
 
-Authentication proves identity; the **email allowlist** decides access. Set `ALLOWED_EMAILS`
-(comma-separated) and/or mount a file and point `ALLOWED_EMAILS_FILE` at it (one address per
-line, `#` comments). The file is re-read on every login attempt — adding a user needs no restart.
-A signed-in but non-allowlisted user gets a friendly denial page and nothing is stored.
+Authentication proves identity; **membership** decides access — and it lives in the server's own
+database, managed at runtime:
+
+- **Admins** (`ADMIN_EMAILS`, comma-separated) are always allowed and get the `/admin` page:
+  pending access requests, quota requests, and the user list with disable/enable/delete and
+  per-user quota controls.
+- **Self-registration** (default): any verified login that isn't known yet becomes a _pending
+  request_ — the visitor sees a "request received" page, the operator gets a notification (see
+  below) and approves or rejects on `/admin` or straight from Telegram. Nothing is provisioned
+  until approval. Set `REGISTRATION=closed` to turn this off.
+- **Bootstrap allowlist** (optional): addresses in `ALLOWED_EMAILS` and/or an
+  `ALLOWED_EMAILS_FILE` (one per line, `#` comments, hot-reloaded) skip the approval step —
+  useful for seeding a deployment and as lockout recovery.
+
+Rejected or disabled users get a neutral denial page; disabling revokes all tokens immediately.
+
+### Operator notifications (optional)
+
+Two channels, both best-effort and independent:
+
+- **Telegram** (`TELEGRAM_BOT_TOKEN` + `TELEGRAM_ADMIN_CHAT_ID`): signup and quota requests
+  arrive as bot messages with inline **Approve/Reject/Grant** buttons — routine admin actions
+  happen from chat, and the edited message doubles as an audit trail. The server registers its
+  webhook itself on boot (`<PUBLIC_URL>/telegram/webhook`, secret-token verified; actions are
+  additionally restricted to the admin chat id). Create the bot with @BotFather; the chat id is
+  in `getUpdates` after you message the bot once. Users may _opt in_ to notifications
+  (approval, quota changes) via a `t.me` deep link on the pending page and on `/account` — bots
+  cannot message anyone who hasn't started them, so this is strictly opt-in.
+- **Plain webhook** (`NOTIFY_URL`): fire-and-forget text `POST` per event — works with any
+  push service or chat incoming webhook. Send-only.
+
+### Storage quotas
+
+Each user gets a storage quota (default 50 MB of stored content — generous for coaching
+knowledge, hard against misuse as free file storage). Per-document caps: 1 MB per
+section/reference, 64 KB per journal entry/routine/open item; writes are also budgeted at
+60/min per user. The connected assistant sees the quota: write responses and the session-start
+context carry a warning from 80% usage, `get_version` reports usage, an over-quota write returns
+a self-describing error, and the `request_quota_increase` tool lets the assistant ask the
+operator for more (with a reason) — grantable from Telegram or `/admin`. Admins can set
+per-user quotas anytime; `QUOTA_DEFAULT_MB` changes the default.
 
 ### Reverse proxies / path prefixes
 
@@ -127,7 +168,7 @@ are handled.
 
 Privacy baseline: user isolation is structural (one SQLite file per user; the tool layer only
 ever sees a DB handle), logs carry user ids and event names but never content, and no per-user
-secrets exist anywhere — identity comes from the IdP, authorization from the allowlist.
+password exists anywhere — identity comes from the IdP, authorization from the membership state.
 
 ## Integrations (optional, per user)
 
@@ -253,8 +294,14 @@ from `/account/data/routines`. Topic packs ship English master templates as raw 
 | `OIDC_CLIENT_ID`              | — (required)                  | OAuth client registered at the identity provider                                                          |
 | `OIDC_CLIENT_SECRET`          | — (required)                  | …and its secret                                                                                           |
 | `OIDC_ISSUER`                 | `https://accounts.google.com` | Any OIDC-discoverable issuer                                                                              |
-| `ALLOWED_EMAILS`              | —                             | Comma-separated allowlist                                                                                 |
+| `ADMIN_EMAILS`                | —                             | Comma-separated admins: implicitly allowed, gate `/admin`                                                 |
+| `REGISTRATION`                | `open`                        | `closed` disables self-registration (invite-only mode)                                                    |
+| `ALLOWED_EMAILS`              | —                             | Comma-separated bootstrap allowlist (skips approval)                                                      |
 | `ALLOWED_EMAILS_FILE`         | —                             | Newline-separated allowlist file; merged, hot-reloaded                                                    |
+| `TELEGRAM_BOT_TOKEN`          | —                             | Bot token (BotFather) — enables Telegram notifications + chat actions                                     |
+| `TELEGRAM_ADMIN_CHAT_ID`      | —                             | Operator's chat id — the only chat allowed to drive membership actions                                    |
+| `NOTIFY_URL`                  | —                             | Send-only webhook: plain-text POST per signup/quota request                                               |
+| `QUOTA_DEFAULT_MB`            | `50`                          | Default per-user storage quota (admins can override per user)                                             |
 | `DATA_DIR`                    | `/data`                       | auth.db + per-user DBs (persistent volume)                                                                |
 | `SEED_DIR`                    | `/seed`                       | Seed template for new users                                                                               |
 | `PORT`                        | `8000`                        | HTTP listen port                                                                                          |

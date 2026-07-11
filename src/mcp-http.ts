@@ -1,7 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { z } from "zod";
+import { createQuotaRequest, getUser } from "./auth/db.js";
 import { authenticateBearer, sendUnauthorized } from "./auth/oauth.js";
 import { getUserSecret } from "./auth/secrets.js";
 import type { ServeContext } from "./context.js";
@@ -14,6 +17,15 @@ import {
 } from "./gateways.js";
 import { HevyClient, registerHevyTools } from "./integrations/hevy.js";
 import { sendJson } from "./http-util.js";
+import {
+  contentBytes,
+  formatMb,
+  MCP_BODY_MAX_BYTES,
+  quotaBytesForUser,
+  WRITES_PER_MINUTE,
+  type WriteLimits,
+} from "./quota.js";
+import { RateLimiter } from "./ratelimit.js";
 import { registerDeleteTools } from "./tools/delete.js";
 import { registerOpenItemsTools } from "./tools/openitems.js";
 import { registerOpsTools } from "./tools/ops.js";
@@ -21,6 +33,7 @@ import { registerReadTools } from "./tools/read.js";
 import { registerRoutineTools } from "./tools/routines.js";
 import { registerWriteTools } from "./tools/write.js";
 import { registerTopicTools } from "./topics.js";
+import { toolError, toolText, withErrorHandling } from "./utils/errors.js";
 import { SERVER_INSTRUCTIONS, VERSION } from "./version.js";
 
 /**
@@ -39,10 +52,21 @@ type McpSession = {
 
 export class McpSessionManager {
   private readonly sessions = new Map<string, McpSession>();
+  /** Per-user write budget, shared across all of a user's sessions. */
+  private readonly writeLimiter = new RateLimiter(WRITES_PER_MINUTE, 60_000);
 
   constructor(private readonly ctx: ServeContext) {}
 
   async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    // The generic 1 MB body cap deliberately skips /mcp; this is its bound.
+    if (Number(req.headers["content-length"] ?? 0) > MCP_BODY_MAX_BYTES) {
+      sendJson(res, 413, {
+        jsonrpc: "2.0",
+        error: { code: -32000, message: "Request body too large" },
+        id: null,
+      });
+      return;
+    }
     const auth = authenticateBearer(this.ctx, req);
     if (!auth) {
       sendUnauthorized(this.ctx, res);
@@ -94,14 +118,23 @@ export class McpSessionManager {
       if (m.instructions) instructions += `\n\n${m.instructions}`;
     }
 
+    // Storage limits, resolved once per session (quota changes apply to new
+    // sessions). Carries no identity — the tool layer stays user-agnostic.
+    const user = getUser(this.ctx.authDb, auth.userId);
+    const limits: WriteLimits = {
+      quotaBytes: quotaBytesForUser(user, this.ctx.cfg.quotaDefaultMb),
+      allowWrite: () => this.writeLimiter.allowKey(auth.userId),
+    };
+
     const server = new McpServer({ name: "coaching-mcp", version: VERSION }, { instructions });
-    registerReadTools(server, db);
-    registerWriteTools(server, db);
-    registerOpsTools(server, db);
+    registerReadTools(server, db, limits);
+    registerWriteTools(server, db, limits);
+    registerOpsTools(server, db, limits);
     registerDeleteTools(server, db);
-    registerOpenItemsTools(server, db);
-    registerRoutineTools(server, db);
+    registerOpenItemsTools(server, db, limits);
+    registerRoutineTools(server, db, limits);
     registerTopicTools(server, this.ctx.cfg.seedDir);
+    this.registerQuotaRequestTool(server, db, auth.userId);
 
     // Opt-in integrations: tools appear only for users who connected the
     // service on their account page — each user acts with their own key.
@@ -133,6 +166,48 @@ export class McpSessionManager {
 
     await server.connect(transport);
     await transport.handleRequest(req, res);
+  }
+
+  /**
+   * Serve-mode-only tool: ask the operator for more storage. Registered here
+   * (not in src/tools/) because it needs the user's identity and the notifier
+   * — the same pattern as the per-user integrations.
+   */
+  private registerQuotaRequestTool(server: McpServer, db: Database.Database, userId: string): void {
+    server.registerTool(
+      "request_quota_increase",
+      {
+        description:
+          "Ask the server operator to raise this account's storage quota. Use when a write fails " +
+          "with a storage-quota error or usage warnings appear and content cannot reasonably be " +
+          "consolidated or deleted. One open request at a time; the operator decides manually.",
+        inputSchema: {
+          reason: z
+            .string()
+            .min(10)
+            .max(500)
+            .describe("Short reason for the operator — what needs the space and roughly how much"),
+        },
+      },
+      ({ reason }) =>
+        withErrorHandling("request_quota_increase", () => {
+          const user = getUser(this.ctx.authDb, userId);
+          if (!user) return toolError("account no longer exists");
+          const usage = contentBytes(db);
+          const quotaMb = user.quota_mb ?? this.ctx.cfg.quotaDefaultMb;
+          if (!createQuotaRequest(this.ctx.authDb, userId, reason, usage, quotaMb)) {
+            return toolText(
+              "A quota request from this account is already waiting for the operator — no new request was sent. The current one covers you.",
+            );
+          }
+          this.ctx.notify.quotaRequest(user, reason, usage, quotaMb);
+          this.ctx.log(`quota increase requested by ${user.email} (${userId})`);
+          return toolText(
+            `Request sent to the operator (currently using ${formatMb(usage)} MB of ${quotaMb} MB). ` +
+              "The operator decides manually — usually within a day. Tell the user their request is on its way.",
+          );
+        }),
+    );
   }
 
   /** Tear down all sessions for one user (account deletion). */

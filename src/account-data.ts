@@ -1,8 +1,11 @@
+import type Database from "better-sqlite3";
 import type { ServerResponse } from "node:http";
 import type { WebAuth } from "./account.js";
+import { getUser } from "./auth/db.js";
 import type { ServeContext } from "./context.js";
 import { htmlEscape, redirect, sendHtml } from "./http-util.js";
 import { renderMarkdown } from "./markdown.js";
+import { checkWrite, DOC_MAX_BYTES, ENTRY_MAX_BYTES, quotaBytesForUser } from "./quota.js";
 import type { Lang } from "./web/i18n.js";
 import { type NavOpts, page } from "./web/layout.js";
 
@@ -69,6 +72,34 @@ function backBar(base: string, label = "Your data", href = "/account/data"): str
 
 function errorPage(res: ServerResponse, status: number, title: string, body: string): void {
   sendHtml(res, status, page(title, `<h1>${htmlEscape(title)}</h1>${body}`));
+}
+
+/**
+ * Web-editor mirror of the MCP write guards: per-document caps + total quota.
+ * No write rate limit here — browser edits are human-paced. Returns true when
+ * the write was refused (response already sent).
+ */
+function refuseOversizedWrite(
+  ctx: ServeContext,
+  res: ServerResponse,
+  auth: WebAuth,
+  db: Database.Database,
+  opts: { docBytes: number; docMax: number; deltaBytes: number },
+): boolean {
+  const user = getUser(ctx.authDb, auth.userId);
+  const refusal = checkWrite(
+    db,
+    { quotaBytes: quotaBytesForUser(user, ctx.cfg.quotaDefaultMb), allowWrite: () => true },
+    opts,
+  );
+  if (!refusal) return false;
+  errorPage(
+    res,
+    413,
+    "Storage limit",
+    `<p>${htmlEscape(refusal)}</p><p>Your edit was <strong>not</strong> saved.</p>`,
+  );
+  return true;
 }
 
 /** Fill %PLACEHOLDER% slots; the function replacer keeps `$` in values literal. */
@@ -616,6 +647,21 @@ function saveDoc(
   }
   const db = ctx.tenants.open(auth.userId);
   const table = DOC_TABLES[type];
+  const existingLen =
+    (
+      db.prepare(`SELECT LENGTH(content) AS n FROM ${table} WHERE name = ?`).get(name) as
+        | { n: number }
+        | undefined
+    )?.n ?? 0;
+  if (
+    refuseOversizedWrite(ctx, res, auth, db, {
+      docBytes: content.length,
+      docMax: DOC_MAX_BYTES,
+      deltaBytes: content.length - existingLen,
+    })
+  ) {
+    return;
+  }
 
   if (expected === "") {
     // create: refuse to clobber an existing doc of the same name
@@ -688,6 +734,21 @@ function saveJournal(
   const id = Number(form.get("id"));
   const entry = form.get("entry") ?? "";
   const db = ctx.tenants.open(auth.userId);
+  const oldLen =
+    (
+      db.prepare("SELECT LENGTH(entry) AS n FROM journal WHERE id = ?").get(id) as
+        | { n: number }
+        | undefined
+    )?.n ?? 0;
+  if (
+    refuseOversizedWrite(ctx, res, auth, db, {
+      docBytes: entry.length,
+      docMax: ENTRY_MAX_BYTES,
+      deltaBytes: entry.length - oldLen,
+    })
+  ) {
+    return;
+  }
   // created_at is intentionally preserved: the edit corrects content, not history
   const result = db.prepare("UPDATE journal SET entry = ? WHERE id = ?").run(entry, id);
   if (result.changes === 0) {
@@ -724,6 +785,21 @@ function saveOpenItem(
     return;
   }
   const db = ctx.tenants.open(auth.userId);
+  const oldLen =
+    (
+      db.prepare("SELECT LENGTH(content) AS n FROM open_items WHERE id = ?").get(id) as
+        | { n: number }
+        | undefined
+    )?.n ?? 0;
+  if (
+    refuseOversizedWrite(ctx, res, auth, db, {
+      docBytes: content.length,
+      docMax: ENTRY_MAX_BYTES,
+      deltaBytes: content.length - oldLen,
+    })
+  ) {
+    return;
+  }
   const result = db
     .prepare(
       "UPDATE open_items SET content = ?, status = ?, relevant_date = ?, updated_at = datetime('now') WHERE id = ?",
@@ -764,6 +840,21 @@ function saveRoutine(
     return;
   }
   const db = ctx.tenants.open(auth.userId);
+  const oldLen =
+    (
+      db.prepare("SELECT LENGTH(prompt) AS n FROM routines WHERE name = ?").get(name) as
+        | { n: number }
+        | undefined
+    )?.n ?? 0;
+  if (
+    refuseOversizedWrite(ctx, res, auth, db, {
+      docBytes: prompt.length,
+      docMax: ENTRY_MAX_BYTES,
+      deltaBytes: prompt.length - oldLen,
+    })
+  ) {
+    return;
+  }
 
   if (expected === "") {
     // create: refuse to clobber an existing routine of the same name

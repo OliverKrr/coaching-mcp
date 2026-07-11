@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import type { OidcProvider } from "./auth/oidc.js";
+import type { NotifyService } from "./notify.js";
 import type { TenantManager } from "./tenancy.js";
 
 export type ProtectedApp = {
@@ -21,6 +22,8 @@ export type ServeConfig = {
   secretsKey?: Buffer;
   /** Internal web apps served behind the login at /apps/<name>/. */
   apps: ProtectedApp[];
+  /** Default per-user storage quota in MB (users.quota_mb overrides). */
+  quotaDefaultMb: number;
 };
 
 export type ServeContext = {
@@ -28,5 +31,6 @@ export type ServeContext = {
   authDb: Database.Database;
   oidc: OidcProvider;
   tenants: TenantManager;
+  notify: NotifyService;
   log: (msg: string) => void;
 };

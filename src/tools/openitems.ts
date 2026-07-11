@@ -2,9 +2,14 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type Database from "better-sqlite3";
 import { z } from "zod";
 import type { OpenItem } from "../db.js";
-import { toolText, withErrorHandling } from "../utils/errors.js";
+import { checkWrite, ENTRY_MAX_BYTES, type WriteLimits } from "../quota.js";
+import { toolError, toolText, withErrorHandling } from "../utils/errors.js";
 
-export function registerOpenItemsTools(server: McpServer, db: Database.Database): void {
+export function registerOpenItemsTools(
+  server: McpServer,
+  db: Database.Database,
+  limits?: WriteLimits,
+): void {
   server.registerTool(
     "add_open_item",
     {
@@ -37,6 +42,12 @@ export function registerOpenItemsTools(server: McpServer, db: Database.Database)
     },
     ({ kind, content, source, dedup_key, relevant_date }) =>
       withErrorHandling("add_open_item", () => {
+        const refused = checkWrite(db, limits, {
+          docBytes: content.length,
+          docMax: ENTRY_MAX_BYTES,
+          deltaBytes: content.length,
+        });
+        if (refused) return toolError(refused);
         if (dedup_key !== undefined) {
           const existing = db
             .prepare("SELECT id FROM open_items WHERE dedup_key = ? AND status = 'open'")
@@ -119,6 +130,12 @@ export function registerOpenItemsTools(server: McpServer, db: Database.Database)
           | undefined;
         if (!row) return toolText(`Open item #${id} not found.`);
         const newContent = note ? `${row.content} — resolved: ${note}` : row.content;
+        const refused = checkWrite(db, limits, {
+          docBytes: newContent.length,
+          docMax: ENTRY_MAX_BYTES,
+          deltaBytes: newContent.length - row.content.length,
+        });
+        if (refused) return toolError(refused);
         db.prepare(
           "UPDATE open_items SET status = ?, content = ?, updated_at = datetime('now') WHERE id = ?",
         ).run(status, newContent, id);
