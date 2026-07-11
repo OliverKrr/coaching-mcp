@@ -1,4 +1,5 @@
 import { htmlEscape } from "../http-util.js";
+import { REPO_URL, VERSION } from "../version.js";
 
 /**
  * The page shell for every server-rendered page: document skeleton, design
@@ -88,6 +89,8 @@ aside.side a{color:var(--muted);text-decoration:none;padding:.3rem .6rem;border-
 aside.side a:hover{color:var(--fg)}
 aside.side a[aria-current]{color:var(--fg);font-weight:600;background:color-mix(in srgb,var(--accent) 12%,transparent)}
 @media (max-width:700px){.withside{flex-direction:column;gap:.5rem}aside.side{position:static;flex-direction:row;flex-wrap:wrap;align-items:flex-start;padding:0}}
+footer.site{text-align:center;color:var(--muted);font-size:.85rem;padding:0 1.25rem 2rem}
+footer.site a{color:var(--muted)}
 code{background:var(--code-bg);padding:.1rem .35rem;border-radius:4px;font-size:.88em}
 pre{background:var(--code-bg);padding:.75rem .9rem;border-radius:8px;overflow-x:auto}
 pre code{background:none;padding:0}
@@ -102,6 +105,8 @@ pre.snippet{font-size:.85rem;white-space:pre-wrap}
 textarea.editor{height:74vh;width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9rem}
 textarea.editor.short{height:50vh}
 textarea.mono{width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9rem}
+textarea.copybox{display:block;width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.85rem;line-height:1.45;background:var(--code-bg);border:1px solid var(--border);border-radius:8px;padding:.75rem .9rem;resize:vertical}
+.selectall{user-select:all}
 .preview{border:1px solid var(--border);border-radius:8px;padding:.25rem 1.25rem;background:var(--surface);overflow-wrap:break-word}
 .preview h1{font-size:1.35rem}
 .preview h2{font-size:1.15rem}
@@ -145,6 +150,7 @@ ${opts.nav ? renderNav(opts.nav, wide) : ""}
 <main${wide ? ' class="wide"' : ""}>
 ${body}
 </main>
+${opts.nav ? `<footer class="site">coaching-mcp v${VERSION} · <a href="${REPO_URL}" target="_blank" rel="noopener noreferrer">open source on GitHub</a></footer>` : ""}
 </body>
 </html>`;
 }

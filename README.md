@@ -1,5 +1,10 @@
 # coaching-mcp
 
+[![Release](https://img.shields.io/github/v/release/OliverKrr/coaching-mcp?sort=semver)](https://github.com/OliverKrr/coaching-mcp/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Node](https://img.shields.io/badge/node-%E2%89%A526-brightgreen)
+![Web UI](https://img.shields.io/badge/web%20UI-zero%20JavaScript-8A2BE2)
+
 Multi-user coaching MCP server for Claude AI, backed by SQLite + FTS5. Serves a `SKILL.md`
 coaching knowledge base with full-text search, reference documents, a session journal, open
 items, and stored scheduled routines — one isolated database per user, with a **built-in OAuth
@@ -8,6 +13,16 @@ default). Coaching is **topic-based**: the server ships installable topic packs 
 training, nutrition/meal planning, or any custom topic), and each user picks one or several
 during a conversational onboarding. Users connect from their own Claude accounts via the
 standard custom-connector flow; nobody handles tokens or secrets.
+
+The same container serves a small human-facing site — setup guide, routines, and a full
+self-service account area — server-rendered, bilingual (English/German), dark-mode aware, and
+with **zero JavaScript** (`script-src 'none'`):
+
+| The setup guide every user starts from                         | Self-service account page (dark mode)                             |
+| -------------------------------------------------------------- | ----------------------------------------------------------------- |
+| ![Setup guide landing page](docs/screenshots/landing.png)      | ![Account page in dark mode](docs/screenshots/account-dark.png)   |
+| **Routines — designed in chat, run as Claude scheduled tasks** | **Every document editable in the browser**                        |
+| ![Routines page](docs/screenshots/routines.png)                | ![Data editor with markdown preview](docs/screenshots/editor.png) |
 
 ```
 Claude (per-user MCP connector, OAuth 2.1 + PKCE)
@@ -306,6 +321,13 @@ the write unless `--force` is passed; `--dry-run` reports them as `STALE SEED` w
 
 **Recovery** (any deployment): stop the server, replace the target `skill.db` with the backed-up
 copy (delete any `-wal`/`-shm` sidecars), start the server.
+
+## Releases
+
+Versions are tagged (`vX.Y.Z`) with notes on
+[GitHub Releases](https://github.com/OliverKrr/coaching-mcp/releases). `just release X.Y.Z`
+runs the whole sequence — version stamp, quality gate, commit, tag, push, release — see
+[RELEASING.md](RELEASING.md).
 
 ## Feedback & contributions
 

@@ -33,6 +33,7 @@ just fix          # oxlint + oxfmt --write (auto-format)
 just types        # tsc --noEmit
 just dev          # tsx src/index.ts (stdio single-user mode)
 just update-deps  # ncu -u && npm install
+just release X.Y.Z  # version stamp + gate + commit + tag + push + GitHub release (RELEASING.md)
 ```
 
 Direct npm equivalents if just is not installed: `npm run build|test|check|check:fix|check:types`.

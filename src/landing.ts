@@ -4,7 +4,7 @@ import type { ServeContext } from "./context.js";
 import { htmlEscape, sendHtml } from "./http-util.js";
 import { pickLang, type Lang } from "./web/i18n.js";
 import { page } from "./web/layout.js";
-import { badge } from "./web/ui.js";
+import { badge, copyBox } from "./web/ui.js";
 import { allRoutineTemplates } from "./topics.js";
 import { REPO_URL } from "./version.js";
 
@@ -62,7 +62,7 @@ and name every day with its calendar date in weekly plans.`;
 <h2>${t.setupTitle}</h2>
 <ol>
 <li>${t.step1}</li>
-<li>${t.step2}<br><code>${htmlEscape(base)}</code></li>
+<li>${t.step2}<br><code class="selectall">${htmlEscape(base)}</code></li>
 <li>${t.step3}</li>
 <li>${t.step4}</li>
 <li>${t.step5}</li>
@@ -72,7 +72,7 @@ and name every day with its calendar date in weekly plans.`;
 <div class="card">
 <h2>${t.projectTitle}</h2>
 <p>${t.projectIntro}</p>
-<pre class="snippet">${htmlEscape(projectInstructions)}</pre>
+${copyBox(projectInstructions)}
 </div>
 
 <div class="card">
@@ -134,7 +134,7 @@ export function renderRoutines(
         (r) => `<div class="card">
 <p><strong>${htmlEscape(r.name)}</strong> ${badge(r.status === "active" ? "ok" : "muted", r.status)} <span class="muted">· ${htmlEscape(r.cadence)}</span> — <a href="${base}/account/data/routines/edit?name=${encodeURIComponent(r.name)}">${t.ownEdit}</a><br>
 <span class="muted">${t.ownUpdated} ${htmlEscape(r.updated_at)} UTC — ${t.ownUpdatedHint}</span></p>
-<details><summary class="muted">${t.ownShowPrompt}</summary><pre class="snippet">${htmlEscape(r.prompt)}</pre></details>
+<details><summary class="muted">${t.ownShowPrompt}</summary>${copyBox(r.prompt)}</details>
 </div>`,
       )
       .join("\n");
@@ -149,7 +149,7 @@ ${ownCards || `<p class="muted">${t.ownNone}</p>`}
       (r) => `<div class="card">
 <details>
 <summary><strong>${htmlEscape(r.title)}</strong> <span class="muted">(${htmlEscape(r.packId)})</span> — <span class="muted">${htmlEscape(r.cadence)}</span></summary>
-<pre class="snippet">${htmlEscape(r.body)}</pre>
+${copyBox(r.body)}
 </details>
 </div>`,
     )

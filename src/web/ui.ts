@@ -1,6 +1,17 @@
 import { htmlEscape } from "../http-util.js";
 
-/** Tinted status pill. Deliberately the only shared fragment helper — pages otherwise compose plain HTML. */
+/** Tinted status pill. */
 export function badge(kind: "ok" | "warn" | "err" | "muted", label: string): string {
   return `<span class="badge ${kind}">${htmlEscape(label)}</span>`;
+}
+
+/**
+ * Read-only copy surface: a focused textarea contains Ctrl+A, so "click →
+ * select all → copy" grabs exactly this content instead of the whole page.
+ * Use it wherever the user is meant to copy-paste a block.
+ */
+export function copyBox(content: string, maxRows = 24): string {
+  // +2 headroom for soft-wrapped lines; long content scrolls (and is resizable).
+  const rows = Math.min(content.split("\n").length + 2, maxRows);
+  return `<textarea readonly class="copybox" rows="${rows}">${htmlEscape(content)}</textarea>`;
 }
