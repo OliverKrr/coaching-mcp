@@ -444,10 +444,11 @@ describe("self-registration", () => {
     const forErin = await fetch(`${base}/admin`, { headers: { cookie: erinCookie } });
     expect(forErin.status).toBe(404);
 
-    // admin sees her on the page
+    // admin sees her on the page — wrapped in Cloudflare's email-obfuscation
+    // opt-out comments, or a proxied deployment would hide every address
     const forAdmin = await fetch(`${base}/admin`, { headers: { cookie: adminCookie } });
     expect(forAdmin.status).toBe(200);
-    expect(await forAdmin.text()).toContain(ERIN);
+    expect(await forAdmin.text()).toContain(`<!--email_off-->${ERIN}<!--/email_off-->`);
 
     // disable → the bearer token she already holds dies immediately
     await adminPost(adminCookie, adminCsrf, `/admin/users/${erinId}/disable`);

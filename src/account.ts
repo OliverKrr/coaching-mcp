@@ -42,7 +42,7 @@ import {
 } from "./http-util.js";
 import { pickLang, type Lang } from "./web/i18n.js";
 import { page } from "./web/layout.js";
-import { badge } from "./web/ui.js";
+import { badge, emailText } from "./web/ui.js";
 import type { McpSessionManager } from "./mcp-http.js";
 import { snapshotDocuments } from "./snapshot.js";
 
@@ -510,7 +510,7 @@ ${apps.map((a) => `<p><a href="${base}/apps/${a.name}/">${htmlEscape(a.name)}</a
 <div class="card">
 <h2>${t.profile}</h2>
 <table>
-<tr><th>${t.signedInAs}</th><td>${htmlEscape(user.email)}</td></tr>
+<tr><th>${t.signedInAs}</th><td>${emailText(user.email)}</td></tr>
 <tr><th>${t.memberSince}</th><td>${htmlEscape(user.created_at)} UTC</td></tr>
 <tr><th>${t.lastLogin}</th><td>${htmlEscape(user.last_login_at ?? "—")} UTC</td></tr>
 </table>

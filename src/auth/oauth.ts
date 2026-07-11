@@ -4,6 +4,7 @@ import type { ServeContext } from "../context.js";
 import { htmlEscape, parseParams, readBody, redirect, sendHtml, sendJson } from "../http-util.js";
 import { resolveLogin } from "../membership.js";
 import { page } from "../web/layout.js";
+import { emailText } from "../web/ui.js";
 import {
   consumeAuthCode,
   consumePendingAuth,
@@ -239,7 +240,7 @@ export async function handleOidcCallback(
           page(
             "Access not granted",
             `<h1>Access not granted</h1>
-<p>You signed in as <strong>${htmlEscape(identity.email)}</strong>, but this address does not have access to this server.</p>`,
+<p>You signed in as <strong>${emailText(identity.email)}</strong>, but this address does not have access to this server.</p>`,
           ),
         );
         return;
@@ -291,7 +292,7 @@ function pendingPage(ctx: ServeContext, userId: string, email: string, created: 
   return page(
     "Request received",
     `<h1>${created ? "Request received" : "Still awaiting approval"}</h1>
-<p>You signed in as <strong>${htmlEscape(email)}</strong>. ${
+<p>You signed in as <strong>${emailText(email)}</strong>. ${
       created
         ? "The operator of this server has been asked to approve your access."
         : "Your access request is still waiting for the operator's approval."

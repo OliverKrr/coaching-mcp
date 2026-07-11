@@ -16,7 +16,7 @@ import {
 import type { McpSessionManager } from "./mcp-http.js";
 import { contentBytes, formatMb } from "./quota.js";
 import { page } from "./web/layout.js";
-import { badge } from "./web/ui.js";
+import { badge, emailText } from "./web/ui.js";
 
 /**
  * Operator surface at /admin: pending access requests, quota requests, and
@@ -155,7 +155,7 @@ function renderAdminPage(ctx: ServeContext, res: ServerResponse, auth: WebAuth):
   const pendingRows = pending
     .map(
       (u) => `<tr>
-<td><strong>${htmlEscape(u.email)}</strong>${u.name ? `<br><span class="muted">${htmlEscape(u.name)}</span>` : ""}</td>
+<td><strong>${emailText(u.email)}</strong>${u.name ? `<br><span class="muted">${htmlEscape(u.name)}</span>` : ""}</td>
 <td>${htmlEscape(u.created_at)} UTC</td>
 <td>${u.telegram_chat_id ? badge("ok", "Telegram linked") : badge("muted", "no Telegram")}</td>
 <td>${post(u.id, "approve", "Approve")}${post(u.id, "reject", "Reject", "danger")}</td>
@@ -180,7 +180,7 @@ ${
       const half = Math.ceil(current * 1.5);
       const double = current * 2;
       return `<tr>
-<td><strong>${htmlEscape(u.email)}</strong><br><span class="muted">${htmlEscape(q.created_at)} UTC · using ${formatMb(q.usage_bytes)} of ${current} MB</span></td>
+<td><strong>${emailText(u.email)}</strong><br><span class="muted">${htmlEscape(q.created_at)} UTC · using ${formatMb(q.usage_bytes)} of ${current} MB</span></td>
 <td>${htmlEscape(q.reason)}</td>
 <td>
 <form method="post" action="${base}/admin/users/${u.id}/quota"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="quota_mb" value="${half}"><button>Grant ${half} MB</button></form>
@@ -210,7 +210,7 @@ ${post(u.id, "quota-dismiss", "Dismiss", "quiet")}
           ? `${post(u.id, "disable", "Disable", "danger")}`
           : `${post(u.id, "enable", "Enable")}`;
       return `<tr>
-<td><strong>${htmlEscape(u.email)}</strong>${u.name ? `<br><span class="muted">${htmlEscape(u.name)}</span>` : ""}${isAdminEmail(u.email) ? `<br>${badge("ok", "admin")}` : ""}</td>
+<td><strong>${emailText(u.email)}</strong>${u.name ? `<br><span class="muted">${htmlEscape(u.name)}</span>` : ""}${isAdminEmail(u.email) ? `<br>${badge("ok", "admin")}` : ""}</td>
 <td>${userStatusBadge(u)}<br><span class="muted">last login ${htmlEscape(u.last_login_at ?? "—")}</span></td>
 <td>${usage} of ${quota}
 <form method="post" action="${base}/admin/users/${u.id}/quota"><input type="hidden" name="csrf" value="${csrf}"><input name="quota_mb" inputmode="numeric" size="6" placeholder="MB"> <button class="quiet">Set</button></form></td>
