@@ -84,6 +84,17 @@ ${copyBox(projectInstructions)}
 </div>
 
 <div class="card">
+<h2>${t.telegramTitle}</h2>
+<p>${t.telegramIntro}</p>
+<ol>
+<li>${t.telegramStep1.replace("%ACCOUNT%", `${base}/account`)}</li>
+<li>${t.telegramStep2}</li>
+<li>${t.telegramStep3}</li>
+</ol>
+<p class="muted">${t.telegramNote}</p>
+</div>
+
+<div class="card">
 <h2>${t.routinesTitle}</h2>
 <p>${t.routinesBody} <a href="${base}/routines?lang=${lang}">${htmlEscape(base.replace(/^https?:\/\//, ""))}/routines</a></p>
 </div>
@@ -180,10 +191,10 @@ ${cards || `<p class="muted">${t.routinesNoTemplates}</p>`}`,
 const EN = {
   title: "Your AI coaching hub",
   intro:
-    "A personal coaching memory for Claude — training, nutrition, or any life topic you pick: your goals, plans, journal, and open items — private, per person, editable by you. Access is by invitation.",
+    "A personal coaching memory for Claude — training, nutrition, or any life topic you pick: your goals, plans, journal, and open items — private, per person, editable by you. Access is per person: request it with your first sign-in, the operator approves.",
   setupTitle: "Set up in five steps",
   step1:
-    "<strong>Get invited.</strong> Ask the operator of this server to add your Google e-mail address to the invitation list.",
+    "<strong>Request access.</strong> The first time you sign in with Google (next two steps), your access request goes to the operator of this server — you'll see a confirmation page. Once approved, simply sign in again. Tip: connect Telegram on that page (see below) and the bot messages you the moment you're in.",
   step2:
     "<strong>Connect Claude.</strong> In the Claude app or claude.ai (Pro/Max plan): Settings → Connectors → <em>Add custom connector</em> → paste this URL:",
   step3:
@@ -199,6 +210,17 @@ const EN = {
     '<strong>Fitness data:</strong> connect your training platform so the coach sees real load, wellness, and plans — e.g. intervals.icu via an MCP connector such as <a href="https://icusync.icu/" target="_blank" rel="noopener noreferrer">IcuSync</a>. Attach it on your account page under <em>Connected MCP servers</em> and its tools ride along in this one connector — so this works even on Claude plans that allow only a single custom connector. (You sign in to that service as yourself, with your own account there; on paid Claude plans you can alternatively add it as a second connector directly.) Coaching works without it; data-driven check-ins work better with it.',
   optionalHevy:
     "<strong>Strength logging (Hevy):</strong> connect your own Hevy account on the account page (Integrations — requires Hevy Pro) and the coach can read your workouts and manage routines directly.",
+  telegramTitle: "Telegram notifications (optional)",
+  telegramIntro:
+    "This server can message you on Telegram when something needs no waiting: the moment your access is approved, and when your storage quota changes. Strictly opt-in — the bot can only ever message you after <em>you</em> start the chat, and it never messages you unasked otherwise. Connecting:",
+  telegramStep1:
+    '<strong>Open your personal connect link.</strong> It is on the confirmation page after your first sign-in, and anytime on your <a href="%ACCOUNT%">account page</a> (Profile → Telegram).',
+  telegramStep2:
+    "<strong>Press <em>Start</em></strong> in the Telegram chat that opens (works in the app and on the web). The bot confirms the connection.",
+  telegramStep3:
+    "<strong>Done.</strong> No phone number or Telegram profile data reaches this server — the link only tells the bot where to send your notifications. Disconnect anytime on your account page.",
+  telegramNote:
+    "The connect link only appears when the operator has set up a Telegram bot for this server.",
   routinesTitle: "Automatic check-ins (optional)",
   routinesBody:
     "Let the coach come to you: a weekly review, a meal-planning check-in, a morning readiness check — as scheduled tasks in your own Claude account. How it works:",
@@ -236,10 +258,10 @@ const EN = {
 const DE: typeof EN = {
   title: "Dein KI-Coaching-Hub",
   intro:
-    "Ein persönliches Coaching-Gedächtnis für Claude — Training, Ernährung oder jedes andere Lebensthema deiner Wahl: deine Ziele, Pläne, dein Journal und offene Punkte — privat, pro Person, von dir selbst editierbar. Zugang nur auf Einladung.",
+    "Ein persönliches Coaching-Gedächtnis für Claude — Training, Ernährung oder jedes andere Lebensthema deiner Wahl: deine Ziele, Pläne, dein Journal und offene Punkte — privat, pro Person, von dir selbst editierbar. Zugang pro Person: mit der ersten Anmeldung anfragen, der Betreiber schaltet frei.",
   setupTitle: "Einrichtung in fünf Schritten",
   step1:
-    "<strong>Einladen lassen.</strong> Bitte den Betreiber dieses Servers, deine Google-E-Mail-Adresse auf die Einladungsliste zu setzen.",
+    "<strong>Zugang anfragen.</strong> Bei deiner ersten Google-Anmeldung (nächste zwei Schritte) geht deine Zugangsanfrage an den Betreiber dieses Servers — du siehst eine Bestätigungsseite. Nach der Freischaltung meldest du dich einfach erneut an. Tipp: verbinde auf dieser Seite Telegram (siehe unten), dann meldet sich der Bot, sobald du drin bist.",
   step2:
     "<strong>Claude verbinden.</strong> In der Claude-App oder auf claude.ai (Pro/Max-Abo): Einstellungen → Connectors → <em>Eigenen Connector hinzufügen</em> → diese URL einfügen:",
   step3:
@@ -255,6 +277,17 @@ const DE: typeof EN = {
     '<strong>Fitness-Daten:</strong> verbinde deine Trainingsplattform, damit der Coach echte Belastung, Wellness und Pläne sieht — z. B. intervals.icu über einen MCP-Connector wie <a href="https://icusync.icu/" target="_blank" rel="noopener noreferrer">IcuSync</a>. Hänge ihn auf deiner Account-Seite unter <em>Connected MCP servers</em> an, dann laufen seine Tools in diesem einen Connector mit — das funktioniert also auch mit Claude-Tarifen, die nur einen einzigen eigenen Connector erlauben. (Du meldest dich bei dem Dienst als du selbst an, mit deinem eigenen Konto dort; mit bezahltem Claude-Tarif kannst du ihn alternativ direkt als zweiten Connector hinzufügen.) Coaching funktioniert auch ohne; datengetriebene Check-ins werden damit deutlich besser.',
   optionalHevy:
     "<strong>Krafttraining (Hevy):</strong> verbinde dein eigenes Hevy-Konto auf der Account-Seite (Integrationen — erfordert Hevy Pro), dann kann der Coach deine Workouts lesen und Routinen direkt verwalten.",
+  telegramTitle: "Telegram-Benachrichtigungen (optional)",
+  telegramIntro:
+    "Dieser Server kann dir auf Telegram schreiben, wenn Warten unnötig ist: sobald dein Zugang freigeschaltet wird und wenn sich dein Speicherkontingent ändert. Strikt opt-in — der Bot kann dir überhaupt erst schreiben, nachdem <em>du</em> den Chat gestartet hast, und meldet sich sonst nie ungefragt. Verbinden:",
+  telegramStep1:
+    '<strong>Öffne deinen persönlichen Verbindungslink.</strong> Er steht auf der Bestätigungsseite nach deiner ersten Anmeldung und jederzeit auf deiner <a href="%ACCOUNT%">Account-Seite</a> (Profil → Telegram).',
+  telegramStep2:
+    "<strong>Tippe auf <em>Start</em></strong> im Telegram-Chat, der sich öffnet (funktioniert in der App und im Web). Der Bot bestätigt die Verbindung.",
+  telegramStep3:
+    "<strong>Fertig.</strong> Weder Telefonnummer noch Telegram-Profildaten erreichen diesen Server — der Link sagt dem Bot nur, wohin er deine Benachrichtigungen schicken soll. Trennen geht jederzeit auf der Account-Seite.",
+  telegramNote:
+    "Der Verbindungslink erscheint nur, wenn der Betreiber einen Telegram-Bot für diesen Server eingerichtet hat.",
   routinesTitle: "Automatische Check-ins (optional)",
   routinesBody:
     "Lass den Coach auf dich zukommen: Weekly Review, Meal-Planning-Check-in, Morgen-Readiness-Check — als geplante Aufgaben in deinem eigenen Claude-Konto. So funktioniert es:",
