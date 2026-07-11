@@ -875,7 +875,7 @@ const DATA_EN = {
   datePlaceholder: "YYYY-MM-DD",
   deleteItem: "Delete item",
   routinesIntro:
-    "Check-in prompts designed with your coach. To run one, copy its prompt into a scheduled task in your own Claude account with the cadence shown — the server never starts conversations itself.",
+    "Check-in prompts designed with your coach. To run one, copy its prompt into a scheduled task in your own Claude account with the cadence shown — the server never starts conversations itself. The routine stored here is the master; the scheduled task runs your last pasted copy, so re-copy the prompt after every edit.",
   open: "open",
   noRoutines:
     "No routines yet — ask your coach for a check-in routine and it will design one with you.",
@@ -948,7 +948,7 @@ const DATA_DE: typeof DATA_EN = {
   datePlaceholder: "YYYY-MM-DD",
   deleteItem: "Punkt löschen",
   routinesIntro:
-    "Check-in-Prompts, die du mit deinem Coach entworfen hast. Zum Ausführen kopiere den Prompt in eine geplante Aufgabe in deinem eigenen Claude-Konto mit dem angegebenen Rhythmus — der Server startet nie selbst Unterhaltungen.",
+    "Check-in-Prompts, die du mit deinem Coach entworfen hast. Zum Ausführen kopiere den Prompt in eine geplante Aufgabe in deinem eigenen Claude-Konto mit dem angegebenen Rhythmus — der Server startet nie selbst Unterhaltungen. Die hier gespeicherte Routine ist das Original; die geplante Aufgabe führt deine zuletzt eingefügte Kopie aus — nach jeder Änderung den Prompt also erneut kopieren.",
   open: "öffnen",
   noRoutines:
     "Noch keine Routinen — bitte deinen Coach um eine Check-in-Routine, dann entwirft er sie mit dir.",

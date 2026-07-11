@@ -688,6 +688,7 @@ describe("landing page setup guide", () => {
     expect(signedIn).toContain("Your routines");
     expect(signedIn).toContain("own-checkin");
     expect(signedIn).toContain("Review the week and flag anything odd.");
+    expect(signedIn).toContain("prompt updated"); // master-vs-pasted-copy drift hint
     expect(signedIn).toContain("Weekly Review"); // templates still listed below
 
     const anon = await (await fetch(`${base}/routines`)).text();

@@ -120,13 +120,20 @@ export function renderRoutines(
     const rows = ctx.tenants
       .open(auth.userId)
       .prepare(
-        "SELECT name, cadence, prompt, status FROM routines ORDER BY (status != 'active'), name",
+        "SELECT name, cadence, prompt, status, updated_at FROM routines ORDER BY (status != 'active'), name",
       )
-      .all() as Array<{ name: string; cadence: string; prompt: string; status: string }>;
+      .all() as Array<{
+      name: string;
+      cadence: string;
+      prompt: string;
+      status: string;
+      updated_at: string;
+    }>;
     const ownCards = rows
       .map(
         (r) => `<div class="card">
-<p><strong>${htmlEscape(r.name)}</strong> ${badge(r.status === "active" ? "ok" : "muted", r.status)} <span class="muted">· ${htmlEscape(r.cadence)}</span> — <a href="${base}/account/data/routines/edit?name=${encodeURIComponent(r.name)}">${t.ownEdit}</a></p>
+<p><strong>${htmlEscape(r.name)}</strong> ${badge(r.status === "active" ? "ok" : "muted", r.status)} <span class="muted">· ${htmlEscape(r.cadence)}</span> — <a href="${base}/account/data/routines/edit?name=${encodeURIComponent(r.name)}">${t.ownEdit}</a><br>
+<span class="muted">${t.ownUpdated} ${htmlEscape(r.updated_at)} UTC — ${t.ownUpdatedHint}</span></p>
 <details><summary class="muted">${t.ownShowPrompt}</summary><pre class="snippet">${htmlEscape(r.prompt)}</pre></details>
 </div>`,
       )
@@ -200,9 +207,9 @@ const EN = {
   routinesStep1:
     "<strong>Design it with your coach.</strong> In a normal conversation, say what you want (e.g. “a weekly check-in for my meal planning”). The coach designs the prompt with you — in your language, around your goal and timeframe — and stores it under Account → Routines.",
   routinesStep2:
-    "<strong>Schedule it in Claude.</strong> Create a scheduled task with the routine's cadence and paste the stored prompt (from the chat or from your account page).",
+    "<strong>Schedule it in Claude.</strong> Create a scheduled task with the routine's cadence and paste the stored prompt into it. The task runs that <em>pasted copy</em> — the routine stored here is the master, and the two are never synced automatically.",
   routinesStep3:
-    "<strong>Adjust anytime.</strong> Ask the coach to revise or retire a routine, then update the scheduled task with the new prompt.",
+    "<strong>Improve it anytime.</strong> Reply directly in a run's chat to try adjustments, then make the change permanent: ask your coach in a normal conversation (or edit the routine here), and paste the updated prompt into the scheduled task again — an edit here never reaches the scheduled task on its own.",
   routinesFooter:
     "Routines never ask questions, send at most one quiet all-clear line when there is nothing actionable, and each has a goal and a review point — no notification noise.",
   routinesTemplatesTitle: "Templates the coach draws from",
@@ -211,10 +218,12 @@ const EN = {
   routinesNoTemplates: "No templates available on this server.",
   ownTitle: "Your routines",
   ownIntro:
-    "Designed with your coach and stored here. Copy a prompt into a scheduled task in your Claude account (with the cadence shown); edit them on your data pages.",
+    "Designed with your coach. The routine stored here is the master copy; the Claude scheduled task runs whatever prompt you last pasted into it. After any change here, copy the prompt into the scheduled task again — nothing syncs automatically.",
   ownNone: "No routines yet — ask your coach to design a check-in with you.",
   ownEdit: "edit",
   ownShowPrompt: "Show prompt (copy & paste into a scheduled task)",
+  ownUpdated: "prompt updated",
+  ownUpdatedHint: "changed it since you scheduled it? Paste the prompt into the task again.",
   howTitle: "How it works",
   dataTitle: "Your data",
   dataBody:
@@ -254,9 +263,9 @@ const DE: typeof EN = {
   routinesStep1:
     "<strong>Mit dem Coach entwerfen.</strong> Sag in einer normalen Unterhaltung, was du willst (z. B. „einen wöchentlichen Check-in für meine Essensplanung“). Der Coach entwirft den Prompt mit dir — in deiner Sprache, um dein Ziel und deinen Zeitrahmen herum — und speichert ihn unter Account → Routines.",
   routinesStep2:
-    "<strong>In Claude planen.</strong> Eine geplante Aufgabe mit dem Rhythmus der Routine anlegen und den gespeicherten Prompt einfügen (aus dem Chat oder von deiner Account-Seite).",
+    "<strong>In Claude planen.</strong> Eine geplante Aufgabe mit dem Rhythmus der Routine anlegen und den gespeicherten Prompt einfügen. Die Aufgabe führt diese <em>eingefügte Kopie</em> aus — die hier gespeicherte Routine ist das Original, und beide werden nie automatisch synchronisiert.",
   routinesStep3:
-    "<strong>Jederzeit anpassen.</strong> Bitte den Coach, eine Routine zu überarbeiten oder stillzulegen, und aktualisiere dann die geplante Aufgabe mit dem neuen Prompt.",
+    "<strong>Jederzeit verbessern.</strong> Antworte direkt im Chat eines Laufs, um Anpassungen auszuprobieren, und mach die Änderung dann dauerhaft: bitte deinen Coach in einer normalen Unterhaltung (oder bearbeite die Routine hier) — und füge den aktualisierten Prompt erneut in die geplante Aufgabe ein. Eine Änderung hier erreicht die geplante Aufgabe nie von selbst.",
   routinesFooter:
     "Routinen stellen keine Fragen, melden ohne Handlungsbedarf höchstens eine kurze Entwarnungszeile und haben je ein Ziel und einen Review-Punkt — kein Benachrichtigungslärm.",
   routinesTemplatesTitle: "Vorlagen, aus denen der Coach schöpft",
@@ -265,10 +274,12 @@ const DE: typeof EN = {
   routinesNoTemplates: "Auf diesem Server sind keine Vorlagen verfügbar.",
   ownTitle: "Deine Routinen",
   ownIntro:
-    "Mit deinem Coach entworfen und hier gespeichert. Kopiere einen Prompt in eine geplante Aufgabe in deinem Claude-Konto (mit dem angegebenen Rhythmus); bearbeiten kannst du sie auf deinen Daten-Seiten.",
+    "Mit deinem Coach entworfen. Die hier gespeicherte Routine ist das Original; die geplante Aufgabe in Claude führt den Prompt aus, den du zuletzt eingefügt hast. Nach jeder Änderung hier den Prompt erneut in die geplante Aufgabe kopieren — nichts synchronisiert sich automatisch.",
   ownNone: "Noch keine Routinen — bitte deinen Coach, einen Check-in mit dir zu entwerfen.",
   ownEdit: "bearbeiten",
   ownShowPrompt: "Prompt anzeigen (kopieren & als geplante Aufgabe einfügen)",
+  ownUpdated: "Prompt geändert",
+  ownUpdatedHint: "seit dem Einplanen geändert? Prompt erneut in die Aufgabe einfügen.",
   howTitle: "So funktioniert es",
   dataTitle: "Deine Daten",
   dataBody:
