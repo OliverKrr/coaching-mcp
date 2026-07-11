@@ -647,7 +647,7 @@ const ACCOUNT_EN = {
   keysNote:
     "Keys are stored encrypted, are never shown again, and are removed with your account. New Claude conversations pick changes up immediately.",
   telegramIntro:
-    "Connect the server's Telegram bot and it will message you when your storage quota changes. It never messages you unasked otherwise.",
+    "Connect the server's Telegram bot: it notifies you about your access and storage quota, your coach can push scheduled check-in summaries to your phone, and anything you text the bot lands in your coaching journal for the next session.",
   telegramConnect: "Connect on Telegram →",
   telegramUnlink: "Disconnect Telegram",
   gwTitle: "Connected MCP servers",
@@ -731,7 +731,7 @@ const ACCOUNT_DE: AccountStrings = {
   keysNote:
     "Keys werden verschlüsselt gespeichert, nie wieder angezeigt und mit deinem Account gelöscht. Neue Claude-Unterhaltungen übernehmen Änderungen sofort.",
   telegramIntro:
-    "Verbinde den Telegram-Bot dieses Servers, dann meldet er sich, wenn sich dein Speicherkontingent ändert. Ungefragt schreibt er dir sonst nie.",
+    "Verbinde den Telegram-Bot dieses Servers: er informiert dich über Zugang und Speicherkontingent, dein Coach kann geplante Check-in-Zusammenfassungen aufs Handy schicken, und alles, was du dem Bot schreibst, landet für die nächste Session in deinem Coaching-Journal.",
   telegramConnect: "Auf Telegram verbinden →",
   telegramUnlink: "Telegram trennen",
   gwTitle: "Verbundene MCP-Server",

@@ -23,6 +23,10 @@ export const MCP_BODY_MAX_BYTES = 2 * 1024 * 1024;
 export const QUOTA_WARN_RATIO = 0.8;
 /** Per-user MCP write budget — generous for sessions, stops runaway loops. */
 export const WRITES_PER_MINUTE = 60;
+/** Telegram quick-captures per user — humans type; bots hammering get cut. */
+export const TELEGRAM_CAPTURES_PER_HOUR = 30;
+/** notify_user messages per user per day — check-ins, not a spam channel. */
+export const TELEGRAM_NOTIFY_PER_DAY = 20;
 
 /**
  * Bound per MCP session in serve mode and handed to the write tools; absent in

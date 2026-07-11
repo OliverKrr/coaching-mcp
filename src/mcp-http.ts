@@ -22,6 +22,7 @@ import {
   formatMb,
   MCP_BODY_MAX_BYTES,
   quotaBytesForUser,
+  TELEGRAM_NOTIFY_PER_DAY,
   WRITES_PER_MINUTE,
   type WriteLimits,
 } from "./quota.js";
@@ -54,6 +55,8 @@ export class McpSessionManager {
   private readonly sessions = new Map<string, McpSession>();
   /** Per-user write budget, shared across all of a user's sessions. */
   private readonly writeLimiter = new RateLimiter(WRITES_PER_MINUTE, 60_000);
+  /** Per-user daily notify_user budget — a check-in channel, not a firehose. */
+  private readonly notifyLimiter = new RateLimiter(TELEGRAM_NOTIFY_PER_DAY, 24 * 60 * 60 * 1000);
 
   constructor(private readonly ctx: ServeContext) {}
 
@@ -135,6 +138,11 @@ export class McpSessionManager {
     registerRoutineTools(server, db, limits);
     registerTopicTools(server, this.ctx.cfg.seedDir);
     this.registerQuotaRequestTool(server, db, auth.userId);
+    // Structural opt-in like the integrations: the tool exists only when the
+    // user linked their Telegram chat (and the operator configured a bot).
+    if (this.ctx.notify.telegram && user?.telegram_chat_id) {
+      this.registerNotifyUserTool(server, auth.userId);
+    }
 
     // Opt-in integrations: tools appear only for users who connected the
     // service on their account page — each user acts with their own key.
@@ -207,6 +215,53 @@ export class McpSessionManager {
               "The operator decides manually — usually within a day. Tell the user their request is on its way.",
           );
         }),
+    );
+  }
+
+  /**
+   * Send the user a Telegram message — registered only for users who linked
+   * their chat. The headline use: a scheduled routine run delivers its
+   * check-in or summary straight to the phone.
+   */
+  private registerNotifyUserTool(server: McpServer, userId: string): void {
+    server.registerTool(
+      "notify_user",
+      {
+        description:
+          "Send the user a Telegram message from their coaching server's bot. Use it to deliver " +
+          "a scheduled routine's final check-in or summary to their phone, or a short " +
+          "safety-relevant flag. Plain text only; keep it self-contained (it arrives as a push " +
+          "notification, hours away from any conversation). Not a chat channel — the user " +
+          "cannot reply to the coaching session through it.",
+        inputSchema: {
+          message: z
+            .string()
+            .min(1)
+            .max(4096)
+            .describe("The message, in the user's preferred language; first line ≤70 chars"),
+        },
+      },
+      async ({ message }) => {
+        const bot = this.ctx.notify.telegram;
+        const user = getUser(this.ctx.authDb, userId);
+        if (!bot || !user?.telegram_chat_id) {
+          return toolError("the user has no linked Telegram chat");
+        }
+        if (!this.notifyLimiter.allowKey(userId)) {
+          return toolError(
+            `daily Telegram message budget reached (${TELEGRAM_NOTIFY_PER_DAY}/day) — the message was NOT sent`,
+          );
+        }
+        try {
+          await bot.sendMessage(user.telegram_chat_id, message);
+        } catch (err) {
+          return toolError(
+            `Telegram delivery failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+        this.ctx.log(`notify_user delivered for ${userId}`);
+        return toolText("Message delivered to the user's Telegram.");
+      },
     );
   }
 

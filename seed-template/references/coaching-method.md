@@ -69,3 +69,7 @@ Delivery mechanics — how a scheduled-task run actually reaches the person:
 - **Leave the door open.** The run's chat stays usable with the same tools — close with one
   short clause inviting a reply for detail or adjustment ("Reply here to adjust."). An
   invitation, not a question that demands an answer.
+- **Mirror to Telegram when offered.** If a `notify_user` tool is available (the person linked
+  Telegram), send the same final push there too — verbatim, no second draft, after composing
+  it. If the tool is absent, the person has not opted in; never mention the omission. Telegram
+  is delivery only — replies to the bot land in the journal, not in this run's chat.

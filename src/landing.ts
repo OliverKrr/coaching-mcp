@@ -210,15 +210,15 @@ const EN = {
     '<strong>Fitness data:</strong> connect your training platform so the coach sees real load, wellness, and plans — e.g. intervals.icu via an MCP connector such as <a href="https://icusync.icu/" target="_blank" rel="noopener noreferrer">IcuSync</a>. Attach it on your account page under <em>Connected MCP servers</em> and its tools ride along in this one connector — so this works even on Claude plans that allow only a single custom connector. (You sign in to that service as yourself, with your own account there; on paid Claude plans you can alternatively add it as a second connector directly.) Coaching works without it; data-driven check-ins work better with it.',
   optionalHevy:
     "<strong>Strength logging (Hevy):</strong> connect your own Hevy account on the account page (Integrations — requires Hevy Pro) and the coach can read your workouts and manage routines directly.",
-  telegramTitle: "Telegram notifications (optional)",
+  telegramTitle: "Telegram (optional): notifications, coach pushes & quick capture",
   telegramIntro:
-    "This server can message you on Telegram when something needs no waiting: the moment your access is approved, and when your storage quota changes. Strictly opt-in — the bot can only ever message you after <em>you</em> start the chat, and it never messages you unasked otherwise. Connecting:",
+    "Connect the server's Telegram bot and three things start working: you are notified the moment your access is approved (and when your storage quota changes), your coach can deliver scheduled check-in summaries straight to your phone, and <strong>anything you text the bot lands in your coaching journal</strong> — jot down a thought on the go and your coach picks it up at the next session. Strictly opt-in — the bot can only ever message you after <em>you</em> start the chat. Connecting:",
   telegramStep1:
     '<strong>Open your personal connect link.</strong> It is on the confirmation page after your first sign-in, and anytime on your <a href="%ACCOUNT%">account page</a> (Profile → Telegram).',
   telegramStep2:
     "<strong>Press <em>Start</em></strong> in the Telegram chat that opens (works in the app and on the web). The bot confirms the connection.",
   telegramStep3:
-    "<strong>Done.</strong> No phone number or Telegram profile data reaches this server — the link only tells the bot where to send your notifications. Disconnect anytime on your account page.",
+    "<strong>Done.</strong> No phone number or Telegram profile data reaches this server — the link only tells the bot which coaching account your chat belongs to. Bot chats travel through Telegram's servers (not end-to-end encrypted), so treat captures like any normal chat message. Disconnect anytime on your account page.",
   telegramNote:
     "The connect link only appears when the operator has set up a Telegram bot for this server.",
   routinesTitle: "Automatic check-ins (optional)",
@@ -277,15 +277,15 @@ const DE: typeof EN = {
     '<strong>Fitness-Daten:</strong> verbinde deine Trainingsplattform, damit der Coach echte Belastung, Wellness und Pläne sieht — z. B. intervals.icu über einen MCP-Connector wie <a href="https://icusync.icu/" target="_blank" rel="noopener noreferrer">IcuSync</a>. Hänge ihn auf deiner Account-Seite unter <em>Connected MCP servers</em> an, dann laufen seine Tools in diesem einen Connector mit — das funktioniert also auch mit Claude-Tarifen, die nur einen einzigen eigenen Connector erlauben. (Du meldest dich bei dem Dienst als du selbst an, mit deinem eigenen Konto dort; mit bezahltem Claude-Tarif kannst du ihn alternativ direkt als zweiten Connector hinzufügen.) Coaching funktioniert auch ohne; datengetriebene Check-ins werden damit deutlich besser.',
   optionalHevy:
     "<strong>Krafttraining (Hevy):</strong> verbinde dein eigenes Hevy-Konto auf der Account-Seite (Integrationen — erfordert Hevy Pro), dann kann der Coach deine Workouts lesen und Routinen direkt verwalten.",
-  telegramTitle: "Telegram-Benachrichtigungen (optional)",
+  telegramTitle: "Telegram (optional): Benachrichtigungen, Coach-Pushes & Quick Capture",
   telegramIntro:
-    "Dieser Server kann dir auf Telegram schreiben, wenn Warten unnötig ist: sobald dein Zugang freigeschaltet wird und wenn sich dein Speicherkontingent ändert. Strikt opt-in — der Bot kann dir überhaupt erst schreiben, nachdem <em>du</em> den Chat gestartet hast, und meldet sich sonst nie ungefragt. Verbinden:",
+    "Verbinde den Telegram-Bot dieses Servers, dann funktionieren drei Dinge: du wirst benachrichtigt, sobald dein Zugang freigeschaltet wird (und wenn sich dein Speicherkontingent ändert), dein Coach kann geplante Check-in-Zusammenfassungen direkt aufs Handy schicken, und <strong>alles, was du dem Bot schreibst, landet in deinem Coaching-Journal</strong> — unterwegs einen Gedanken festhalten, der Coach greift ihn in der nächsten Session auf. Strikt opt-in — der Bot kann dir überhaupt erst schreiben, nachdem <em>du</em> den Chat gestartet hast. Verbinden:",
   telegramStep1:
     '<strong>Öffne deinen persönlichen Verbindungslink.</strong> Er steht auf der Bestätigungsseite nach deiner ersten Anmeldung und jederzeit auf deiner <a href="%ACCOUNT%">Account-Seite</a> (Profil → Telegram).',
   telegramStep2:
     "<strong>Tippe auf <em>Start</em></strong> im Telegram-Chat, der sich öffnet (funktioniert in der App und im Web). Der Bot bestätigt die Verbindung.",
   telegramStep3:
-    "<strong>Fertig.</strong> Weder Telefonnummer noch Telegram-Profildaten erreichen diesen Server — der Link sagt dem Bot nur, wohin er deine Benachrichtigungen schicken soll. Trennen geht jederzeit auf der Account-Seite.",
+    "<strong>Fertig.</strong> Weder Telefonnummer noch Telegram-Profildaten erreichen diesen Server — der Link sagt dem Bot nur, zu welchem Coaching-Account dein Chat gehört. Bot-Chats laufen über Telegrams Server (nicht Ende-zu-Ende-verschlüsselt) — behandle Captures wie jede normale Chat-Nachricht. Trennen geht jederzeit auf der Account-Seite.",
   telegramNote:
     "Der Verbindungslink erscheint nur, wenn der Betreiber einen Telegram-Bot für diesen Server eingerichtet hat.",
   routinesTitle: "Automatische Check-ins (optional)",

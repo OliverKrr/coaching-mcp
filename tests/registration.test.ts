@@ -595,3 +595,80 @@ describe("storage quotas over MCP", () => {
     await client.close();
   });
 });
+
+describe("user-side Telegram: quick capture + notify_user", () => {
+  it("appends a linked user's plain text to their journal and confirms", async () => {
+    const res = await postWebhook(
+      {
+        message: {
+          message_id: 20,
+          chat: { id: CAROL_CHAT, type: "private" },
+          text: "Felt strong on today's run, knee was fine",
+        },
+      },
+      bot.webhookSecret,
+    );
+    expect(res.status).toBe(200);
+    const entry = ctx.tenants
+      .open(carolId)
+      .prepare("SELECT entry FROM journal ORDER BY id DESC LIMIT 1")
+      .get() as { entry: string };
+    expect(entry.entry).toBe("[via Telegram] Felt strong on today's run, knee was fine");
+    const reply = tgSends().at(-1)?.payload as { chat_id: unknown; text: string };
+    expect(String(reply.chat_id)).toBe(String(CAROL_CHAT));
+    expect(reply.text).toContain("Saved to your coaching journal");
+  });
+
+  it("explains itself to unlinked chats and on commands, writing nothing", async () => {
+    const before = (
+      ctx.tenants.open(carolId).prepare("SELECT COUNT(*) AS n FROM journal").get() as {
+        n: number;
+      }
+    ).n;
+
+    await postWebhook(
+      { message: { message_id: 21, chat: { id: 555, type: "private" }, text: "hello?" } },
+      bot.webhookSecret,
+    );
+    const strangerReply = tgSends().at(-1)?.payload as { chat_id: unknown; text: string };
+    expect(String(strangerReply.chat_id)).toBe("555");
+    expect(strangerReply.text).toContain("not connected");
+
+    await postWebhook(
+      { message: { message_id: 22, chat: { id: CAROL_CHAT, type: "private" }, text: "/help" } },
+      bot.webhookSecret,
+    );
+    const helpReply = tgSends().at(-1)?.payload as { text: string };
+    expect(helpReply.text).toContain("coaching journal");
+
+    const after = (
+      ctx.tenants.open(carolId).prepare("SELECT COUNT(*) AS n FROM journal").get() as {
+        n: number;
+      }
+    ).n;
+    expect(after).toBe(before);
+  });
+
+  it("registers notify_user only for linked users and delivers to their chat", async () => {
+    // admin never linked Telegram — no tool
+    const adminClient = await mcpClient((await oauthLogin(ADMIN)).access);
+    const adminTools = (await adminClient.listTools()).tools.map((t) => t.name);
+    expect(adminTools).not.toContain("notify_user");
+    await adminClient.close();
+
+    // carol linked — tool present, message lands in her chat
+    const client = await mcpClient((await oauthLogin(CAROL)).access);
+    expect((await client.listTools()).tools.map((t) => t.name)).toContain("notify_user");
+    const result = toolText(
+      await client.callTool({
+        name: "notify_user",
+        arguments: { message: "Weekly check-in: all green — easy week ahead." },
+      }),
+    );
+    expect(result).toContain("delivered");
+    const sent = tgSends().at(-1)?.payload as { chat_id: unknown; text: string };
+    expect(String(sent.chat_id)).toBe(String(CAROL_CHAT));
+    expect(sent.text).toContain("Weekly check-in");
+    await client.close();
+  });
+});

@@ -1,9 +1,24 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { consumeTelegramLinkToken, deleteQuotaRequest, setUserTelegramChat } from "./auth/db.js";
+import {
+  consumeTelegramLinkToken,
+  deleteQuotaRequest,
+  findUserByTelegramChat,
+  setUserTelegramChat,
+} from "./auth/db.js";
 import type { ServeContext } from "./context.js";
 import { readBody, sendJson } from "./http-util.js";
 import { approveUser, grantQuota, rejectUser } from "./membership.js";
+import {
+  contentBytes,
+  quotaBytesForUser,
+  quotaExceededMessage,
+  TELEGRAM_CAPTURES_PER_HOUR,
+} from "./quota.js";
+import { RateLimiter } from "./ratelimit.js";
 import type { TelegramBot, TelegramUpdate } from "./telegram.js";
+
+/** Per-user quick-capture budget, shared across the process like authRateLimiter. */
+const captureRateLimiter = new RateLimiter(TELEGRAM_CAPTURES_PER_HOUR, 60 * 60 * 1000);
 
 /**
  * POST /telegram/webhook — updates from the Telegram Bot API. Two layers of
@@ -92,21 +107,80 @@ async function handleMessage(
   bot: TelegramBot,
   msg: NonNullable<TelegramUpdate["message"]>,
 ): Promise<void> {
-  if (msg.chat.type !== "private" || !msg.text?.startsWith("/start")) return;
-  const token = msg.text.split(" ")[1];
+  if (msg.chat.type !== "private") return;
   const chatId = String(msg.chat.id);
-  const userId = token ? consumeTelegramLinkToken(ctx.authDb, token) : undefined;
-  if (userId) {
-    setUserTelegramChat(ctx.authDb, userId, chatId);
-    ctx.log(`telegram linked for ${userId}`);
-    await bot.sendMessage(
-      chatId,
-      "Connected. You will get a message here when your access is approved or your storage quota changes.",
-    );
-  } else {
-    await bot.sendMessage(
-      chatId,
-      "This bot delivers notifications for a coaching server. To connect your account, use the personal link shown on the server's pages — this one is missing or expired.",
-    );
+
+  if (msg.text?.startsWith("/start")) {
+    const token = msg.text.split(" ")[1];
+    const userId = token ? consumeTelegramLinkToken(ctx.authDb, token) : undefined;
+    if (userId) {
+      setUserTelegramChat(ctx.authDb, userId, chatId);
+      ctx.log(`telegram linked for ${userId}`);
+      await bot.sendMessage(
+        chatId,
+        "Connected. You will get a message here about your access and storage quota, and your coach can send you check-in summaries. Anything you write me lands in your coaching journal for the next session.",
+      );
+    } else {
+      await bot.sendMessage(
+        chatId,
+        "This bot delivers notifications for a coaching server. To connect your account, use the personal link shown on the server's pages — this one is missing or expired.",
+      );
+    }
+    return;
   }
+
+  await captureToJournal(ctx, bot, chatId, msg.text);
+}
+
+/**
+ * Quick capture: a plain text from a linked, active user is appended to their
+ * coaching journal — an LLM-free inbox the coach reads at the next session
+ * start. Everything else gets a short explanation instead of silence.
+ */
+async function captureToJournal(
+  ctx: ServeContext,
+  bot: TelegramBot,
+  chatId: string,
+  text: string | undefined,
+): Promise<void> {
+  const user = findUserByTelegramChat(ctx.authDb, chatId);
+  if (!user) {
+    await bot.sendMessage(
+      chatId,
+      "This chat is not connected to a coaching account. Use the personal link on the server's pages to connect it.",
+    );
+    return;
+  }
+  if (user.status !== "active") {
+    await bot.sendMessage(chatId, "Your coaching access is not active — nothing was saved.");
+    return;
+  }
+  if (!text?.trim() || text.startsWith("/")) {
+    await bot.sendMessage(
+      chatId,
+      "Send me a plain text message and I will save it to your coaching journal — your coach reads it at the next session. (Photos and commands are not supported.)",
+    );
+    return;
+  }
+  if (!captureRateLimiter.allowKey(user.id)) {
+    await bot.sendMessage(
+      chatId,
+      `Capture limit reached (${TELEGRAM_CAPTURES_PER_HOUR}/hour) — try again later.`,
+    );
+    return;
+  }
+  const entry = `[via Telegram] ${text.trim()}`;
+  const db = ctx.tenants.open(user.id);
+  const usage = contentBytes(db);
+  const quotaBytes = quotaBytesForUser(user, ctx.cfg.quotaDefaultMb);
+  if (usage + entry.length > quotaBytes) {
+    await bot.sendMessage(chatId, `Not saved — ${quotaExceededMessage(usage, quotaBytes)}`);
+    return;
+  }
+  db.prepare("INSERT INTO journal(entry) VALUES (?)").run(entry);
+  ctx.log(`telegram capture saved for ${user.id}`);
+  await bot.sendMessage(
+    chatId,
+    "Saved to your coaching journal — your coach will see it at the next session.",
+  );
 }

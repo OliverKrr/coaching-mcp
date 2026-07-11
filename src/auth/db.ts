@@ -279,6 +279,12 @@ export function findUserByEmail(db: Database.Database, email: string): User | un
   return db.prepare("SELECT * FROM users WHERE email = ?").get(email) as User | undefined;
 }
 
+export function findUserByTelegramChat(db: Database.Database, chatId: string): User | undefined {
+  return db.prepare("SELECT * FROM users WHERE telegram_chat_id = ?").get(chatId) as
+    | User
+    | undefined;
+}
+
 /** Remove the user row plus everything keyed to it (tokens, sessions). */
 export function deleteUser(db: Database.Database, id: string): void {
   db.transaction(() => {

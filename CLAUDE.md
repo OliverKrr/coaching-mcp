@@ -56,7 +56,7 @@ src/membership.ts   resolveLogin decision tree + status transitions (approve/rej
 src/admin.ts        /admin operator console (ADMIN_EMAILS-gated, 404 otherwise, English-only): requests, quotas, users
 src/notify.ts       NotifyService: best-effort Telegram + NOTIFY_URL webhook fan-out; never blocks logins/writes
 src/telegram.ts     minimal Bot API client; per-boot webhook secret, setWebhook/getMe on boot
-src/telegram-webhook.ts  POST /telegram/webhook: secret header + admin-chat check → membership callbacks; /start deep-link linking
+src/telegram-webhook.ts  POST /telegram/webhook: secret header + admin-chat check → membership callbacks; /start deep-link linking; quick-capture (linked user's text → journal)
 src/quota.ts        storage limits: content_bytes counter access, caps, checkWrite ladder, usage warnings
 src/tenancy.ts      TenantManager: DATA_DIR/users/<id>/skill.db, lazy open/cache, delete
 src/account.ts      /account router (session + CSRF for all account routes): profile, zip export (fflate), delete
@@ -110,6 +110,7 @@ which must be backed up alongside per-user snapshots or a restore can't reconstr
 | `save_routine`                        | write     | Upsert a routine (name, cadence, prompt, status; status kept when omitted)     |
 | `delete_routine`                      | write     | Delete a stored routine (confirm=true)                                         |
 | `request_quota_increase`              | write     | Ask the operator for more storage with a reason (serve mode, per-session)      |
+| `notify_user`                         | write     | Telegram message to the user (per-session, only when their chat is linked)     |
 | `get_version`                         | read      | Build info + per-table statistics + storage usage vs. quota                    |
 
 ## Environment variables (serve mode)
@@ -182,7 +183,13 @@ everything the buttons can. Webhook auth is two-layered: a per-boot random `secr
 announced via `setWebhook` (no persisted secret) proves the sender is Telegram, and membership
 actions additionally require `callback_query.from.id` to equal `TELEGRAM_ADMIN_CHAT_ID`.
 User-side messages are strictly opt-in via `/start` deep-link tokens (stored hashed, single
-use) — bots cannot initiate chats, and this design keeps it that way.
+use) — bots cannot initiate chats, and this design keeps it that way. Once linked, the channel
+carries three things: server notifications, the per-session `notify_user` tool (registered only
+for linked users, daily budget `TELEGRAM_NOTIFY_PER_DAY`), and **quick capture** — a linked
+active user's plain text becomes a `[via Telegram] …` journal entry (LLM-free, quota-checked,
+`TELEGRAM_CAPTURES_PER_HOUR` budget); everything else gets a short explanatory reply, never
+silence. The seeded coaching-method reference instructs the assistant to mirror routine pushes
+via `notify_user` when present and never mention it when absent.
 
 **Quotas count stored content, transactionally**: the per-user `meta.content_bytes` counter is
 maintained by `*_bytes_*` triggers (same pattern as the FTS triggers — do not remove them) and
