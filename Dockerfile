@@ -60,9 +60,13 @@ RUN test -L /usr/local/bin/coaching-mcp \
 # the template (placeholders + onboarding interview for the connected assistant).
 COPY --chown=nonroot:nonroot seed-template/ /seed/
 
-# /data  — SQLite database (persistent volume, survives restarts)
-# /seed  — seed data; defaults to the baked-in template, override by mounting
-VOLUME ["/data", "/seed"]
+# /data — SQLite database (persistent volume, survives restarts).
+# /seed is deliberately NOT declared as a volume: a VOLUME directive would make
+# Docker snapshot it into an anonymous volume on first container creation and
+# keep serving that stale copy across every later image rebuild (topic packs
+# and template updates would silently never arrive). Operators who want their
+# own seed bind-mount over /seed; everyone else gets the current baked-in copy.
+VOLUME ["/data"]
 ENV DATA_DIR=/data \
     SEED_DIR=/seed
 
