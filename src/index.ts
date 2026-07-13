@@ -9,6 +9,7 @@ import { registerOpenItemsTools } from "./tools/openitems.js";
 import { registerOpsTools } from "./tools/ops.js";
 import { registerReadTools } from "./tools/read.js";
 import { registerRoutineTools } from "./tools/routines.js";
+import { registerSeedUpdateTools } from "./tools/seed-updates.js";
 import { registerWriteTools } from "./tools/write.js";
 import { registerTopicTools } from "./topics.js";
 import { SERVER_INSTRUCTIONS, VERSION } from "./version.js";
@@ -31,15 +32,17 @@ async function main(): Promise<void> {
     { name: "coaching-mcp", version: VERSION },
     { instructions: SERVER_INSTRUCTIONS },
   );
-  registerReadTools(server, db);
+  const seedDir = process.env.SEED_DIR ?? "/seed";
+  registerReadTools(server, db, undefined, seedDir);
   registerWriteTools(server, db);
   registerEditTools(server, db);
   registerHistoryTools(server, db);
-  registerOpsTools(server, db);
+  registerOpsTools(server, db, undefined, seedDir);
   registerDeleteTools(server, db);
   registerOpenItemsTools(server, db);
   registerRoutineTools(server, db);
-  registerTopicTools(server, process.env.SEED_DIR ?? "/seed");
+  registerTopicTools(server, seedDir);
+  registerSeedUpdateTools(server, db, seedDir, undefined, log);
   log("tools registered");
 
   log("connecting stdio transport…");

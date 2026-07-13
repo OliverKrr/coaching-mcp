@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { CHANGES_TABLE_SQL, pruneChanges } from "./history.js";
+import { latestUpdateId, loadSeedUpdates, setAppliedUpdateId } from "./seed-updates.js";
 
 export type Section = { name: string; content: string; updated_at: string };
 export type Reference = { name: string; content: string; updated_at: string };
@@ -267,5 +268,9 @@ export function seedFromDirectory(db: Database.Database, seedDir: string): void 
     for (const file of refFiles) {
       insertRef.run(file.replace(/\.md$/, ""), readFileSync(join(refsDir, file), "utf-8"));
     }
+    // Stamp the seed-update watermark: a freshly onboarded user is current by
+    // definition and must never be told to apply ledger entries that predate
+    // their own seeding. Pre-feature DBs lack the key and read as 0.
+    setAppliedUpdateId(db, latestUpdateId(loadSeedUpdates(seedDir) ?? []));
   })();
 }

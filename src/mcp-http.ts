@@ -34,6 +34,7 @@ import { registerOpenItemsTools } from "./tools/openitems.js";
 import { registerOpsTools } from "./tools/ops.js";
 import { registerReadTools } from "./tools/read.js";
 import { registerRoutineTools } from "./tools/routines.js";
+import { registerSeedUpdateTools } from "./tools/seed-updates.js";
 import { registerWriteTools } from "./tools/write.js";
 import { registerTopicTools } from "./topics.js";
 import { toolError, toolText, withErrorHandling } from "./utils/errors.js";
@@ -132,15 +133,16 @@ export class McpSessionManager {
     };
 
     const server = new McpServer({ name: "coaching-mcp", version: VERSION }, { instructions });
-    registerReadTools(server, db, limits);
+    registerReadTools(server, db, limits, this.ctx.cfg.seedDir);
     registerWriteTools(server, db, limits);
     registerEditTools(server, db, limits);
     registerHistoryTools(server, db);
-    registerOpsTools(server, db, limits);
+    registerOpsTools(server, db, limits, this.ctx.cfg.seedDir);
     registerDeleteTools(server, db);
     registerOpenItemsTools(server, db, limits);
     registerRoutineTools(server, db, limits);
     registerTopicTools(server, this.ctx.cfg.seedDir);
+    registerSeedUpdateTools(server, db, this.ctx.cfg.seedDir, limits, this.ctx.log);
     this.registerQuotaRequestTool(server, db, auth.userId);
     // Structural opt-in like the integrations: the tool exists only when the
     // user linked their Telegram chat (and the operator configured a bot).

@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { historyBytes } from "../history.js";
 import { contentBytes, type WriteLimits } from "../quota.js";
+import { appliedUpdateId, latestUpdateId, loadSeedUpdates } from "../seed-updates.js";
 import { toolText, withErrorHandling } from "../utils/errors.js";
 
 function loadVersion(): string {
@@ -29,6 +30,7 @@ export function registerOpsTools(
   server: McpServer,
   db: Database.Database,
   limits?: WriteLimits,
+  seedDir?: string,
 ): void {
   server.registerTool(
     "get_version",
@@ -60,6 +62,7 @@ export function registerOpsTools(
           // in-memory db (tests) — leave at 0
         }
         const storageBytes = contentBytes(db);
+        const seedUpdates = seedDir !== undefined ? loadSeedUpdates(seedDir) : null;
         const info = {
           name: "coaching-mcp",
           version: PACKAGE_VERSION,
@@ -73,6 +76,12 @@ export function registerOpsTools(
           db_size_bytes: dbSizeBytes,
           storage_bytes: storageBytes,
           history_bytes: historyBytes(db),
+          ...(seedUpdates !== null
+            ? {
+                seed_updates_latest: latestUpdateId(seedUpdates),
+                seed_updates_applied: appliedUpdateId(db),
+              }
+            : {}),
           ...(limits
             ? {
                 storage_quota_bytes: limits.quotaBytes,

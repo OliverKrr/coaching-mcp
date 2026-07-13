@@ -3,6 +3,7 @@ import type Database from "better-sqlite3";
 import { z } from "zod";
 import type { JournalEntry, Reference, Section } from "../db.js";
 import { usageWarning, type WriteLimits } from "../quota.js";
+import { loadSeedUpdates, pendingUpdates } from "../seed-updates.js";
 import { toolText, withErrorHandling } from "../utils/errors.js";
 import { sanitizeFtsQuery, formatSearchHits, type SearchHit } from "../utils/search.js";
 
@@ -10,6 +11,7 @@ export function registerReadTools(
   server: McpServer,
   db: Database.Database,
   limits?: WriteLimits,
+  seedDir?: string,
 ): void {
   server.registerTool(
     "get_coaching_context",
@@ -25,7 +27,20 @@ export function registerReadTools(
       // Session-start is where a near-quota warning reaches the agent earliest.
       const warning = usageWarning(db, limits);
       const context = row?.content ?? "No coaching context found. Database may not be seeded.";
-      return toolText(warning ? `${warning.trim()}\n\n---\n\n${context}` : context);
+      // Seed-update nudge: a tool agents merely COULD call is never called —
+      // this line, on the one tool every session starts with, is what makes
+      // the update protocol structural rather than optional.
+      let notice = "";
+      if (seedDir !== undefined) {
+        const updates = loadSeedUpdates(seedDir);
+        if (updates !== null) {
+          const pending = pendingUpdates(db, updates).length;
+          if (pending > 0) {
+            notice = `\n\n---\n\n⚠ Seed guidance updates pending (${pending}) — call get_seed_updates and merge them per their Apply level before continuing.`;
+          }
+        }
+      }
+      return toolText((warning ? `${warning.trim()}\n\n---\n\n${context}` : context) + notice);
     },
   );
 

@@ -68,6 +68,7 @@ src/gateways.ts     per-user MCP gateway: users attach upstream MCP servers on /
 src/ratelimit.ts    fixed-window per-IP limiter guarding the auth endpoints
 src/db.ts           coaching DB schema: sections, refs, journal, open_items, routines, changes + FTS5 (per user)
 src/history.ts      change-history delta log: schema, logEdit/logReplace, block diff, retention pruning
+src/seed-updates.ts seed-update ledger (SEED_DIR/UPDATES.md) parser + per-user applied-watermark
 src/tools/*.ts      the MCP tools — take (server, db); deliberately user-agnostic
 src/topics.ts       topic-pack loader (SEED_DIR/topics/<id>/) + list_topic_packs/get_topic_pack
 src/snapshot.ts / restore.ts / backup-db.ts + *-cli.ts   operational CLIs
@@ -80,6 +81,10 @@ Seed data flow (per user, first login only): `/seed/SKILL.md` → sections(name=
 `/seed/references/*.md` → refs. After that, all writes go through the MCP tools.
 `/seed/topics/**` is **never auto-seeded** — packs are delivered by `get_topic_pack` and
 instantiated by the assistant through the normal write tools during onboarding.
+**Editing `seed-template/` content that onboarded users should receive requires a matching
+entry in `seed-template/UPDATES.md` in the same commit** (see "Seed updates propagate
+agent-mediated" below) — seeding never re-runs, so the ledger is the only path to existing
+users.
 
 `coaching-mcp-restore` (inverse of `coaching-mcp-snapshot`) upserts `sections`/`refs` from a seed
 dir into a live DB; it preserves `journal` + `open_items` and has a timestamp clobber guard
@@ -109,6 +114,8 @@ which must be backed up alongside per-user snapshots or a restore can't reconstr
 | `list_open_items`                     | read      | List open commitments/flags (defaults to status=open) — call at session start  |
 | `resolve_open_item`                   | write     | Close an open item (done/dismissed) with an optional note                      |
 | `list_topic_packs` / `get_topic_pack` | read      | Installable coaching topics: interview + skeletons + routine templates         |
+| `get_seed_updates`                    | read      | Pending seed-template updates: curated merge instructions for the assistant    |
+| `mark_seed_updates_applied`           | write     | Advance the per-user seed-update watermark after merging (partial ok)          |
 | `list_routines` / `get_routine`       | read      | Stored scheduled-routine prompts (users copy them into Claude scheduled tasks) |
 | `save_routine`                        | write     | Upsert a routine (name, cadence, prompt, status; status kept when omitted)     |
 | `delete_routine`                      | write     | Delete a stored routine (confirm=true)                                         |
@@ -148,6 +155,17 @@ complete when adding write paths. History rows are deliberately NOT counted in `
 open (`HISTORY_*` env vars). The MCP surface is read-only (`list_changes`/`get_change`);
 recovery re-applies content through the normal write tools, and purging history is a
 human-only account-page action.
+
+**Seed updates propagate agent-mediated, never mechanically**: seeded documents are
+personalized instantiations, so template changes cannot be pushed server-side. The seed dir's
+`UPDATES.md` ledger (monotonic integer ids, `Apply: auto|propose`, instructions written FOR the
+assistant) is compared against the per-user `meta['seed_updates_applied']` watermark —
+**stamped to the latest id inside the seeding transaction**, so fresh users start current and
+pre-feature DBs (no key → 0) see every entry exactly once. The protocol is self-carrying:
+guidance lives in the `get_coaching_context` pending notice and the `get_seed_updates`
+preamble, never in seeded docs (which predate the updates they deliver). No `UPDATES.md` →
+feature dormant (tools unregistered — the structural-opt-in pattern). Merges go through the
+normal write tools, so change history makes them recoverable.
 
 **Web edits mirror the MCP tool semantics**: the account editor enforces the same rules as the
 tools (`main` undeletable, open-item statuses open/done/dismissed, routine statuses
