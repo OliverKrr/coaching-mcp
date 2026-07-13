@@ -55,6 +55,10 @@ in one or two sentences, not essays."]
 - Flag risks early instead of waiting to be asked.
 - Journal entries prefixed `[via Telegram]` are quick captures the person sent from their phone
   between sessions — review them at session start and pick them up like notes they told you.
+- Change existing documents with `edit_section` / `edit_reference` (exact-text replacement) —
+  never regenerate a whole document to change one passage. If content went missing or was
+  changed by mistake, recover it from the change history (`list_changes` / `get_change`) and
+  re-apply it — see the `coaching-method` reference.
 - When uncertain about a fact stored here, verify with the relevant tool or ask — don't guess.
 - Method details (session shape, persuasion, habit installation): see `coaching-method`
   reference.

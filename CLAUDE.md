@@ -66,7 +66,8 @@ src/integrations/hevy.ts  Hevy API client + MCP tools, registered per-session on
 src/apps-proxy.ts   /apps/<name> authenticated reverse proxy (per-app email allowlist, HTML prefix rewriting)
 src/gateways.ts     per-user MCP gateway: users attach upstream MCP servers on /account; sessions mount their tools verbatim
 src/ratelimit.ts    fixed-window per-IP limiter guarding the auth endpoints
-src/db.ts           coaching DB schema: sections, refs, journal, open_items, routines + FTS5 (per user)
+src/db.ts           coaching DB schema: sections, refs, journal, open_items, routines, changes + FTS5 (per user)
+src/history.ts      change-history delta log: schema, logEdit/logReplace, block diff, retention pruning
 src/tools/*.ts      the MCP tools — take (server, db); deliberately user-agnostic
 src/topics.ts       topic-pack loader (SEED_DIR/topics/<id>/) + list_topic_packs/get_topic_pack
 src/snapshot.ts / restore.ts / backup-db.ts + *-cli.ts   operational CLIs
@@ -98,10 +99,12 @@ which must be backed up alongside per-user snapshots or a restore can't reconstr
 | `get_section` / `list_sections`       | read      | One section / all sections with metadata                                       |
 | `get_reference` / `list_references`   | read      | One reference doc / all references with metadata                               |
 | `get_journal`                         | read      | Recent journal entries, newest first                                           |
-| `update_section`                      | write     | Upsert a knowledge section (use `main` for SKILL.md)                           |
-| `update_reference`                    | write     | Upsert a reference doc                                                         |
+| `update_section`                      | write     | Create or fully rewrite a knowledge section (use `main` for SKILL.md)          |
+| `update_reference`                    | write     | Create or fully rewrite a reference doc                                        |
+| `edit_section` / `edit_reference`     | write     | Exact-string replacement inside a doc (old_string must match exactly once)     |
 | `append_journal`                      | write     | Append a coaching journal entry                                                |
-| `delete_section` / `delete_reference` | write     | Delete a doc (confirm=true; `main` protected)                                  |
+| `delete_section` / `delete_reference` | write     | Delete a doc (confirm=true; `main` protected; recoverable via change history)  |
+| `list_changes` / `get_change`         | read      | Change history: what edits/overwrites/deletes removed — for content recovery   |
 | `add_open_item`                       | write     | Record a commitment (if-then next action) or a de-duplicated flag              |
 | `list_open_items`                     | read      | List open commitments/flags (defaults to status=open) — call at session start  |
 | `resolve_open_item`                   | write     | Close an open item (done/dismissed) with an optional note                      |
@@ -120,8 +123,9 @@ which must be backed up alongside per-user snapshots or a restore can't reconstr
 (default open; `closed` = invite-only), `ALLOWED_EMAILS`/`ALLOWED_EMAILS_FILE` (bootstrap,
 skips approval), `TELEGRAM_BOT_TOKEN`/`TELEGRAM_ADMIN_CHAT_ID` (+ `TELEGRAM_API_BASE`
 tests-only), `NOTIFY_URL`, `QUOTA_DEFAULT_MB` (50), `DATA_DIR` (/data), `SEED_DIR` (/seed),
-`PORT` (8000), `ACCESS_TOKEN_TTL` (3600), `REFRESH_TOKEN_TTL` (7776000). Stdio mode uses only
-`DATA_DIR`/`SEED_DIR`.
+`PORT` (8000), `ACCESS_TOKEN_TTL` (3600), `REFRESH_TOKEN_TTL` (7776000), change-history
+retention `HISTORY_MAX_AGE_DAYS` (90) / `HISTORY_MAX_PER_DOC` (40) / `HISTORY_MAX_BYTES`
+(10 MiB). Stdio mode uses only `DATA_DIR`/`SEED_DIR` (+ the `HISTORY_*` retention vars).
 
 ## Key design decisions
 
@@ -131,6 +135,19 @@ sync with their base tables (`journal_au` arrived with web journal editing in v2
 is append-only over MCP but editable on the account page). Do not remove any trigger from
 `db.ts`; because `createSchema()` uses `CREATE TABLE/TRIGGER IF NOT EXISTS` on every open, new
 tables and triggers self-apply to existing per-user DBs (this is how v2 DBs gained `routines`).
+
+**Change history is a delta log, captured at two levels**: the per-user `changes` table records
+what every write REMOVED (edit → the verbatim old/new strings, overwrite → a block diff of the
+previous version, delete → the full old content). Deletes are captured by the `*_hist_ad`
+triggers in `db.ts` (same do-not-remove rule as the FTS/bytes trigger families — no code path
+can bypass them). Overwrites cannot be diffed in SQL, so **every overwrite path must call
+`logReplace` from `src/history.ts` in the same transaction as the write** — currently the write
+tools, the edit tools (`logEdit`), the account-data editor, and the restore CLI; keep that list
+complete when adding write paths. History rows are deliberately NOT counted in `content_bytes`
+(the safety net must not eat the quota) and are bounded instead by `pruneChanges` on every DB
+open (`HISTORY_*` env vars). The MCP surface is read-only (`list_changes`/`get_change`);
+recovery re-applies content through the normal write tools, and purging history is a
+human-only account-page action.
 
 **Web edits mirror the MCP tool semantics**: the account editor enforces the same rules as the
 tools (`main` undeletable, open-item statuses open/done/dismissed, routine statuses

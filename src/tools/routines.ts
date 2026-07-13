@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type Database from "better-sqlite3";
 import { z } from "zod";
 import { ROUTINE_STATUSES, type Routine } from "../db.js";
+import { logReplace } from "../history.js";
 import { checkWrite, ENTRY_MAX_BYTES, usageWarning, type WriteLimits } from "../quota.js";
 import { toolError, toolText, withErrorHandling } from "../utils/errors.js";
 
@@ -122,23 +123,25 @@ export function registerRoutineTools(
     },
     ({ name, cadence, prompt, status }) =>
       withErrorHandling("save_routine", () => {
-        const existing =
-          (
-            db.prepare("SELECT LENGTH(prompt) AS n FROM routines WHERE name = ?").get(name) as
-              | { n: number }
-              | undefined
-          )?.n ?? 0;
+        const existing = (
+          db.prepare("SELECT prompt FROM routines WHERE name = ?").get(name) as
+            | { prompt: string }
+            | undefined
+        )?.prompt;
         const refused = checkWrite(db, limits, {
           docBytes: prompt.length,
           docMax: ENTRY_MAX_BYTES,
-          deltaBytes: prompt.length - existing,
+          deltaBytes: prompt.length - (existing?.length ?? 0),
         });
         if (refused) return toolError(refused);
-        db.prepare(
-          "INSERT INTO routines(name, cadence, prompt, status) VALUES (?, ?, ?, COALESCE(?, 'active'))" +
-            " ON CONFLICT(name) DO UPDATE SET cadence=excluded.cadence, prompt=excluded.prompt," +
-            " status=COALESCE(?, routines.status), updated_at=datetime('now')",
-        ).run(name, cadence, prompt, status ?? null, status ?? null);
+        db.transaction(() => {
+          db.prepare(
+            "INSERT INTO routines(name, cadence, prompt, status) VALUES (?, ?, ?, COALESCE(?, 'active'))" +
+              " ON CONFLICT(name) DO UPDATE SET cadence=excluded.cadence, prompt=excluded.prompt," +
+              " status=COALESCE(?, routines.status), updated_at=datetime('now')",
+          ).run(name, cadence, prompt, status ?? null, status ?? null);
+          if (existing !== undefined) logReplace(db, "routine", name, existing, prompt, "mcp");
+        })();
         return toolText(
           `Routine '${name}' saved. Remind the user to paste the prompt into a Claude scheduled task (${cadence}) — it is also on their account page under Routines.${usageWarning(db, limits)}`,
         );
@@ -149,9 +152,10 @@ export function registerRoutineTools(
     "delete_routine",
     {
       description:
-        "Delete a stored routine permanently. Requires confirm=true. Prefer status='retired' via " +
-        "save_routine to keep the history; delete only on explicit user request. The user must " +
-        "remove the matching Claude scheduled task themselves.",
+        "Delete a stored routine. Requires confirm=true. Prefer status='retired' via " +
+        "save_routine to keep it visible; delete only on explicit user request. The deleted " +
+        "routine stays recoverable in change history (list_changes) for a limited retention " +
+        "window. The user must remove the matching Claude scheduled task themselves.",
       inputSchema: {
         name: z.string().min(1).describe("Routine name to delete"),
         confirm: z.literal(true).describe("Must be true to confirm destructive operation"),

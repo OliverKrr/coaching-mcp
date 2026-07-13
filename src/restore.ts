@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { ensureChangesSchema, logReplace } from "./history.js";
 
 export type RestoreOptions = {
   db: string;
@@ -32,7 +33,13 @@ export type RestoreResult = {
   forced: boolean;
 };
 
-type WorkItem = { table: "sections" | "refs"; name: string; content: string };
+type WorkItem = {
+  table: "sections" | "refs";
+  name: string;
+  content: string;
+  /** Live content this item overwrites — logged to change history. Absent on creates. */
+  oldContent?: string;
+};
 type Row = { content: string; updated_at: string } | undefined;
 type SeedManifest = { sections: Record<string, string>; refs: Record<string, string> };
 
@@ -164,6 +171,7 @@ export function runRestore(opts: RestoreOptions): RestoreResult {
         continue;
       }
       // Content differs → it would overwrite. Guard it against the manifest, if present.
+      item.oldContent = existing.content;
       if (manifest === null) {
         result.changed.push(item.name); // legacy mode: no timestamp signal, apply as before
         toWrite.push(item);
@@ -190,11 +198,24 @@ export function runRestore(opts: RestoreOptions): RestoreResult {
     }
 
     const writeItems = force ? [...toWrite, ...conflictItems] : toWrite;
+    // The DB may predate the change-history feature (this CLI targets live
+    // DBs directly) — make sure the table exists before logging overwrites.
+    ensureChangesSchema(db);
     const upsertSection = db.prepare(UPSERT_SQL.sections);
     const upsertRef = db.prepare(UPSERT_SQL.refs);
     db.transaction(() => {
       for (const item of writeItems) {
         (item.table === "sections" ? upsertSection : upsertRef).run(item.name, item.content);
+        if (item.oldContent !== undefined) {
+          logReplace(
+            db,
+            item.table === "sections" ? "section" : "ref",
+            item.name,
+            item.oldContent,
+            item.content,
+            "restore-cli",
+          );
+        }
       }
     })();
 

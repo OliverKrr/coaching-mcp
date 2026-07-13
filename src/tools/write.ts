@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type Database from "better-sqlite3";
 import { z } from "zod";
+import { logReplace } from "../history.js";
 import {
   checkWrite,
   DOC_MAX_BYTES,
@@ -15,18 +16,20 @@ export function registerWriteTools(
   db: Database.Database,
   limits?: WriteLimits,
 ): void {
-  const existingLength = (table: "sections" | "refs", name: string): number =>
+  const existingContent = (table: "sections" | "refs", name: string): string | undefined =>
     (
-      db.prepare(`SELECT LENGTH(content) AS n FROM ${table} WHERE name = ?`).get(name) as
-        | { n: number }
+      db.prepare(`SELECT content FROM ${table} WHERE name = ?`).get(name) as
+        | { content: string }
         | undefined
-    )?.n ?? 0;
+    )?.content;
 
   server.registerTool(
     "update_section",
     {
       description:
-        "Update or create a coaching knowledge section. Use 'main' for the primary SKILL.md content. Creates the section if it does not exist.",
+        "Create a coaching knowledge section or fully rewrite one (the content replaces the " +
+        "whole document). Use 'main' for the primary SKILL.md content. For targeted changes " +
+        "to an existing section prefer edit_section — it only touches the passage you quote.",
       inputSchema: {
         name: z.string().min(1).describe("Section name — use 'main' for SKILL.md"),
         content: z.string().min(1).describe("Full replacement content"),
@@ -34,16 +37,20 @@ export function registerWriteTools(
     },
     ({ name, content }) =>
       withErrorHandling("update_section", () => {
+        const existing = existingContent("sections", name);
         const refused = checkWrite(db, limits, {
           docBytes: content.length,
           docMax: DOC_MAX_BYTES,
-          deltaBytes: content.length - existingLength("sections", name),
+          deltaBytes: content.length - (existing?.length ?? 0),
         });
         if (refused) return toolError(refused);
-        db.prepare(
-          "INSERT INTO sections(name, content) VALUES (?, ?)" +
-            " ON CONFLICT(name) DO UPDATE SET content=excluded.content, updated_at=datetime('now')",
-        ).run(name, content);
+        db.transaction(() => {
+          db.prepare(
+            "INSERT INTO sections(name, content) VALUES (?, ?)" +
+              " ON CONFLICT(name) DO UPDATE SET content=excluded.content, updated_at=datetime('now')",
+          ).run(name, content);
+          if (existing !== undefined) logReplace(db, "section", name, existing, content, "mcp");
+        })();
         return toolText(`Section '${name}' updated.${usageWarning(db, limits)}`);
       }),
   );
@@ -52,7 +59,10 @@ export function registerWriteTools(
     "update_reference",
     {
       description:
-        "Update or create a coaching reference document (core ones like patterns/lifestyle, or topic references like zones or recipes).",
+        "Create a coaching reference document or fully rewrite one (the content replaces the " +
+        "whole document) — core ones like patterns/lifestyle, or topic references like zones " +
+        "or recipes. For targeted changes to an existing reference prefer edit_reference — it " +
+        "only touches the passage you quote.",
       inputSchema: {
         name: z.string().min(1).describe("Reference name without .md extension"),
         content: z.string().min(1).describe("Full replacement content"),
@@ -60,16 +70,20 @@ export function registerWriteTools(
     },
     ({ name, content }) =>
       withErrorHandling("update_reference", () => {
+        const existing = existingContent("refs", name);
         const refused = checkWrite(db, limits, {
           docBytes: content.length,
           docMax: DOC_MAX_BYTES,
-          deltaBytes: content.length - existingLength("refs", name),
+          deltaBytes: content.length - (existing?.length ?? 0),
         });
         if (refused) return toolError(refused);
-        db.prepare(
-          "INSERT INTO refs(name, content) VALUES (?, ?)" +
-            " ON CONFLICT(name) DO UPDATE SET content=excluded.content, updated_at=datetime('now')",
-        ).run(name, content);
+        db.transaction(() => {
+          db.prepare(
+            "INSERT INTO refs(name, content) VALUES (?, ?)" +
+              " ON CONFLICT(name) DO UPDATE SET content=excluded.content, updated_at=datetime('now')",
+          ).run(name, content);
+          if (existing !== undefined) logReplace(db, "ref", name, existing, content, "mcp");
+        })();
         return toolText(`Reference '${name}' updated.${usageWarning(db, limits)}`);
       }),
   );

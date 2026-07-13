@@ -4,6 +4,7 @@ import type Database from "better-sqlite3";
 import { readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { historyBytes } from "../history.js";
 import { contentBytes, type WriteLimits } from "../quota.js";
 import { toolText, withErrorHandling } from "../utils/errors.js";
 
@@ -48,6 +49,9 @@ export function registerOpsTools(
         const routinesCount = (
           db.prepare("SELECT COUNT(*) as n FROM routines").get() as { n: number }
         ).n;
+        const changesCount = (
+          db.prepare("SELECT COUNT(*) as n FROM changes").get() as { n: number }
+        ).n;
         const dbPath = `${process.env.DATA_DIR ?? "/data"}/skill.db`;
         let dbSizeBytes = 0;
         try {
@@ -65,8 +69,10 @@ export function registerOpsTools(
           refs_count: refsCount,
           journal_count: journalCount,
           routines_count: routinesCount,
+          changes_count: changesCount,
           db_size_bytes: dbSizeBytes,
           storage_bytes: storageBytes,
+          history_bytes: historyBytes(db),
           ...(limits
             ? {
                 storage_quota_bytes: limits.quotaBytes,

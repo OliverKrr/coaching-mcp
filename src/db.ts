@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { CHANGES_TABLE_SQL, pruneChanges } from "./history.js";
 
 export type Section = { name: string; content: string; updated_at: string };
 export type Reference = { name: string; content: string; updated_at: string };
@@ -41,6 +42,7 @@ export function openDatabase(
   createSchema(db);
   seedFromDirectory(db, seedDir);
   recomputeContentBytes(db);
+  pruneChanges(db);
   return db;
 }
 
@@ -49,6 +51,8 @@ export function openDatabase(
  * across every user-authored table. The `*_bytes_*` triggers keep the counter
  * in the same transaction as each write; this full recompute on every open
  * self-heals any drift and initializes pre-counter databases.
+ * The `changes` history table is deliberately NOT counted — the safety net
+ * must not eat the quota it protects; it is bounded by pruneChanges instead.
  */
 export function recomputeContentBytes(db: Database.Database): void {
   const n = (
@@ -217,6 +221,25 @@ export function createSchema(db: Database.Database): void {
 		END;
 		CREATE TRIGGER IF NOT EXISTS open_items_bytes_ad AFTER DELETE ON open_items BEGIN
 			UPDATE meta SET value = value - LENGTH(old.content) WHERE key = 'content_bytes';
+		END;
+		${CHANGES_TABLE_SQL}
+		CREATE TRIGGER IF NOT EXISTS sections_hist_ad AFTER DELETE ON sections BEGIN
+			INSERT INTO changes(kind, name, op, old_text)
+				VALUES ('section', old.name, 'delete', old.content);
+		END;
+		CREATE TRIGGER IF NOT EXISTS refs_hist_ad AFTER DELETE ON refs BEGIN
+			INSERT INTO changes(kind, name, op, old_text)
+				VALUES ('ref', old.name, 'delete', old.content);
+		END;
+		CREATE TRIGGER IF NOT EXISTS routines_hist_ad AFTER DELETE ON routines BEGIN
+			INSERT INTO changes(kind, name, op, old_text)
+				VALUES ('routine', old.name, 'delete',
+					'cadence: ' || old.cadence || char(10) || 'status: ' || old.status
+						|| char(10) || char(10) || old.prompt);
+		END;
+		CREATE TRIGGER IF NOT EXISTS journal_hist_ad AFTER DELETE ON journal BEGIN
+			INSERT INTO changes(kind, name, op, old_text)
+				VALUES ('journal', CAST(old.id AS TEXT), 'delete', old.entry);
 		END;
 	`);
 }

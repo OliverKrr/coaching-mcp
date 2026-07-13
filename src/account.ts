@@ -571,6 +571,11 @@ function exportData(ctx: ServeContext, res: ServerResponse, userId: string): voi
   for (const doc of snapshotDocuments(db)) {
     files[doc.path] = strToU8(doc.content);
   }
+  // change history is user data too — the export must be the complete record
+  const changeRows = db.prepare("SELECT * FROM changes ORDER BY id").all();
+  if (changeRows.length > 0) {
+    files["changes.jsonl"] = strToU8(`${changeRows.map((r) => JSON.stringify(r)).join("\n")}\n`);
+  }
   files["skill.db"] = db.serialize();
   const zip = zipSync(files);
   const date = new Date().toISOString().slice(0, 10);

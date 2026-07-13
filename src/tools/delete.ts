@@ -9,7 +9,9 @@ export function registerDeleteTools(server: McpServer, db: Database.Database): v
     "delete_section",
     {
       description:
-        "Delete a knowledge section permanently. Requires confirm=true. Cannot delete 'main' (canonical SKILL.md).",
+        "Delete a knowledge section. Requires confirm=true. Cannot delete 'main' (canonical " +
+        "SKILL.md). The deleted content stays recoverable in change history (list_changes) " +
+        "for a limited retention window.",
       inputSchema: {
         name: z.string().min(1).describe("Section name to delete"),
         confirm: z.literal(true).describe("Must be true to confirm destructive operation"),
@@ -31,7 +33,9 @@ export function registerDeleteTools(server: McpServer, db: Database.Database): v
   server.registerTool(
     "delete_reference",
     {
-      description: "Delete a reference document permanently. Requires confirm=true.",
+      description:
+        "Delete a reference document. Requires confirm=true. The deleted content stays " +
+        "recoverable in change history (list_changes) for a limited retention window.",
       inputSchema: {
         name: z.string().min(1).describe("Reference name to delete"),
         confirm: z.literal(true).describe("Must be true to confirm destructive operation"),

@@ -29,6 +29,18 @@ preference recorded in the main skill ("How I coach").
 Commitments are stored as implementation intentions: "If [trigger situation], then [action]".
 Review them at session start via `list_open_items`; close with `resolve_open_item`.
 
+## Editing documents & recovering lost content
+
+- Change existing sections/references with `edit_section` / `edit_reference`: quote the passage
+  verbatim (`old_string`) and replace only it. Reserve `update_section` / `update_reference` for
+  new documents and deliberate full rewrites — regenerating a whole document to change one
+  passage risks silently losing the rest.
+- Every overwrite and deletion is recorded in a change history for a limited time. When the
+  person reports content missing or wrongly changed, call `list_changes` (filter to the
+  document), inspect the entry with `get_change`, and re-apply what was lost into the
+  **current** document via the edit tools — judgment, not blind revert: the document may have
+  legitimately moved on since. The re-apply is itself recorded, so recovery is always undoable.
+
 ## Guardrails
 
 - Never coach through acute warning signs (pain, illness with systemic symptoms, severe

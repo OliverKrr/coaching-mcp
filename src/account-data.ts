@@ -3,6 +3,7 @@ import type { ServerResponse } from "node:http";
 import type { WebAuth } from "./account.js";
 import { getUser } from "./auth/db.js";
 import type { ServeContext } from "./context.js";
+import { type ChangeKind, type ChangeRow, logReplace } from "./history.js";
 import { htmlEscape, redirect, sendHtml } from "./http-util.js";
 import { renderMarkdown } from "./markdown.js";
 import { checkWrite, DOC_MAX_BYTES, ENTRY_MAX_BYTES, quotaBytesForUser } from "./quota.js";
@@ -107,7 +108,7 @@ function fill(template: string, vars: Record<string, string>): string {
   return template.replace(/%([A-Z]+)%/g, (match, key: string) => vars[key] ?? match);
 }
 
-type DataNav = "overview" | "journal" | "open-items" | "routines";
+type DataNav = "overview" | "journal" | "open-items" | "routines" | "history";
 
 /** Left sidebar shared by every data page; the anchor links are never "active". */
 function dataShell(base: string, active: DataNav, t: typeof DATA_EN, body: string): string {
@@ -120,6 +121,7 @@ ${item(null, `${base}/account/data#references`, t.navReferences)}
 ${item("journal", `${base}/account/data/journal`, t.navJournal)}
 ${item("open-items", `${base}/account/data/open-items`, t.navOpenItems)}
 ${item("routines", `${base}/account/data/routines`, t.navRoutines)}
+${item("history", `${base}/account/data/history`, t.navHistory)}
 </aside><div class="content">${body}</div></div>`;
 }
 
@@ -169,6 +171,9 @@ export function handleDataGet(
       return true;
     case "/account/data/routines/new":
       renderRoutineEditor(ctx, res, auth, url, lang, { isNew: true });
+      return true;
+    case "/account/data/history":
+      renderHistory(ctx, res, auth, url, lang);
       return true;
     default:
       return false;
@@ -280,7 +285,7 @@ function renderDocEditor(
 
   const body = `<h1>${row ? `${typeLabel}: ${htmlEscape(row.name)}` : newLabel}</h1>
 ${saved ? `<p class="muted">${t.savedNotice}</p>` : ""}
-${row ? `<p class="muted">${fill(t.lastUpdated, { TS: htmlEscape(row.updated_at) })}</p>` : ""}
+${row ? `<p class="muted">${fill(t.lastUpdated, { TS: htmlEscape(row.updated_at) })} · <a href="${historyHref(base, type === "section" ? "section" : "ref", row.name)}">${t.historyLink}</a></p>` : ""}
 <div class="split">
 <div>
 <form method="post" action="${base}/account/data/doc/save">
@@ -383,7 +388,7 @@ function renderJournalEditor(
   const csrf = htmlEscape(auth.csrf);
   const title = fill(t.journalEntryTitle, { ID: String(row.id) });
   const body = `<h1>${title}</h1>
-<p class="muted">${fill(t.journalWritten, { TS: htmlEscape(row.created_at) })}</p>
+<p class="muted">${fill(t.journalWritten, { TS: htmlEscape(row.created_at) })} · <a href="${historyHref(base, "journal", String(row.id))}">${t.historyLink}</a></p>
 <div class="split">
 <div>
 <form method="post" action="${base}/account/data/journal/save">
@@ -561,7 +566,7 @@ function renderRoutineEditor(
 
   const body = `<h1>${row ? `${t.routineWord}: ${htmlEscape(row.name)}` : t.newRoutine}</h1>
 ${saved ? `<p class="muted">${t.routineSaved}</p>` : ""}
-${row ? `<p class="muted">${fill(t.routineMeta, { TS: htmlEscape(row.updated_at), STATUS: htmlEscape(row.status), CADENCE: htmlEscape(row.cadence) })}</p>` : ""}
+${row ? `<p class="muted">${fill(t.routineMeta, { TS: htmlEscape(row.updated_at), STATUS: htmlEscape(row.status), CADENCE: htmlEscape(row.cadence) })} · <a href="${historyHref(base, "routine", row.name)}">${t.historyLink}</a></p>` : ""}
 <p class="muted">${t.routineCopyHint}</p>
 <form method="post" action="${base}/account/data/routines/save">
 <input type="hidden" name="csrf" value="${csrf}">
@@ -625,6 +630,12 @@ export function handleDataPost(
     case "/account/data/routines/delete":
       deleteRoutine(ctx, res, auth, form);
       return true;
+    case "/account/data/history/restore":
+      restoreDeletedDoc(ctx, res, auth, form);
+      return true;
+    case "/account/data/history/purge":
+      purgeHistory(ctx, res, auth, form);
+      return true;
     default:
       return false;
   }
@@ -678,12 +689,25 @@ function saveDoc(
     }
   } else {
     // update, guarded against a concurrent edit (e.g. from a coaching session)
-    const result = db
-      .prepare(
-        `UPDATE ${table} SET content = ?, updated_at = datetime('now') WHERE name = ? AND updated_at = ?`,
-      )
-      .run(content, name, expected);
-    if (result.changes === 0) {
+    let conflict = false;
+    db.transaction(() => {
+      const old = (
+        db.prepare(`SELECT content FROM ${table} WHERE name = ?`).get(name) as
+          | { content: string }
+          | undefined
+      )?.content;
+      const result = db
+        .prepare(
+          `UPDATE ${table} SET content = ?, updated_at = datetime('now') WHERE name = ? AND updated_at = ?`,
+        )
+        .run(content, name, expected);
+      if (result.changes === 0 || old === undefined) {
+        conflict = true;
+        return;
+      }
+      logReplace(db, type === "section" ? "section" : "ref", name, old, content, "web");
+    })();
+    if (conflict) {
       errorPage(
         res,
         409,
@@ -734,27 +758,27 @@ function saveJournal(
   const id = Number(form.get("id"));
   const entry = form.get("entry") ?? "";
   const db = ctx.tenants.open(auth.userId);
-  const oldLen =
-    (
-      db.prepare("SELECT LENGTH(entry) AS n FROM journal WHERE id = ?").get(id) as
-        | { n: number }
-        | undefined
-    )?.n ?? 0;
+  const old = (
+    db.prepare("SELECT entry FROM journal WHERE id = ?").get(id) as { entry: string } | undefined
+  )?.entry;
+  if (old === undefined) {
+    errorPage(res, 404, "Not found", `<p>No journal entry #${htmlEscape(String(id))}.</p>`);
+    return;
+  }
   if (
     refuseOversizedWrite(ctx, res, auth, db, {
       docBytes: entry.length,
       docMax: ENTRY_MAX_BYTES,
-      deltaBytes: entry.length - oldLen,
+      deltaBytes: entry.length - old.length,
     })
   ) {
     return;
   }
   // created_at is intentionally preserved: the edit corrects content, not history
-  const result = db.prepare("UPDATE journal SET entry = ? WHERE id = ?").run(entry, id);
-  if (result.changes === 0) {
-    errorPage(res, 404, "Not found", `<p>No journal entry #${htmlEscape(String(id))}.</p>`);
-    return;
-  }
+  db.transaction(() => {
+    db.prepare("UPDATE journal SET entry = ? WHERE id = ?").run(entry, id);
+    logReplace(db, "journal", String(id), old, entry, "web");
+  })();
   redirect(res, `${base}/account/data/journal`);
 }
 
@@ -840,17 +864,16 @@ function saveRoutine(
     return;
   }
   const db = ctx.tenants.open(auth.userId);
-  const oldLen =
-    (
-      db.prepare("SELECT LENGTH(prompt) AS n FROM routines WHERE name = ?").get(name) as
-        | { n: number }
-        | undefined
-    )?.n ?? 0;
+  const oldPrompt = (
+    db.prepare("SELECT prompt FROM routines WHERE name = ?").get(name) as
+      | { prompt: string }
+      | undefined
+  )?.prompt;
   if (
     refuseOversizedWrite(ctx, res, auth, db, {
       docBytes: prompt.length,
       docMax: ENTRY_MAX_BYTES,
-      deltaBytes: prompt.length - oldLen,
+      deltaBytes: prompt.length - (oldPrompt?.length ?? 0),
     })
   ) {
     return;
@@ -876,12 +899,20 @@ function saveRoutine(
     }
   } else {
     // update, guarded against a concurrent edit (e.g. from a coaching session)
-    const result = db
-      .prepare(
-        "UPDATE routines SET cadence = ?, prompt = ?, status = ?, updated_at = datetime('now') WHERE name = ? AND updated_at = ?",
-      )
-      .run(cadence, prompt, status, name, expected);
-    if (result.changes === 0) {
+    let conflict = false;
+    db.transaction(() => {
+      const result = db
+        .prepare(
+          "UPDATE routines SET cadence = ?, prompt = ?, status = ?, updated_at = datetime('now') WHERE name = ? AND updated_at = ?",
+        )
+        .run(cadence, prompt, status, name, expected);
+      if (result.changes === 0 || oldPrompt === undefined) {
+        conflict = true;
+        return;
+      }
+      logReplace(db, "routine", name, oldPrompt, prompt, "web");
+    })();
+    if (conflict) {
       errorPage(
         res,
         409,
@@ -904,6 +935,188 @@ function deleteRoutine(
   const db = ctx.tenants.open(auth.userId);
   db.prepare("DELETE FROM routines WHERE name = ?").run(form.get("name") ?? "");
   redirect(res, `${ctx.cfg.publicUrl}/account/data/routines`);
+}
+
+// ---------------------------------------------------------------------------
+// Change history (the `changes` table): read view + the two human-only
+// mutations — restoring a deleted section/reference and purging history.
+// Deletes are captured by the db.ts triggers; the save handlers above log
+// overwrites via logReplace. Subtler recovery (re-grafting a lost passage
+// into the current document) goes through a coaching session, which has the
+// same history via the read-only list_changes/get_change tools.
+
+const HISTORY_KINDS = ["section", "ref", "routine", "journal"];
+const HISTORY_PAGE_LIMIT = 100;
+const HISTORY_CLIP_CHARS = 4000;
+
+function historyKind(value: string | null): ChangeKind | undefined {
+  return value !== null && HISTORY_KINDS.includes(value) ? (value as ChangeKind) : undefined;
+}
+
+/** Bound the rendered size; the stored row stays complete. */
+function clipText(text: string): string {
+  return text.length > HISTORY_CLIP_CHARS
+    ? `${text.slice(0, HISTORY_CLIP_CHARS)}\n… (${text.length} characters total)`
+    : text;
+}
+
+/** Link target for a document's filtered history view. */
+export function historyHref(base: string, kind: ChangeKind, name: string): string {
+  return `${base}/account/data/history?kind=${kind}&amp;name=${encodeURIComponent(name)}`;
+}
+
+function renderHistory(
+  ctx: ServeContext,
+  res: ServerResponse,
+  auth: WebAuth,
+  url: URL,
+  lang: Lang,
+): void {
+  const base = ctx.cfg.publicUrl;
+  const t = lang === "de" ? DATA_DE : DATA_EN;
+  const db = ctx.tenants.open(auth.userId);
+  const kind = historyKind(url.searchParams.get("kind"));
+  const name = url.searchParams.get("name");
+  const filtered = kind !== undefined && name !== null;
+  const rows = (
+    filtered
+      ? db
+          .prepare("SELECT * FROM changes WHERE kind = ? AND name = ? ORDER BY id DESC LIMIT ?")
+          .all(kind, name, HISTORY_PAGE_LIMIT)
+      : db.prepare("SELECT * FROM changes ORDER BY id DESC LIMIT ?").all(HISTORY_PAGE_LIMIT)
+  ) as ChangeRow[];
+  const csrf = htmlEscape(auth.csrf);
+
+  const liveDoc = {
+    section: db.prepare("SELECT 1 AS x FROM sections WHERE name = ?"),
+    ref: db.prepare("SELECT 1 AS x FROM refs WHERE name = ?"),
+  };
+
+  const block = (label: string, text: string): string =>
+    `<p class="muted">${label}</p><pre class="snippet">${htmlEscape(clipText(text))}</pre>`;
+
+  const cards = rows
+    .map((r) => {
+      const restorable =
+        r.op === "delete" &&
+        (r.kind === "section" || r.kind === "ref") &&
+        liveDoc[r.kind].get(r.name) === undefined;
+      const restoreForm = restorable
+        ? `<form method="post" action="${base}/account/data/history/restore">
+<input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="id" value="${r.id}">
+<button>${t.historyRestore}</button></form>`
+        : "";
+      const content =
+        r.op === "edit"
+          ? block(t.historyRemoved, r.old_text) + block(t.historyInserted, r.new_text ?? "")
+          : r.op === "replace"
+            ? block(t.historyDiff, r.old_text)
+            : block(t.historyDeleted, r.old_text);
+      return `<div class="card"><p>#${r.id} · <strong>${r.op}</strong> · ${htmlEscape(r.kind)} <code>${htmlEscape(r.name)}</code> <span class="muted">· ${htmlEscape(r.created_at)} UTC${r.source ? ` · ${htmlEscape(r.source)}` : ""}</span></p>
+${content}${restoreForm}</div>`;
+    })
+    .join("\n");
+
+  const filterBar = filtered
+    ? `<p class="muted">${fill(t.historyFiltered, { KIND: htmlEscape(kind), NAME: htmlEscape(name) })} — <a href="${base}/account/data/history">${t.historyShowAll}</a></p>`
+    : "";
+  const purgeForm =
+    rows.length > 0
+      ? `<form method="post" action="${base}/account/data/history/purge">
+<input type="hidden" name="csrf" value="${csrf}">${filtered ? `<input type="hidden" name="kind" value="${htmlEscape(kind)}"><input type="hidden" name="name" value="${htmlEscape(name)}">` : ""}
+<button class="danger">${filtered ? t.historyPurgeDoc : t.historyPurgeAll}</button></form>`
+      : "";
+
+  const body = `<h1>${t.historyTitle}</h1>
+${url.searchParams.get("restored") === "1" ? `<p class="muted">${t.historyRestored}</p>` : ""}
+<p class="muted">${t.historyIntro}</p>
+${filterBar}
+${cards || `<p class="muted">${t.historyEmpty}</p>`}
+${purgeForm}
+<p class="muted">${t.historyPurgeNote}</p>`;
+
+  const path = filtered
+    ? `/account/data/history?kind=${kind}&name=${encodeURIComponent(name)}`
+    : "/account/data/history";
+  sendHtml(
+    res,
+    200,
+    page(t.historyTitle, dataShell(base, "history", t, body), {
+      wide: true,
+      nav: dataNav(base, lang, path),
+    }),
+  );
+}
+
+/**
+ * Recreate a deleted section/reference from its delete-history row. Only
+ * possible while no document of that name exists — the INSERT is a plain
+ * create (deliberately not history-logged; the original delete row remains
+ * the record). Deleted routines/journal entries are restored in a coaching
+ * session instead, where cadence/status can be re-confirmed with judgment.
+ */
+function restoreDeletedDoc(
+  ctx: ServeContext,
+  res: ServerResponse,
+  auth: WebAuth,
+  form: URLSearchParams,
+): void {
+  const base = ctx.cfg.publicUrl;
+  const id = Number(form.get("id"));
+  const db = ctx.tenants.open(auth.userId);
+  const row = db.prepare("SELECT * FROM changes WHERE id = ?").get(id) as ChangeRow | undefined;
+  if (!row || row.op !== "delete" || (row.kind !== "section" && row.kind !== "ref")) {
+    errorPage(
+      res,
+      400,
+      "Invalid request",
+      "<p>This history entry cannot be restored directly — recover its content in a coaching session instead.</p>",
+    );
+    return;
+  }
+  if (
+    refuseOversizedWrite(ctx, res, auth, db, {
+      docBytes: row.old_text.length,
+      docMax: DOC_MAX_BYTES,
+      deltaBytes: row.old_text.length,
+    })
+  ) {
+    return;
+  }
+  const table = row.kind === "section" ? "sections" : "refs";
+  try {
+    db.prepare(`INSERT INTO ${table} (name, content) VALUES (?, ?)`).run(row.name, row.old_text);
+  } catch {
+    errorPage(
+      res,
+      409,
+      "Already exists",
+      `<p>A ${row.kind === "section" ? "section" : "reference"} named <code>${htmlEscape(row.name)}</code> already exists — nothing was restored. Merge the recorded content in a coaching session instead.</p>`,
+    );
+    return;
+  }
+  redirect(res, `${base}/account/data/history?restored=1`);
+}
+
+/**
+ * The one mutation on history, deliberately web-only (never over MCP):
+ * deliberately deleted content must not linger against the user's will.
+ */
+function purgeHistory(
+  ctx: ServeContext,
+  res: ServerResponse,
+  auth: WebAuth,
+  form: URLSearchParams,
+): void {
+  const db = ctx.tenants.open(auth.userId);
+  const kind = historyKind(form.get("kind"));
+  const name = form.get("name");
+  if (kind !== undefined && name !== null) {
+    db.prepare("DELETE FROM changes WHERE kind = ? AND name = ?").run(kind, name);
+  } else {
+    db.prepare("DELETE FROM changes").run();
+  }
+  redirect(res, `${ctx.cfg.publicUrl}/account/data/history`);
 }
 
 // ---------------------------------------------------------------------------
@@ -982,6 +1195,24 @@ const DATA_EN = {
   cadencePlaceholder: "e.g. weekly, Sunday ~19:00",
   statusHint: "active = scheduled in Claude; paused/retired = not.",
   deleteRoutine: "Delete this routine",
+  navHistory: "History",
+  historyTitle: "Change history",
+  historyIntro:
+    "What recent edits, overwrites, and deletions removed from your documents — kept for a limited time as a safety net, so content lost by mistake can be recovered. It never counts against your storage quota. Deleted sections and references can be restored directly below; for anything subtler, ask your coaching session to recover it (it sees the same history).",
+  historyFiltered: "Showing changes to %KIND% <code>%NAME%</code>",
+  historyShowAll: "show all",
+  historyEmpty: "No recorded changes yet.",
+  historyRemoved: "Removed text",
+  historyInserted: "Inserted text",
+  historyDiff: "Diff of the previous version — lines starting with '-' were removed",
+  historyDeleted: "Deleted content",
+  historyRestore: "Restore this document",
+  historyRestored: "✓ Restored.",
+  historyPurgeAll: "Delete all history",
+  historyPurgeDoc: "Delete this document's history",
+  historyPurgeNote:
+    "History is pruned automatically after its retention window. Deleting it here is immediate and permanent — recorded content is gone for good.",
+  historyLink: "change history",
 };
 
 const DATA_DE: typeof DATA_EN = {
@@ -1056,4 +1287,22 @@ const DATA_DE: typeof DATA_EN = {
   cadencePlaceholder: "z. B. wöchentlich, Sonntag ~19:00",
   statusHint: "active = in Claude geplant; paused/retired = nicht.",
   deleteRoutine: "Diese Routine löschen",
+  navHistory: "Verlauf",
+  historyTitle: "Änderungsverlauf",
+  historyIntro:
+    "Was kürzliche Bearbeitungen, Überschreibungen und Löschungen aus deinen Dokumenten entfernt haben — als Sicherheitsnetz für begrenzte Zeit aufbewahrt, damit versehentlich verlorene Inhalte wiederhergestellt werden können. Er zählt nie gegen dein Speicherkontingent. Gelöschte Sektionen und Referenzen kannst du direkt unten wiederherstellen; für alles Feinere bitte deine Coaching-Session um Wiederherstellung (sie sieht denselben Verlauf).",
+  historyFiltered: "Zeige Änderungen an %KIND% <code>%NAME%</code>",
+  historyShowAll: "alle anzeigen",
+  historyEmpty: "Noch keine aufgezeichneten Änderungen.",
+  historyRemoved: "Entfernter Text",
+  historyInserted: "Eingefügter Text",
+  historyDiff: "Diff der vorherigen Version — Zeilen mit '-' wurden entfernt",
+  historyDeleted: "Gelöschter Inhalt",
+  historyRestore: "Dieses Dokument wiederherstellen",
+  historyRestored: "✓ Wiederhergestellt.",
+  historyPurgeAll: "Gesamten Verlauf löschen",
+  historyPurgeDoc: "Verlauf dieses Dokuments löschen",
+  historyPurgeNote:
+    "Der Verlauf wird nach seiner Aufbewahrungsfrist automatisch bereinigt. Das Löschen hier wirkt sofort und endgültig — aufgezeichnete Inhalte sind dann unwiederbringlich weg.",
+  historyLink: "Änderungsverlauf",
 };

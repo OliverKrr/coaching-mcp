@@ -28,6 +28,8 @@ import {
 } from "./quota.js";
 import { RateLimiter } from "./ratelimit.js";
 import { registerDeleteTools } from "./tools/delete.js";
+import { registerEditTools } from "./tools/edit.js";
+import { registerHistoryTools } from "./tools/history.js";
 import { registerOpenItemsTools } from "./tools/openitems.js";
 import { registerOpsTools } from "./tools/ops.js";
 import { registerReadTools } from "./tools/read.js";
@@ -132,6 +134,8 @@ export class McpSessionManager {
     const server = new McpServer({ name: "coaching-mcp", version: VERSION }, { instructions });
     registerReadTools(server, db, limits);
     registerWriteTools(server, db, limits);
+    registerEditTools(server, db, limits);
+    registerHistoryTools(server, db);
     registerOpsTools(server, db, limits);
     registerDeleteTools(server, db);
     registerOpenItemsTools(server, db, limits);
