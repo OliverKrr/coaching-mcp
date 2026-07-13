@@ -35,9 +35,11 @@ export function registerOpsTools(
   server.registerTool(
     "get_version",
     {
+      title: "Get server version & stats",
       description:
         "Get coaching-mcp build info and DB statistics, including storage usage against the account's quota. Useful to confirm deployments and spot-check database health.",
       inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: false },
     },
     () =>
       withErrorHandling("get_version", () => {

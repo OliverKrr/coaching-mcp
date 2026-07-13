@@ -13,11 +13,13 @@ export function registerOpenItemsTools(
   server.registerTool(
     "add_open_item",
     {
+      title: "Add open item",
       description:
         "Record a coaching commitment (the user's if-then next action) or a flag (something to surface). " +
         "Set `dedup_key` for flags so a recurring condition isn't raised twice — if an OPEN item with that " +
         "key exists, this is a no-op and returns the existing id. Call at session close (commitments) or " +
         "from routines (flags).",
+      annotations: { destructiveHint: false, openWorldHint: false },
       inputSchema: {
         kind: z.enum(["commitment", "flag"]),
         content: z.string().min(1).describe("The commitment or flag text"),
@@ -68,9 +70,11 @@ export function registerOpenItemsTools(
   server.registerTool(
     "list_open_items",
     {
+      title: "List open items",
       description:
         "List open coaching items (commitments + flags). Call at session start to surface what needs " +
         "attention and what to follow up on. Defaults to status='open'.",
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         kind: z
           .enum(["commitment", "flag"])
@@ -114,6 +118,7 @@ export function registerOpenItemsTools(
   server.registerTool(
     "resolve_open_item",
     {
+      title: "Resolve open item",
       description:
         "Close a coaching open item once it's been acted on or no longer applies. Use 'done' when handled, " +
         "'dismissed' when dropped. Optional note is appended to the item.",
@@ -122,6 +127,7 @@ export function registerOpenItemsTools(
         status: z.enum(["done", "dismissed"]).describe("'done' (handled) or 'dismissed' (dropped)"),
         note: z.string().optional().describe("Optional note appended to the item content"),
       },
+      annotations: { destructiveHint: false, openWorldHint: false },
     },
     ({ id, status, note }) =>
       withErrorHandling("resolve_open_item", () => {

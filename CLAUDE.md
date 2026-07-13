@@ -123,6 +123,15 @@ which must be backed up alongside per-user snapshots or a restore can't reconstr
 | `notify_user`                         | write     | Telegram message to the user (per-session, only when their chat is linked)     |
 | `get_version`                         | read      | Build info + per-table statistics + storage usage vs. quota                    |
 
+**Every tool registration carries a `title` and MCP tool `annotations`** — connector UIs group
+tools by these hints (an unannotated tool lands in a flat "other tools" bucket with the most
+pessimistic defaults). Convention: `readOnlyHint: true` for reads; writes always set
+`destructiveHint` explicitly (`false` only for purely additive writes like `append_journal` —
+document replaces and deletes are `true`); `idempotentHint: true` where a repeat call is a no-op;
+`openWorldHint: true` only for tools that talk to an external service (Hevy, Telegram).
+`tests/annotations.test.ts` enforces this for every registered tool — gateway-mounted upstream
+tools are exempt (their metadata passes through verbatim).
+
 ## Environment variables (serve mode)
 
 `PUBLIC_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` required (fail-fast); `OIDC_ISSUER`

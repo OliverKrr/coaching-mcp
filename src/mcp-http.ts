@@ -191,10 +191,12 @@ export class McpSessionManager {
     server.registerTool(
       "request_quota_increase",
       {
+        title: "Request quota increase",
         description:
           "Ask the server operator to raise this account's storage quota. Use when a write fails " +
           "with a storage-quota error or usage warnings appear and content cannot reasonably be " +
           "consolidated or deleted. One open request at a time; the operator decides manually.",
+        annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false },
         inputSchema: {
           reason: z
             .string()
@@ -233,12 +235,14 @@ export class McpSessionManager {
     server.registerTool(
       "notify_user",
       {
+        title: "Notify user via Telegram",
         description:
           "Send the user a Telegram message from their coaching server's bot. Use it to deliver " +
           "a scheduled routine's final check-in or summary to their phone, or a short " +
           "safety-relevant flag. Plain text only; keep it self-contained (it arrives as a push " +
           "notification, hours away from any conversation). Not a chat channel — the user " +
           "cannot reply to the coaching session through it.",
+        annotations: { destructiveHint: false, openWorldHint: true },
         inputSchema: {
           message: z
             .string()

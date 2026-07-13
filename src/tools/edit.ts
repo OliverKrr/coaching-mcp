@@ -22,6 +22,7 @@ export function registerEditTools(
 ): void {
   registerEditTool(server, db, limits, {
     tool: "edit_section",
+    title: "Edit section",
     table: "sections",
     kind: "section",
     label: "section",
@@ -35,6 +36,7 @@ export function registerEditTools(
   });
   registerEditTool(server, db, limits, {
     tool: "edit_reference",
+    title: "Edit reference",
     table: "refs",
     kind: "ref",
     label: "reference",
@@ -54,6 +56,7 @@ function registerEditTool(
   limits: WriteLimits | undefined,
   cfg: {
     tool: string;
+    title: string;
     table: "sections" | "refs";
     kind: ChangeKind;
     label: string;
@@ -64,6 +67,7 @@ function registerEditTool(
   server.registerTool(
     cfg.tool,
     {
+      title: cfg.title,
       description: cfg.description,
       inputSchema: {
         name: z
@@ -85,6 +89,7 @@ function registerEditTool(
             "Replace every occurrence when old_string appears more than once (default false)",
           ),
       },
+      annotations: { destructiveHint: true, openWorldHint: false },
     },
     ({ name, old_string, new_string, replace_all }) =>
       withErrorHandling(cfg.tool, () => {

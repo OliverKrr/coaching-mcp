@@ -26,6 +26,7 @@ export function registerWriteTools(
   server.registerTool(
     "update_section",
     {
+      title: "Create or rewrite section",
       description:
         "Create a coaching knowledge section or fully rewrite one (the content replaces the " +
         "whole document). Use 'main' for the primary SKILL.md content. For targeted changes " +
@@ -34,6 +35,7 @@ export function registerWriteTools(
         name: z.string().min(1).describe("Section name — use 'main' for SKILL.md"),
         content: z.string().min(1).describe("Full replacement content"),
       },
+      annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },
     ({ name, content }) =>
       withErrorHandling("update_section", () => {
@@ -58,6 +60,7 @@ export function registerWriteTools(
   server.registerTool(
     "update_reference",
     {
+      title: "Create or rewrite reference",
       description:
         "Create a coaching reference document or fully rewrite one (the content replaces the " +
         "whole document) — core ones like patterns/lifestyle, or topic references like zones " +
@@ -67,6 +70,7 @@ export function registerWriteTools(
         name: z.string().min(1).describe("Reference name without .md extension"),
         content: z.string().min(1).describe("Full replacement content"),
       },
+      annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },
     ({ name, content }) =>
       withErrorHandling("update_reference", () => {
@@ -91,11 +95,13 @@ export function registerWriteTools(
   server.registerTool(
     "append_journal",
     {
+      title: "Append journal entry",
       description:
         "Append a coaching journal entry. The server records the timestamp automatically — do NOT prepend a date to the entry text. Call at the end of every coaching session to log decisions made, data changed, and observations.",
       inputSchema: {
         entry: z.string().min(1).describe("Journal entry text"),
       },
+      annotations: { destructiveHint: false, openWorldHint: false },
     },
     ({ entry }) =>
       withErrorHandling("append_journal", () => {

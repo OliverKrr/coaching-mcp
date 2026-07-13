@@ -18,12 +18,14 @@ export function registerHistoryTools(server: McpServer, db: Database.Database): 
   server.registerTool(
     "list_changes",
     {
+      title: "List change history",
       description:
         "Change history: list recent edits, overwrites, and deletions of the user's stored " +
         "documents, newest first. Each entry records what the operation REMOVED, so content " +
         "lost by mistake can be found and recovered. Use when the user reports missing or " +
         "wrongly changed content. Recover via get_change, then re-apply the lost text into " +
         "the CURRENT document with edit_*/update_*/save_routine (deleted docs: recreate them).",
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         kind: z.enum(KINDS).optional().describe("Filter by document kind"),
         name: z
@@ -79,6 +81,7 @@ export function registerHistoryTools(server: McpServer, db: Database.Database): 
   server.registerTool(
     "get_change",
     {
+      title: "Get change entry",
       description:
         "Get one change-history entry in full: the removed content (for edits also the " +
         "inserted content). Recovery is re-applying: graft the lost text into the CURRENT " +
@@ -87,6 +90,7 @@ export function registerHistoryTools(server: McpServer, db: Database.Database): 
       inputSchema: {
         id: z.number().int().describe("Change id from list_changes"),
       },
+      annotations: { readOnlyHint: true, openWorldHint: false },
     },
     ({ id }) =>
       withErrorHandling("get_change", () => {

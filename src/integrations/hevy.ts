@@ -354,6 +354,12 @@ const pageArgs = {
   pageSize: z.number().int().min(1).max(10).default(5),
 };
 
+// Every Hevy tool talks to the external Hevy API (openWorldHint). Clients
+// (e.g. claude.ai's connector UI) group tools by these hints.
+const HEVY_READ = { readOnlyHint: true, openWorldHint: true } as const;
+const HEVY_CREATE = { destructiveHint: false, openWorldHint: true } as const;
+const HEVY_REPLACE = { destructiveHint: true, idempotentHint: true, openWorldHint: true } as const;
+
 const isoUtcSecond = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/, "expected YYYY-MM-DDTHH:MM:SSZ");
@@ -365,8 +371,10 @@ export function registerHevyTools(server: McpServer, client: HevyClient): void {
   server.registerTool(
     "hevy_get_workout_count",
     {
+      title: "Hevy: workout count",
       description: "Total number of workouts logged in the athlete's Hevy account.",
       inputSchema: {},
+      annotations: HEVY_READ,
     },
     () => run("hevy_get_workout_count", () => client.getWorkoutCount()),
   );
@@ -374,8 +382,10 @@ export function registerHevyTools(server: McpServer, client: HevyClient): void {
   server.registerTool(
     "hevy_get_workouts",
     {
+      title: "Hevy: list workouts",
       description: "List the athlete's Hevy workouts, newest first (paged).",
       inputSchema: pageArgs,
+      annotations: HEVY_READ,
     },
     ({ page, pageSize }) => run("hevy_get_workouts", () => client.getWorkouts(page, pageSize)),
   );
@@ -383,8 +393,10 @@ export function registerHevyTools(server: McpServer, client: HevyClient): void {
   server.registerTool(
     "hevy_get_workout",
     {
+      title: "Hevy: get workout",
       description: "One Hevy workout in full detail (exercises, sets, weights).",
       inputSchema: { workoutId: z.string() },
+      annotations: HEVY_READ,
     },
     ({ workoutId }) => run("hevy_get_workout", () => client.getWorkout(workoutId)),
   );
@@ -392,12 +404,14 @@ export function registerHevyTools(server: McpServer, client: HevyClient): void {
   server.registerTool(
     "hevy_get_workout_events",
     {
+      title: "Hevy: workout events",
       description:
         "Workout update/delete events since a timestamp (paged) — for incremental sync instead of re-reading all workouts.",
       inputSchema: {
         ...pageArgs,
         since: isoUtcSecond.default("1970-01-01T00:00:00Z"),
       },
+      annotations: HEVY_READ,
     },
     ({ page, pageSize, since }) =>
       run("hevy_get_workout_events", () => client.getWorkoutEvents(page, pageSize, since)),
@@ -406,6 +420,7 @@ export function registerHevyTools(server: McpServer, client: HevyClient): void {
   server.registerTool(
     "hevy_create_workout",
     {
+      title: "Hevy: log workout",
       description:
         "Log a completed workout in Hevy (manual entry). Exercises reference template ids from hevy_search_exercise_templates.",
       inputSchema: {
@@ -416,6 +431,7 @@ export function registerHevyTools(server: McpServer, client: HevyClient): void {
         isPrivate: z.boolean().default(false),
         exercises: z.array(workoutExerciseSchema).min(1),
       },
+      annotations: HEVY_CREATE,
     },
     ({ title, description, startTime, endTime, isPrivate, exercises }) =>
       run("hevy_create_workout", () =>
@@ -433,7 +449,9 @@ export function registerHevyTools(server: McpServer, client: HevyClient): void {
   server.registerTool(
     "hevy_update_workout",
     {
+      title: "Hevy: replace workout",
       description: "Replace an existing Hevy workout entirely (same shape as hevy_create_workout).",
+      annotations: HEVY_REPLACE,
       inputSchema: {
         workoutId: z.string(),
         title: z.string().min(1),
@@ -460,15 +478,22 @@ export function registerHevyTools(server: McpServer, client: HevyClient): void {
   // -- routines --------------------------------------------------------------
   server.registerTool(
     "hevy_get_routines",
-    { description: "List the athlete's Hevy routines (paged).", inputSchema: pageArgs },
+    {
+      title: "Hevy: list routines",
+      description: "List the athlete's Hevy routines (paged).",
+      inputSchema: pageArgs,
+      annotations: HEVY_READ,
+    },
     ({ page, pageSize }) => run("hevy_get_routines", () => client.getRoutines(page, pageSize)),
   );
 
   server.registerTool(
     "hevy_get_routine",
     {
+      title: "Hevy: get routine",
       description: "One Hevy routine in full detail.",
       inputSchema: { routineId: z.string() },
+      annotations: HEVY_READ,
     },
     ({ routineId }) => run("hevy_get_routine", () => client.getRoutine(routineId)),
   );
@@ -476,8 +501,10 @@ export function registerHevyTools(server: McpServer, client: HevyClient): void {
   server.registerTool(
     "hevy_create_routine",
     {
+      title: "Hevy: create routine",
       description:
         "Create a Hevy routine. Exercises reference template ids from hevy_search_exercise_templates; routine sets support repRange instead of rpe.",
+      annotations: HEVY_CREATE,
       inputSchema: {
         title: z.string().min(1),
         folderId: z.number().int().nullish().describe("From hevy_get_routine_folders"),
@@ -499,8 +526,10 @@ export function registerHevyTools(server: McpServer, client: HevyClient): void {
   server.registerTool(
     "hevy_update_routine",
     {
+      title: "Hevy: replace routine",
       description:
         "Replace an existing Hevy routine's title/notes/exercises (the folder cannot be changed via update).",
+      annotations: HEVY_REPLACE,
       inputSchema: {
         routineId: z.string(),
         title: z.string().min(1),
@@ -522,8 +551,10 @@ export function registerHevyTools(server: McpServer, client: HevyClient): void {
   server.registerTool(
     "hevy_search_exercise_templates",
     {
+      title: "Hevy: search exercises",
       description:
         "Find exercise templates by title substring (optionally filtered by primary muscle group). Searches the full catalog including the user's custom exercises — prefer this over paging hevy_get_exercise_templates.",
+      annotations: HEVY_READ,
       inputSchema: {
         query: z.string().min(1),
         muscleGroup: z.enum(MUSCLE_GROUPS).nullish(),
@@ -547,12 +578,14 @@ export function registerHevyTools(server: McpServer, client: HevyClient): void {
   server.registerTool(
     "hevy_get_exercise_templates",
     {
+      title: "Hevy: list exercise templates",
       description:
         "List Hevy exercise templates page by page (see also hevy_search_exercise_templates).",
       inputSchema: {
         page: z.number().int().min(1).default(1),
         pageSize: z.number().int().min(1).max(100).default(5),
       },
+      annotations: HEVY_READ,
     },
     ({ page, pageSize }) =>
       run("hevy_get_exercise_templates", () => client.getExerciseTemplates(page, pageSize)),
@@ -561,8 +594,10 @@ export function registerHevyTools(server: McpServer, client: HevyClient): void {
   server.registerTool(
     "hevy_get_exercise_template",
     {
+      title: "Hevy: get exercise template",
       description: "One exercise template by id (title, type, muscle groups).",
       inputSchema: { exerciseTemplateId: z.string() },
+      annotations: HEVY_READ,
     },
     ({ exerciseTemplateId }) =>
       run("hevy_get_exercise_template", () => client.getExerciseTemplate(exerciseTemplateId)),
@@ -571,8 +606,10 @@ export function registerHevyTools(server: McpServer, client: HevyClient): void {
   server.registerTool(
     "hevy_get_exercise_history",
     {
+      title: "Hevy: exercise history",
       description:
         "All logged sets of one exercise across workouts (optionally date-bounded) — progression analysis.",
+      annotations: HEVY_READ,
       inputSchema: {
         exerciseTemplateId: z.string(),
         startDate: z.string().nullish().describe("ISO 8601 datetime with offset"),
@@ -588,7 +625,9 @@ export function registerHevyTools(server: McpServer, client: HevyClient): void {
   server.registerTool(
     "hevy_create_exercise_template",
     {
+      title: "Hevy: create custom exercise",
       description: "Create a custom exercise template in the athlete's Hevy account.",
+      annotations: HEVY_CREATE,
       inputSchema: {
         title: z.string().min(1),
         exerciseType: z.enum(EXERCISE_TYPES),
@@ -612,7 +651,12 @@ export function registerHevyTools(server: McpServer, client: HevyClient): void {
   // -- routine folders ---------------------------------------------------------
   server.registerTool(
     "hevy_get_routine_folders",
-    { description: "List Hevy routine folders (paged).", inputSchema: pageArgs },
+    {
+      title: "Hevy: list routine folders",
+      description: "List Hevy routine folders (paged).",
+      inputSchema: pageArgs,
+      annotations: HEVY_READ,
+    },
     ({ page, pageSize }) =>
       run("hevy_get_routine_folders", () => client.getRoutineFolders(page, pageSize)),
   );
@@ -620,8 +664,10 @@ export function registerHevyTools(server: McpServer, client: HevyClient): void {
   server.registerTool(
     "hevy_get_routine_folder",
     {
+      title: "Hevy: get routine folder",
       description: "One Hevy routine folder by id.",
       inputSchema: { folderId: z.number().int() },
+      annotations: HEVY_READ,
     },
     ({ folderId }) => run("hevy_get_routine_folder", () => client.getRoutineFolder(folderId)),
   );
@@ -629,8 +675,10 @@ export function registerHevyTools(server: McpServer, client: HevyClient): void {
   server.registerTool(
     "hevy_create_routine_folder",
     {
+      title: "Hevy: create routine folder",
       description: "Create a Hevy routine folder.",
       inputSchema: { title: z.string().min(1) },
+      annotations: HEVY_CREATE,
     },
     ({ title }) => run("hevy_create_routine_folder", () => client.createRoutineFolder(title)),
   );
@@ -639,11 +687,13 @@ export function registerHevyTools(server: McpServer, client: HevyClient): void {
   server.registerTool(
     "hevy_get_body_measurements",
     {
+      title: "Hevy: list body measurements",
       description: "List the athlete's body measurements (weight, body fat, girths; paged).",
       inputSchema: {
         page: z.number().int().min(1).default(1),
         pageSize: z.number().int().min(1).max(10).default(10),
       },
+      annotations: HEVY_READ,
     },
     ({ page, pageSize }) =>
       run("hevy_get_body_measurements", () => client.getBodyMeasurements(page, pageSize)),
@@ -652,8 +702,10 @@ export function registerHevyTools(server: McpServer, client: HevyClient): void {
   server.registerTool(
     "hevy_get_body_measurement",
     {
+      title: "Hevy: get body measurement",
       description: "The body measurement entry for one date (404 if none exists).",
       inputSchema: { date: isoDate },
+      annotations: HEVY_READ,
     },
     ({ date }) => run("hevy_get_body_measurement", () => client.getBodyMeasurement(date)),
   );
@@ -661,9 +713,11 @@ export function registerHevyTools(server: McpServer, client: HevyClient): void {
   server.registerTool(
     "hevy_create_body_measurement",
     {
+      title: "Hevy: record body measurement",
       description:
         "Record a body measurement for a date (one entry per date; use hevy_update_body_measurement if the date exists). Provide only the measured fields.",
       inputSchema: { date: isoDate, ...measurementShape },
+      annotations: HEVY_CREATE,
     },
     (args) =>
       run("hevy_create_body_measurement", () =>
@@ -674,9 +728,11 @@ export function registerHevyTools(server: McpServer, client: HevyClient): void {
   server.registerTool(
     "hevy_update_body_measurement",
     {
+      title: "Hevy: update body measurement",
       description:
         "Update an existing date's body measurement. Only provided fields change; fields cannot be cleared.",
       inputSchema: { date: isoDate, ...measurementShape },
+      annotations: HEVY_REPLACE,
     },
     (args) =>
       run("hevy_update_body_measurement", () =>
@@ -688,8 +744,10 @@ export function registerHevyTools(server: McpServer, client: HevyClient): void {
   server.registerTool(
     "hevy_get_user_info",
     {
+      title: "Hevy: account info",
       description: "The athlete's Hevy account info (id, name, public profile URL).",
       inputSchema: {},
+      annotations: HEVY_READ,
     },
     () => run("hevy_get_user_info", () => client.getUserInfo()),
   );

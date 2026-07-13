@@ -110,11 +110,13 @@ export function registerTopicTools(server: McpServer, seedDir: string): void {
   server.registerTool(
     "list_topic_packs",
     {
+      title: "List topic packs",
       description:
         "List the coaching topic packs available on this server (e.g. training, nutrition, " +
         "custom). Call during onboarding — or whenever the user wants coaching on a new area of " +
         "life — then get_topic_pack for each topic the user picks.",
       inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: false },
     },
     () =>
       withErrorHandling("list_topic_packs", () => {
@@ -139,6 +141,7 @@ export function registerTopicTools(server: McpServer, seedDir: string): void {
   server.registerTool(
     "get_topic_pack",
     {
+      title: "Get topic pack",
       description:
         "Get one topic pack in full: instantiation instructions, SKILL section skeleton, " +
         "onboarding interview, reference skeletons, and routine templates. Follow its " +
@@ -146,6 +149,7 @@ export function registerTopicTools(server: McpServer, seedDir: string): void {
       inputSchema: {
         name: z.string().min(1).describe("Pack id, e.g. 'training', 'nutrition', 'custom'"),
       },
+      annotations: { readOnlyHint: true, openWorldHint: false },
     },
     ({ name }) =>
       withErrorHandling("get_topic_pack", () => {

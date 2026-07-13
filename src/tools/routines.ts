@@ -23,6 +23,7 @@ export function registerRoutineTools(
   server.registerTool(
     "list_routines",
     {
+      title: "List routines",
       description:
         "List the user's stored scheduled routines (name, cadence, status). Routines are " +
         "check-in prompts the user runs as scheduled tasks in their own Claude account; the " +
@@ -30,6 +31,7 @@ export function registerRoutineTools(
       inputSchema: {
         status: z.enum(ROUTINE_STATUSES).optional().describe("Filter by status. Omit to list all."),
       },
+      annotations: { readOnlyHint: true, openWorldHint: false },
     },
     ({ status }) =>
       withErrorHandling("list_routines", () => {
@@ -63,12 +65,14 @@ export function registerRoutineTools(
   server.registerTool(
     "get_routine",
     {
+      title: "Get routine",
       description:
         "Get a stored routine by name: cadence, status, and the full prompt text the user " +
         "pastes into their Claude scheduled task.",
       inputSchema: {
         name: z.string().min(1).describe("Routine name"),
       },
+      annotations: { readOnlyHint: true, openWorldHint: false },
     },
     ({ name }) =>
       withErrorHandling("get_routine", () => {
@@ -92,12 +96,14 @@ export function registerRoutineTools(
   server.registerTool(
     "save_routine",
     {
+      title: "Save routine",
       description:
         "Create or update a stored routine. Design it first with the user per the " +
         "'routine-design' reference (goal, timeframe, cadence, silence conditions, review point) " +
         "and write the prompt in the user's preferred language. After saving, remind the user to " +
         "create/update the matching scheduled task in their Claude account (the prompt is also " +
         "copyable from their account page).",
+      annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: false },
       inputSchema: {
         name: z
           .string()
@@ -151,6 +157,7 @@ export function registerRoutineTools(
   server.registerTool(
     "delete_routine",
     {
+      title: "Delete routine",
       description:
         "Delete a stored routine. Requires confirm=true. Prefer status='retired' via " +
         "save_routine to keep it visible; delete only on explicit user request. The deleted " +
@@ -160,6 +167,7 @@ export function registerRoutineTools(
         name: z.string().min(1).describe("Routine name to delete"),
         confirm: z.literal(true).describe("Must be true to confirm destructive operation"),
       },
+      annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },
     ({ name }) =>
       withErrorHandling("delete_routine", () => {

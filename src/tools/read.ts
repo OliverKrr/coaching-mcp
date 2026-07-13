@@ -16,9 +16,11 @@ export function registerReadTools(
   server.registerTool(
     "get_coaching_context",
     {
+      title: "Get coaching context",
       description:
         "Get the full coaching context (SKILL.md). Call at the start of every coaching session.",
       inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: false },
     },
     () => {
       const row = db.prepare("SELECT content FROM sections WHERE name = 'main'").get() as
@@ -47,8 +49,10 @@ export function registerReadTools(
   server.registerTool(
     "search_knowledge",
     {
+      title: "Search knowledge",
       description:
         "Full-text search across coaching knowledge. Optional `type` scopes to one of section/reference/journal/routine; omitted searches all four.",
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         query: z.string().min(1).describe("Search terms"),
         type: z
@@ -153,11 +157,13 @@ export function registerReadTools(
   server.registerTool(
     "get_reference",
     {
+      title: "Get reference",
       description:
         "Get a full coaching reference document by name (core: coaching-method, routine-design, patterns, lifestyle; plus topic-specific ones like zones or recipes).",
       inputSchema: {
         name: z.string().describe("Reference name without .md extension"),
       },
+      annotations: { readOnlyHint: true, openWorldHint: false },
     },
     ({ name }) =>
       withErrorHandling("get_reference", () => {
@@ -179,9 +185,11 @@ export function registerReadTools(
   server.registerTool(
     "list_references",
     {
+      title: "List references",
       description:
         "List all available reference documents (coaching-method, patterns, topic references, etc.) with name, last-updated date, and size in bytes.",
       inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: false },
     },
     () =>
       withErrorHandling("list_references", () => {
@@ -201,9 +209,11 @@ export function registerReadTools(
   server.registerTool(
     "list_sections",
     {
+      title: "List sections",
       description:
         "List all knowledge sections (typically just 'main') with name, last-updated date, and size in bytes.",
       inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: false },
     },
     () =>
       withErrorHandling("list_sections", () => {
@@ -223,11 +233,13 @@ export function registerReadTools(
   server.registerTool(
     "get_section",
     {
+      title: "Get section",
       description:
         "Get a knowledge section by name. Use 'main' for the canonical SKILL.md (equivalent to get_coaching_context).",
       inputSchema: {
         name: z.string().min(1).describe("Section name; use 'main' for SKILL.md"),
       },
+      annotations: { readOnlyHint: true, openWorldHint: false },
     },
     ({ name }) =>
       withErrorHandling("get_section", () => {
@@ -249,8 +261,10 @@ export function registerReadTools(
   server.registerTool(
     "get_journal",
     {
+      title: "Get journal entries",
       description:
         "Get recent coaching journal entries. Provide `since` (YYYY-MM-DD) for date-bounded queries, or `limit` for newest-N (default 10). If both are given, `since` wins and `limit` is ignored.",
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         limit: z.number().int().min(1).max(50).optional(),
         since: z

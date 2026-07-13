@@ -1,12 +1,15 @@
 type TextContent = { type: "text"; text: string };
-type ToolResponse = { content: [TextContent] };
+type ToolResponse = { content: [TextContent]; isError?: boolean };
 
 export function toolText(text: string): ToolResponse {
   return { content: [{ type: "text", text }] };
 }
 
+/** Failed tool call per the MCP spec: isError lets clients distinguish a
+ * failure from a success that merely mentions an error; the message still
+ * reaches the model as guidance for the retry. */
 export function toolError(message: string): ToolResponse {
-  return { content: [{ type: "text", text: `Error: ${message}` }] };
+  return { content: [{ type: "text", text: `Error: ${message}` }], isError: true };
 }
 
 export function withErrorHandling(context: string, fn: () => ToolResponse): ToolResponse {

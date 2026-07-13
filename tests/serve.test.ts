@@ -351,6 +351,13 @@ describe("OAuth flow with OIDC federation", () => {
     await client.connect(transport);
     const tools = await client.listTools();
     expect(tools.tools.map((t) => t.name)).toContain("get_coaching_context");
+    // Serve-mode-only tools (registered in mcp-http.ts, not covered by the
+    // annotations suite) must carry grouping metadata on the wire too.
+    expect(tools.tools.map((t) => t.name)).toContain("request_quota_increase");
+    for (const t of tools.tools) {
+      expect(t.title, `${t.name}: missing title`).toBeTruthy();
+      expect(t.annotations, `${t.name}: missing annotations`).toBeDefined();
+    }
     await client.close();
   });
 

@@ -40,12 +40,14 @@ export function registerSeedUpdateTools(
   server.registerTool(
     "get_seed_updates",
     {
+      title: "Get pending seed updates",
       description:
         "Pending seed-template updates for this user: curated instructions from the operator " +
         "for merging coaching-guidance improvements into the user's personalized documents. " +
         "Call when get_coaching_context reports pending updates; merge per each entry's Apply " +
         "level, then call mark_seed_updates_applied.",
       inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: false },
     },
     () =>
       withErrorHandling("get_seed_updates", () => {
@@ -66,10 +68,12 @@ export function registerSeedUpdateTools(
   server.registerTool(
     "mark_seed_updates_applied",
     {
+      title: "Mark seed updates applied",
       description:
         "Record that seed updates have been merged into this user's documents (or consciously " +
         "settled with the user), so sessions stop re-surfacing them. Pass the highest handled " +
         "entry id; lower than the latest expresses partial application.",
+      annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false },
       inputSchema: {
         through_id: z
           .number()
