@@ -31,8 +31,11 @@ describe("secret sealing (AES-256-GCM)", () => {
   it("fails closed on wrong key, tampering, and cross-slot replay", () => {
     const sealed = sealSecret(KEY, "u_1", "hevy_api_key", "s3cret");
     expect(openSecret(OTHER_KEY, "u_1", "hevy_api_key", sealed)).toBeUndefined();
-    // flip one ciphertext character
-    const tampered = sealed.slice(0, -2) + (sealed.endsWith("A") ? "B" : "A") + sealed.slice(-1);
+    // flip the first IV character (index 3, after "v1:") — a base64url group's
+    // leading char carries fully significant bits, so A↔B is always a real change
+    // (the old flip of the second-to-last char was a no-op whenever that char was
+    // already the replacement letter, making this test flaky under random IVs)
+    const tampered = sealed.slice(0, 3) + (sealed[3] === "A" ? "B" : "A") + sealed.slice(4);
     expect(openSecret(KEY, "u_1", "hevy_api_key", tampered)).toBeUndefined();
     // AAD binds user and slot: the same blob is useless for another user/name
     expect(openSecret(KEY, "u_2", "hevy_api_key", sealed)).toBeUndefined();
