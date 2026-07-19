@@ -43,7 +43,7 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^26.1.0",
+    "@types/node": "^26.1.1",
     "oxfmt": "^0.57.0",
     "oxlint": "^1.72.0",
     "tsdown": "^0.22.3",
