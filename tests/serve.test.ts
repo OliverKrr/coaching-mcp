@@ -17,7 +17,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ServeConfig } from "../src/context.js";
 import {
-  MAX_SESSIONS_PER_USER,
+  pickFairShareVictim,
   SESSION_IDLE_TIMEOUT_MS,
   type McpSessionManager,
 } from "../src/mcp-http.js";
@@ -543,13 +543,12 @@ describe("MCP session lifecycle", () => {
     await client.close().catch(() => {});
   });
 
-  it("caps concurrent sessions per user", async () => {
+  it("lets one user hold many concurrent sessions while the budget allows", async () => {
     const alice = await oauthLogin(ALICE);
     const clients: Client[] = [];
-    for (let i = 0; i < MAX_SESSIONS_PER_USER + 2; i++) {
-      clients.push(await mcpClient(alice.access));
-    }
-    await expect.poll(() => sessions.stats().sessions).toBeLessThanOrEqual(MAX_SESSIONS_PER_USER);
+    for (let i = 0; i < 12; i++) clients.push(await mcpClient(alice.access));
+    // There is no per-user cap: on an otherwise idle server nothing is evicted.
+    expect(sessions.stats()).toMatchObject({ sessions: 12, users: 1 });
     for (const client of clients) await client.close().catch(() => {});
     await sessions.sweepIdle(Date.now() + SESSION_IDLE_TIMEOUT_MS + 1);
   });
@@ -565,6 +564,70 @@ describe("MCP session lifecycle", () => {
     expect(typeof body.rss_mb).toBe("number");
     // /health is public: counters only, never identities.
     expect(JSON.stringify(body)).not.toContain("@");
+  });
+});
+
+describe("fair-share session eviction", () => {
+  // [sid, userId, lastSeen] → the shape pickFairShareVictim consumes.
+  const sess = (rows: Array<[string, string, number]>) =>
+    rows.map(([sid, userId, lastSeen]) => [sid, { userId, lastSeen }] as const);
+
+  it("takes from the user holding the most, not the globally oldest", () => {
+    // bob's session is by far the oldest, but alice holds three to his one.
+    const victim = pickFairShareVictim(
+      sess([
+        ["bob-old", "bob", 1],
+        ["alice-1", "alice", 100],
+        ["alice-2", "alice", 200],
+        ["alice-3", "alice", 300],
+      ]),
+    );
+    expect(victim).toBe("alice-1"); // alice is heaviest → her oldest goes
+  });
+
+  it("never starves a light user while a heavy one is over its share", () => {
+    // Repeatedly evict; bob's single session must survive every round.
+    let pool = sess([
+      ["bob-1", "bob", 5],
+      ["alice-1", "alice", 10],
+      ["alice-2", "alice", 20],
+      ["alice-3", "alice", 30],
+    ]);
+    const evicted: string[] = [];
+    for (let round = 0; round < 2; round++) {
+      const victim = pickFairShareVictim(pool);
+      expect(victim).toBeDefined();
+      evicted.push(victim as string);
+      pool = pool.filter(([sid]) => sid !== victim);
+    }
+    expect(evicted).toEqual(["alice-1", "alice-2"]);
+    expect(pool.map(([sid]) => sid)).toContain("bob-1");
+  });
+
+  it("falls back to global LRU when everyone holds an equal share", () => {
+    const victim = pickFairShareVictim(
+      sess([
+        ["alice-1", "alice", 50],
+        ["bob-1", "bob", 20],
+        ["carol-1", "carol", 90],
+      ]),
+    );
+    expect(victim).toBe("bob-1");
+  });
+
+  it("evicts a runaway client's own oldest session, not anyone else's", () => {
+    const pool = sess([
+      ["victim-user-a", "a", 1000],
+      ["b-1", "b", 1],
+      ["runaway-oldest", "runaway", 500],
+      ["runaway-2", "runaway", 600],
+      ["runaway-3", "runaway", 700],
+    ]);
+    expect(pickFairShareVictim(pool)).toBe("runaway-oldest");
+  });
+
+  it("returns undefined for an empty server rather than throwing", () => {
+    expect(pickFairShareVictim([])).toBeUndefined();
   });
 });
 

@@ -253,11 +253,22 @@ connector clients abandon sessions without sending the spec's `DELETE`, so nothi
 frees them. Each session is expensive (an `McpServer` with every tool registered plus one live
 upstream client per attached gateway), so `McpSessionManager` stamps `lastSeen` on every request
 and reaps: an idle sweeper (`SESSION_IDLE_TIMEOUT_MS`, timer runs only while sessions exist)
-plus LRU caps (`MAX_SESSIONS_PER_USER`, `MAX_SESSIONS_TOTAL`) enforced when a session opens.
+plus one server-wide ceiling (`MAX_SESSIONS_TOTAL`) enforced when a session opens.
 Every teardown path goes through `dispose()` — dropping a session from the map without closing
 its gateway clients leaks connections with no session left to account for them. Without this the
 process climbs to the V8 heap ceiling over days and then spends every core in mark-compact GC:
 still "up", still passing a TCP check, answering trivial requests seconds late.
+
+**There is deliberately no per-user session cap — contention is resolved by fair share**: a fixed
+per-user limit punishes a single user on an otherwise idle server while doing nothing to make
+contention fair. Instead one user may use the whole budget when nobody else needs it, and once
+`MAX_SESSIONS_TOTAL` is exceeded `pickFairShareVictim` takes the least recently used session from
+whoever holds the **most**. That converges on max-min fairness with no configuration: a user
+holding one session is never evicted while another holds two, a client looping on initialize only
+evicts itself, and when all users hold an equal share it degrades to global LRU. The victim
+selection is a pure exported function precisely so the fairness properties are unit-testable
+without standing up dozens of real sessions. Size the ceiling by `sessions × ~3 MB` (measured, with
+one gateway mounted) against the deployed heap.
 
 **Runtime state is observable without a repro**: `/health` carries deliberately non-identifying
 counters (`sessions`, `gateways`, `heap_used_mb`/`heap_limit_mb`/`heap_pct`, `rss_mb`,

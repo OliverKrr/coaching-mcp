@@ -58,18 +58,22 @@ export const SESSION_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 /** How often the sweeper looks for idle sessions (only runs while any exist). */
 export const SESSION_SWEEP_INTERVAL_MS = 60_000;
 /**
- * Concurrent sessions one user may hold; the least recently used goes first.
+ * The ONLY hard ceiling is server-wide — there is deliberately no per-user cap.
  *
- * Sized from measurement, not taste: a session with one mounted gateway costs
- * ~3 MB of heap, and a single connector client was observed opening EIGHT
- * sessions for one user within five minutes of a restart. The caps are a
- * backstop against pathological churn — the idle sweeper is what does the real
- * work — so they must sit well clear of normal bursts. Evicting a session a
- * client still intends to use is not fatal (it re-initializes on the 404), but
- * it is a user-visible hiccup, so leave generous headroom.
+ * A fixed per-user limit is the wrong shape for this: it punishes a single user
+ * on an otherwise idle server (one connector client was observed opening EIGHT
+ * sessions for one user within five minutes of a restart, and a heavy user may
+ * legitimately want far more) while doing nothing to make contention fair. So
+ * one user may use the entire budget when nobody else needs it, and
+ * `pickFairShareVictim` decides who gives a session back when the budget is
+ * actually exhausted.
+ *
+ * Sized from measurement: a session with one mounted gateway costs ~3 MB of
+ * heap, so 64 × ~3 MB ≈ 210 MB, comfortably inside the 512 MB heap this is
+ * deployed with. This is the knob to raise if concurrent demand grows — keep
+ * `sessions × 3 MB` well under the heap, and remember the idle sweeper is what
+ * actually keeps memory flat. The cap is a backstop against pathological churn.
  */
-export const MAX_SESSIONS_PER_USER = 32;
-/** Server-wide ceiling: 64 × ~3 MB ≈ 210 MB, comfortably inside a 512 MB heap. */
 export const MAX_SESSIONS_TOTAL = 64;
 
 type McpSession = {
@@ -80,6 +84,45 @@ type McpSession = {
   /** Epoch ms of the last request on this session — the eviction clock. */
   lastSeen: number;
 };
+
+/** The only fields fair-share selection needs — keeps the policy unit-testable. */
+type SessionShare = { userId: string; lastSeen: number };
+
+/**
+ * Choose which session to drop when the server-wide cap is exceeded: the least
+ * recently used session belonging to whoever currently holds the MOST.
+ *
+ * This converges on max-min fairness without any per-user configuration. A user
+ * holding many sessions always loses their oldest first, so a user holding one
+ * is never evicted while someone else holds two — light users cannot be starved
+ * by a heavy one, and a client looping on initialize only evicts itself. When
+ * every user holds the same number, it degrades to plain global LRU, which is
+ * the only sensible tie-break left.
+ *
+ * The session just created is never the victim: it is by definition the most
+ * recently used, so it can only be picked if its owner is the heaviest AND it is
+ * their oldest — impossible.
+ */
+export function pickFairShareVictim(
+  sessions: Iterable<readonly [string, SessionShare]>,
+): string | undefined {
+  const entries = [...sessions];
+  const heldBy = new Map<string, number>();
+  for (const [, s] of entries) heldBy.set(s.userId, (heldBy.get(s.userId) ?? 0) + 1);
+  let most = 0;
+  for (const held of heldBy.values()) if (held > most) most = held;
+
+  let victim: string | undefined;
+  let oldest = Number.POSITIVE_INFINITY;
+  for (const [sid, s] of entries) {
+    if (heldBy.get(s.userId) !== most) continue;
+    if (s.lastSeen < oldest) {
+      oldest = s.lastSeen;
+      victim = sid;
+    }
+  }
+  return victim;
+}
 
 export class McpSessionManager {
   private readonly sessions = new Map<string, McpSession>();
@@ -206,7 +249,7 @@ export class McpSessionManager {
         });
         this.ctx.log(`mcp session ${sid} opened for ${auth.userId} (${this.sessions.size} open)`);
         this.startSweeper();
-        void this.enforceCaps(auth.userId);
+        void this.enforceCap();
       },
     });
     transport.onclose = () => {
@@ -336,23 +379,17 @@ export class McpSessionManager {
     this.ctx.log(`mcp session ${sid} evicted (${reason}); ${this.sessions.size} open`);
   }
 
-  /** Session ids ordered least-recently-used first. */
-  private lru(filter?: (session: McpSession) => boolean): string[] {
-    return [...this.sessions]
-      .filter(([, s]) => filter?.(s) ?? true)
-      .sort((a, b) => a[1].lastSeen - b[1].lastSeen)
-      .map(([sid]) => sid);
-  }
-
-  /** Drop the least recently used sessions until both caps hold again. */
-  private async enforceCaps(userId: string): Promise<void> {
-    const ofUser = this.lru((s) => s.userId === userId);
-    for (const sid of ofUser.slice(0, Math.max(0, ofUser.length - MAX_SESSIONS_PER_USER))) {
-      await this.evict(sid, "per-user session cap");
-    }
-    const all = this.lru();
-    for (const sid of all.slice(0, Math.max(0, all.length - MAX_SESSIONS_TOTAL))) {
-      await this.evict(sid, "server session cap");
+  /**
+   * Bring the server back under the global cap, taking each session from
+   * whoever currently holds the most (see `pickFairShareVictim`). No-op until
+   * the budget is genuinely exhausted, so a single user is free to use all of
+   * it while nobody else needs it.
+   */
+  private async enforceCap(): Promise<void> {
+    while (this.sessions.size > MAX_SESSIONS_TOTAL) {
+      const victim = pickFairShareVictim(this.sessions);
+      if (victim === undefined) return; // unreachable while size > 0; never spin
+      await this.evict(victim, "server session cap (fair share)");
     }
   }
 
