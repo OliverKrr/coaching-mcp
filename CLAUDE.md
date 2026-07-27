@@ -285,9 +285,14 @@ to ~90% just before a major GC, so an instantaneous reading is meaningless; the 
 the last `HEAP_WINDOW_SAMPLES` readings and tests their MINIMUM (the floor collection actually
 recovers to) against `HEAP_CRITICAL_PCT`. Samples come from `/health` calls themselves, spaced by
 `HEAP_SAMPLE_MIN_GAP_MS` so a burst of probes cannot fill the window, and a partial window yields
-no verdict — a freshly booted process is never reported unhealthy. Deployments should pair this
-with a memory limit _below_ the V8 heap ceiling, so a true runaway crashes and restarts rather
-than starving its host.
+no verdict — a freshly booted process is never reported unhealthy.
+
+Deployments should bound this process twice, in this order: cap the heap in-process
+(`--max-old-space-size`) so a runaway crashes and restarts long before it can starve its host, and
+set any container memory limit **above** that ceiling — not below it. Below, and the supervisor
+kills the process mid-write instead of letting V8 hit its own clean heap OOM. The in-process cap is
+also the only one that always works: a container limit silently does nothing on a host whose kernel
+ships without the memory cgroup controller.
 
 **All advertised URLs come from `PUBLIC_URL`**: routes mount at `/` behind a prefix-stripping
 reverse proxy; never build absolute URLs from Host headers. HTML forms/links on the account page
