@@ -275,7 +275,7 @@ the last `HEAP_WINDOW_SAMPLES` readings and tests their MINIMUM (the floor colle
 recovers to) against `HEAP_CRITICAL_PCT`. Samples come from `/health` calls themselves, spaced by
 `HEAP_SAMPLE_MIN_GAP_MS` so a burst of probes cannot fill the window, and a partial window yields
 no verdict — a freshly booted process is never reported unhealthy. Deployments should pair this
-with a memory limit *below* the V8 heap ceiling, so a true runaway crashes and restarts rather
+with a memory limit _below_ the V8 heap ceiling, so a true runaway crashes and restarts rather
 than starving its host.
 
 **All advertised URLs come from `PUBLIC_URL`**: routes mount at `/` behind a prefix-stripping

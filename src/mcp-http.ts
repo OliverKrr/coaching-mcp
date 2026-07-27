@@ -57,9 +57,19 @@ import { SERVER_INSTRUCTIONS, VERSION } from "./version.js";
 export const SESSION_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 /** How often the sweeper looks for idle sessions (only runs while any exist). */
 export const SESSION_SWEEP_INTERVAL_MS = 60_000;
-/** Concurrent sessions one user may hold; the least recently used goes first. */
-export const MAX_SESSIONS_PER_USER = 8;
-/** Server-wide ceiling, so no number of users can exhaust the heap. */
+/**
+ * Concurrent sessions one user may hold; the least recently used goes first.
+ *
+ * Sized from measurement, not taste: a session with one mounted gateway costs
+ * ~3 MB of heap, and a single connector client was observed opening EIGHT
+ * sessions for one user within five minutes of a restart. The caps are a
+ * backstop against pathological churn — the idle sweeper is what does the real
+ * work — so they must sit well clear of normal bursts. Evicting a session a
+ * client still intends to use is not fatal (it re-initializes on the 404), but
+ * it is a user-visible hiccup, so leave generous headroom.
+ */
+export const MAX_SESSIONS_PER_USER = 32;
+/** Server-wide ceiling: 64 × ~3 MB ≈ 210 MB, comfortably inside a 512 MB heap. */
 export const MAX_SESSIONS_TOTAL = 64;
 
 type McpSession = {
