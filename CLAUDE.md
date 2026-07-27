@@ -248,6 +248,36 @@ account-page editor mirrors the same checks minus the rate limit.
 the MCP SDK's `StreamableHTTPServerTransport` consumes Node req/res directly. Keep it that way —
 the dependency budget of this package is deliberately small.
 
+**MCP sessions expire on their own clock — `transport.onclose` is never the bound**: real
+connector clients abandon sessions without sending the spec's `DELETE`, so nothing external
+frees them. Each session is expensive (an `McpServer` with every tool registered plus one live
+upstream client per attached gateway), so `McpSessionManager` stamps `lastSeen` on every request
+and reaps: an idle sweeper (`SESSION_IDLE_TIMEOUT_MS`, timer runs only while sessions exist)
+plus LRU caps (`MAX_SESSIONS_PER_USER`, `MAX_SESSIONS_TOTAL`) enforced when a session opens.
+Every teardown path goes through `dispose()` — dropping a session from the map without closing
+its gateway clients leaks connections with no session left to account for them. Without this the
+process climbs to the V8 heap ceiling over days and then spends every core in mark-compact GC:
+still "up", still passing a TCP check, answering trivial requests seconds late.
+
+**Runtime state is observable without a repro**: `/health` carries deliberately non-identifying
+counters (`sessions`, `gateways`, `heap_used_mb`/`heap_limit_mb`/`heap_pct`, `rss_mb`,
+`uptime_s`) — it is public, so counts only, never identities — and `serve` logs the same set as
+a heartbeat every 15 min (shouting past `HEAP_WARN_PCT`), plus one line per request slower than
+`SLOW_REQUEST_MS` (SSE streams excluded — they are long-lived by design). Counts that never fall
+back to zero while nobody is connected, or a heap share that only climbs, name a leak from the
+log alone.
+
+**`/health` returns 503 on sustained heap pressure, and judges the post-GC floor**: an
+orchestrator can only recycle a wedged-but-alive process if the process says it is unwell —
+probe latency can't tell "GC spiral" from "small host under load". V8 routinely fills the heap
+to ~90% just before a major GC, so an instantaneous reading is meaningless; the detector keeps
+the last `HEAP_WINDOW_SAMPLES` readings and tests their MINIMUM (the floor collection actually
+recovers to) against `HEAP_CRITICAL_PCT`. Samples come from `/health` calls themselves, spaced by
+`HEAP_SAMPLE_MIN_GAP_MS` so a burst of probes cannot fill the window, and a partial window yields
+no verdict — a freshly booted process is never reported unhealthy. Deployments should pair this
+with a memory limit *below* the V8 heap ceiling, so a true runaway crashes and restarts rather
+than starving its host.
+
 **All advertised URLs come from `PUBLIC_URL`**: routes mount at `/` behind a prefix-stripping
 reverse proxy; never build absolute URLs from Host headers. HTML forms/links on the account page
 must use absolute `PUBLIC_URL`-based URLs for the same reason.

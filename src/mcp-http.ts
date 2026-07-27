@@ -45,13 +45,30 @@ import { SERVER_INSTRUCTIONS, VERSION } from "./version.js";
  * bound at initialize time to the authenticated user's own coaching DB, and
  * later requests must present a token for that same user. The tool layer
  * itself stays user-agnostic — it only ever sees a DB handle.
+ *
+ * Sessions are reaped on idle and bounded by hard caps: a session is expensive
+ * (an McpServer with every tool registered, plus one live client connection per
+ * attached gateway), and real connector clients routinely walk away without
+ * sending the spec's `DELETE` — so `transport.onclose` is an optimization, never
+ * the thing that keeps memory flat.
  */
+
+/** A session with no request for this long is closed by the sweeper. */
+export const SESSION_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+/** How often the sweeper looks for idle sessions (only runs while any exist). */
+export const SESSION_SWEEP_INTERVAL_MS = 60_000;
+/** Concurrent sessions one user may hold; the least recently used goes first. */
+export const MAX_SESSIONS_PER_USER = 8;
+/** Server-wide ceiling, so no number of users can exhaust the heap. */
+export const MAX_SESSIONS_TOTAL = 64;
 
 type McpSession = {
   transport: StreamableHTTPServerTransport;
   server: McpServer;
   userId: string;
   mounted: MountedGateway[];
+  /** Epoch ms of the last request on this session — the eviction clock. */
+  lastSeen: number;
 };
 
 export class McpSessionManager {
@@ -60,6 +77,7 @@ export class McpSessionManager {
   private readonly writeLimiter = new RateLimiter(WRITES_PER_MINUTE, 60_000);
   /** Per-user daily notify_user budget — a check-in channel, not a firehose. */
   private readonly notifyLimiter = new RateLimiter(TELEGRAM_NOTIFY_PER_DAY, 24 * 60 * 60 * 1000);
+  private sweepTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(private readonly ctx: ServeContext) {}
 
@@ -98,6 +116,7 @@ export class McpSessionManager {
         });
         return;
       }
+      session.lastSeen = Date.now();
       await session.transport.handleRequest(req, res);
       return;
     }
@@ -168,13 +187,23 @@ export class McpSessionManager {
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (sid) => {
-        this.sessions.set(sid, { transport, server, userId: auth.userId, mounted });
-        this.ctx.log(`mcp session ${sid} opened for ${auth.userId}`);
+        this.sessions.set(sid, {
+          transport,
+          server,
+          userId: auth.userId,
+          mounted,
+          lastSeen: Date.now(),
+        });
+        this.ctx.log(`mcp session ${sid} opened for ${auth.userId} (${this.sessions.size} open)`);
+        this.startSweeper();
+        void this.enforceCaps(auth.userId);
       },
     });
     transport.onclose = () => {
       const sid = transport.sessionId;
-      if (sid && this.sessions.delete(sid)) this.ctx.log(`mcp session ${sid} closed`);
+      if (sid && this.sessions.delete(sid)) {
+        this.ctx.log(`mcp session ${sid} closed (${this.sessions.size} open)`);
+      }
       void closeMountedGateways(mounted);
     };
 
@@ -275,23 +304,93 @@ export class McpSessionManager {
     );
   }
 
+  // -------------------------------------------------------------------------
+  // Session lifecycle. Every teardown path funnels through `dispose` so a
+  // session can never be dropped from the map while its gateway clients stay
+  // connected (that combination is invisible — it leaks with no session to
+  // account for it).
+
+  /** Close one session's transport, server and gateway clients. */
+  private async dispose(sid: string, session: McpSession): Promise<void> {
+    // Delete first: transport.close() fires onclose, which must find nothing.
+    this.sessions.delete(sid);
+    await session.transport.close().catch(() => {});
+    await session.server.close().catch(() => {});
+    await closeMountedGateways(session.mounted);
+  }
+
+  private async evict(sid: string, reason: string): Promise<void> {
+    const session = this.sessions.get(sid);
+    if (!session) return;
+    await this.dispose(sid, session);
+    this.ctx.log(`mcp session ${sid} evicted (${reason}); ${this.sessions.size} open`);
+  }
+
+  /** Session ids ordered least-recently-used first. */
+  private lru(filter?: (session: McpSession) => boolean): string[] {
+    return [...this.sessions]
+      .filter(([, s]) => filter?.(s) ?? true)
+      .sort((a, b) => a[1].lastSeen - b[1].lastSeen)
+      .map(([sid]) => sid);
+  }
+
+  /** Drop the least recently used sessions until both caps hold again. */
+  private async enforceCaps(userId: string): Promise<void> {
+    const ofUser = this.lru((s) => s.userId === userId);
+    for (const sid of ofUser.slice(0, Math.max(0, ofUser.length - MAX_SESSIONS_PER_USER))) {
+      await this.evict(sid, "per-user session cap");
+    }
+    const all = this.lru();
+    for (const sid of all.slice(0, Math.max(0, all.length - MAX_SESSIONS_TOTAL))) {
+      await this.evict(sid, "server session cap");
+    }
+  }
+
+  /** The sweeper only runs while sessions exist — an idle server has no timer. */
+  private startSweeper(): void {
+    if (this.sweepTimer) return;
+    this.sweepTimer = setInterval(() => void this.sweepIdle(), SESSION_SWEEP_INTERVAL_MS);
+    this.sweepTimer.unref();
+  }
+
+  private stopSweeper(): void {
+    if (!this.sweepTimer) return;
+    clearInterval(this.sweepTimer);
+    this.sweepTimer = undefined;
+  }
+
+  /** Close every session idle past `SESSION_IDLE_TIMEOUT_MS`. */
+  async sweepIdle(now = Date.now()): Promise<void> {
+    for (const [sid, session] of this.sessions) {
+      if (now - session.lastSeen >= SESSION_IDLE_TIMEOUT_MS) await this.evict(sid, "idle");
+    }
+    if (this.sessions.size === 0) this.stopSweeper();
+  }
+
+  /** Non-identifying counts for the health endpoint and the stats heartbeat. */
+  stats(): { sessions: number; users: number; gateways: number } {
+    const users = new Set<string>();
+    let gateways = 0;
+    for (const session of this.sessions.values()) {
+      users.add(session.userId);
+      gateways += session.mounted.length;
+    }
+    return { sessions: this.sessions.size, users: users.size, gateways };
+  }
+
   /** Tear down all sessions for one user (account deletion). */
   async closeUserSessions(userId: string): Promise<void> {
     for (const [sid, session] of this.sessions) {
       if (session.userId !== userId) continue;
-      this.sessions.delete(sid);
-      await session.transport.close().catch(() => {});
-      await session.server.close().catch(() => {});
-      await closeMountedGateways(session.mounted);
+      await this.dispose(sid, session);
     }
+    if (this.sessions.size === 0) this.stopSweeper();
   }
 
   async closeAll(): Promise<void> {
+    this.stopSweeper();
     for (const [sid, session] of this.sessions) {
-      this.sessions.delete(sid);
-      await session.transport.close().catch(() => {});
-      await session.server.close().catch(() => {});
-      await closeMountedGateways(session.mounted);
+      await this.dispose(sid, session);
     }
   }
 }

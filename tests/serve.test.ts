@@ -16,8 +16,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ServeConfig } from "../src/context.js";
+import {
+  MAX_SESSIONS_PER_USER,
+  SESSION_IDLE_TIMEOUT_MS,
+  type McpSessionManager,
+} from "../src/mcp-http.js";
 import { authRateLimiter } from "../src/ratelimit.js";
-import { buildHttpServer, createContext } from "../src/serve.js";
+import {
+  buildHttpServer,
+  createContext,
+  heapFloorPct,
+  resetHeapWatch,
+  sampleHeapPct,
+} from "../src/serve.js";
 import { listen, MockIssuer, type MockIdentity } from "./helpers/mock-oidc.js";
 
 // ---------------------------------------------------------------------------
@@ -118,6 +129,7 @@ let appServer: Server;
 let base = "";
 let dataDir = "";
 let closeApp: () => void;
+let sessions: McpSessionManager;
 const savedAllowlist = process.env.ALLOWED_EMAILS;
 const savedHevyBase = process.env.HEVY_API_BASE;
 const savedRegistration = process.env.REGISTRATION;
@@ -169,6 +181,7 @@ beforeAll(async () => {
     OIDC_CLIENT_SECRET: "test-secret",
   });
   ctx.log = () => {}; // keep test output quiet
+  sessions = mcpSessions;
   appServer = buildHttpServer(ctx, mcpSessions);
   await new Promise<void>((resolve) => {
     appServer.listen(0, "127.0.0.1", () => {
@@ -495,6 +508,96 @@ describe("multi-tenant MCP sessions", () => {
     for (const u of users) {
       expect(existsSync(join(dataDir, "users", u, "skill.db"))).toBe(true);
     }
+  });
+});
+
+describe("MCP session lifecycle", () => {
+  it("reaps sessions abandoned without a DELETE", async () => {
+    const alice = await oauthLogin(ALICE);
+    const transport = new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+      requestInit: { headers: { authorization: `Bearer ${alice.access}` } },
+    });
+    const client = new Client({ name: "abandoning-client", version: "0.0.0" });
+    await client.connect(transport);
+    const sid = transport.sessionId ?? "";
+    expect(sid).not.toBe("");
+    expect(sessions.stats().sessions).toBeGreaterThan(0);
+
+    // The client walks away: no DELETE, no closed stream. Real connectors do
+    // this routinely, so the idle clock has to be what frees the session.
+    await sessions.sweepIdle(Date.now() + SESSION_IDLE_TIMEOUT_MS + 1);
+    expect(sessions.stats()).toEqual({ sessions: 0, users: 0, gateways: 0 });
+
+    // The reaped id is rejected, not silently treated as a fresh session.
+    const stale = await fetch(`${base}/mcp`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${alice.access}`,
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+        "mcp-session-id": sid,
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
+    });
+    expect(stale.status).toBe(404);
+    await client.close().catch(() => {});
+  });
+
+  it("caps concurrent sessions per user", async () => {
+    const alice = await oauthLogin(ALICE);
+    const clients: Client[] = [];
+    for (let i = 0; i < MAX_SESSIONS_PER_USER + 2; i++) {
+      clients.push(await mcpClient(alice.access));
+    }
+    await expect.poll(() => sessions.stats().sessions).toBeLessThanOrEqual(MAX_SESSIONS_PER_USER);
+    for (const client of clients) await client.close().catch(() => {});
+    await sessions.sweepIdle(Date.now() + SESSION_IDLE_TIMEOUT_MS + 1);
+  });
+
+  it("serves non-identifying runtime counters on /health", async () => {
+    const res = await fetch(`${base}/health`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.ok).toBe(true);
+    expect(body.sessions).toBe(0);
+    expect(body.heap_limit_mb).toBeGreaterThan(0);
+    expect(typeof body.heap_pct).toBe("number");
+    expect(typeof body.rss_mb).toBe("number");
+    // /health is public: counters only, never identities.
+    expect(JSON.stringify(body)).not.toContain("@");
+  });
+});
+
+describe("heap-pressure detector", () => {
+  const gap = 20_000;
+
+  it("judges the post-GC floor, so spikes do not count as pressure", () => {
+    resetHeapWatch();
+    let t = 0;
+    // V8 fills the heap before a major GC — a 95% spike among low samples is
+    // normal, and the floor stays where collection brought it back to.
+    for (const pct of [40, 95, 45, 92, 41]) sampleHeapPct(pct, (t += gap));
+    expect(heapFloorPct()).toBe(40);
+
+    // Sustained: GC is no longer recovering anything. That is the spiral.
+    for (const pct of [93, 94, 95, 96, 97]) sampleHeapPct(pct, (t += gap));
+    expect(heapFloorPct()).toBe(93);
+    resetHeapWatch();
+  });
+
+  it("gives no verdict until the window is full — a fresh process is healthy", () => {
+    resetHeapWatch();
+    let t = 0;
+    for (const pct of [99, 99, 99]) sampleHeapPct(pct, (t += gap));
+    expect(heapFloorPct()).toBeUndefined();
+    resetHeapWatch();
+  });
+
+  it("rate-limits samples so a burst of probes cannot fill the window", () => {
+    resetHeapWatch();
+    for (let i = 0; i < 50; i++) sampleHeapPct(99, 1000 + i);
+    expect(heapFloorPct()).toBeUndefined();
+    resetHeapWatch();
   });
 });
 

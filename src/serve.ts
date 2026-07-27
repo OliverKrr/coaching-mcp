@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { getHeapStatistics } from "node:v8";
 import { handleAccountRoute, webAuth } from "./account.js";
 import { handleAdminRoute } from "./admin.js";
 import { handleAppRoute, parseProtectedApps } from "./apps-proxy.js";
@@ -35,6 +36,89 @@ import { VERSION } from "./version.js";
 
 function log(msg: string): void {
   process.stderr.write(`${new Date().toISOString()} [coaching-mcp serve] ${msg}\n`);
+}
+
+/** How often the runtime heartbeat lands in the log. */
+const STATS_INTERVAL_MS = 15 * 60 * 1000;
+/** Heap share above which the heartbeat shouts instead of noting. */
+const HEAP_WARN_PCT = 85;
+/** Requests slower than this get a log line naming the route. */
+const SLOW_REQUEST_MS = 3000;
+
+/**
+ * Heap-pressure detector behind `/health`.
+ *
+ * The failure it exists to catch: the heap creeps to its ceiling, and V8 then
+ * spends every core in back-to-back mark-compact runs. The process stays up,
+ * still answers, still passes a TCP or "did it respond" probe — just seconds
+ * late, which downstream clients see as an unreachable server. Probe LATENCY is
+ * a bad detector for it (a healthy process on a loaded small host is slow too),
+ * so the process reports its own condition instead.
+ *
+ * What makes it a spiral rather than a spike is the post-GC FLOOR: V8 routinely
+ * fills the heap to 90% right before a major GC, and that is normal. A floor
+ * that stays high means collection is no longer recovering anything. So we keep
+ * the recent samples and judge the minimum — and only once the window is full,
+ * so a just-booted process is never called unhealthy.
+ *
+ * Samples come from `/health` calls themselves (rate-limited below), so there is
+ * no timer: a container healthcheck polling once a minute IS the sampler, and
+ * with nobody polling there is no verdict to give.
+ */
+const HEAP_CRITICAL_PCT = 90;
+const HEAP_WINDOW_SAMPLES = 5;
+const HEAP_SAMPLE_MIN_GAP_MS = 20_000;
+
+const heapFloorSamples: number[] = [];
+let lastHeapSampleAt = 0;
+
+export function sampleHeapPct(pct: number, now = Date.now()): void {
+  if (now - lastHeapSampleAt < HEAP_SAMPLE_MIN_GAP_MS) return;
+  lastHeapSampleAt = now;
+  heapFloorSamples.push(pct);
+  if (heapFloorSamples.length > HEAP_WINDOW_SAMPLES) heapFloorSamples.shift();
+}
+
+/** The post-GC floor over the sample window, or undefined until it is full. */
+export function heapFloorPct(): number | undefined {
+  if (heapFloorSamples.length < HEAP_WINDOW_SAMPLES) return undefined;
+  return Math.min(...heapFloorSamples);
+}
+
+/** Test seam — the window is module state, and suites must not inherit it. */
+export function resetHeapWatch(): void {
+  heapFloorSamples.length = 0;
+  lastHeapSampleAt = 0;
+}
+
+/**
+ * Operational counters — deliberately non-identifying, because `/health` is
+ * public. This is the view that makes a wedged process diagnosable after the
+ * fact: session and gateway counts that should return to zero when nobody is
+ * connected, against a heap share that should not climb across days.
+ */
+export function runtimeStats(mcpSessions: McpSessionManager): {
+  sessions: number;
+  gateways: number;
+  heap_used_mb: number;
+  heap_limit_mb: number;
+  heap_pct: number;
+  rss_mb: number;
+  uptime_s: number;
+} {
+  const mb = (bytes: number): number => Math.round(bytes / (1024 * 1024));
+  const { sessions, gateways } = mcpSessions.stats();
+  const heapLimit = getHeapStatistics().heap_size_limit;
+  const mem = process.memoryUsage();
+  return {
+    sessions,
+    gateways,
+    heap_used_mb: mb(mem.heapUsed),
+    heap_limit_mb: mb(heapLimit),
+    heap_pct: Math.round((mem.heapUsed / heapLimit) * 100),
+    rss_mb: mb(mem.rss),
+    uptime_s: Math.round(process.uptime()),
+  };
 }
 
 export function loadServeConfig(env: NodeJS.ProcessEnv = process.env): ServeConfig {
@@ -92,6 +176,16 @@ export function createContext(
 
 export function buildHttpServer(ctx: ServeContext, mcpSessions: McpSessionManager): Server {
   return createServer((req, res) => {
+    const started = Date.now();
+    res.on("finish", () => {
+      const ms = Date.now() - started;
+      // SSE streams are long-lived by design — timing them says nothing.
+      if (ms < SLOW_REQUEST_MS || res.getHeader("content-type") === "text/event-stream") return;
+      const path = (req.url ?? "/").split("?")[0];
+      ctx.log(
+        `slow request: ${req.method} ${path} → ${res.statusCode} in ${(ms / 1000).toFixed(1)}s`,
+      );
+    });
     route(ctx, mcpSessions, req, res).catch((err) => {
       log(`request error: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`);
       if (!res.headersSent) sendJson(res, 500, { error: "internal_error" });
@@ -179,7 +273,19 @@ async function route(
   if (await handleAdminRoute(ctx, mcpSessions, req, res, url)) return;
 
   if (path === "/health" && method === "GET") {
-    sendJson(res, 200, { ok: true, version: VERSION });
+    const stats = runtimeStats(mcpSessions);
+    sampleHeapPct(stats.heap_pct);
+    // 503 is the whole point of the endpoint: it is what lets an orchestrator
+    // recycle a process that is technically alive but no longer serving.
+    const floor = heapFloorPct();
+    const wedged = floor !== undefined && floor >= HEAP_CRITICAL_PCT;
+    if (wedged) ctx.log(`WARNING: unhealthy — heap floor ${floor}% of limit over recent samples`);
+    sendJson(res, wedged ? 503 : 200, {
+      ok: !wedged,
+      ...(wedged ? { reason: "heap_pressure", heap_floor_pct: floor } : {}),
+      version: VERSION,
+      ...stats,
+    });
     return;
   }
   if (path === "/" && method === "GET") {
@@ -223,8 +329,22 @@ export async function main(): Promise<void> {
     log(`ready — listening on :${cfg.port}, public URL ${cfg.publicUrl}`);
   });
 
+  // Runtime heartbeat. Cheap, and the only record of how the process behaved
+  // between two incidents: a session or gateway count that never falls back to
+  // zero, or a heap share that only climbs, names the culprit without a repro.
+  const heartbeat = setInterval(() => {
+    const s = runtimeStats(mcpSessions);
+    const { users } = mcpSessions.stats();
+    const line =
+      `stats: ${s.sessions} session(s) for ${users} user(s), ${s.gateways} gateway tool-source(s), ` +
+      `heap ${s.heap_used_mb}/${s.heap_limit_mb} MB (${s.heap_pct}%), rss ${s.rss_mb} MB, up ${Math.round(s.uptime_s / 60)} min`;
+    log(s.heap_pct >= HEAP_WARN_PCT ? `WARNING: heap pressure — ${line}` : line);
+  }, STATS_INTERVAL_MS);
+  heartbeat.unref();
+
   const shutdown = (signal: string): void => {
     log(`${signal} — shutting down`);
+    clearInterval(heartbeat);
     server.close(() => {
       mcpSessions
         .closeAll()
