@@ -231,10 +231,11 @@ export class McpSessionManager {
     }
 
     if (mounted.length > 0) {
-      const { mountedTools } = attachGatewayTools(server, mounted, this.ctx.log);
+      const { mountedTools, rebuild } = attachGatewayTools(server, mounted, this.ctx.log);
       this.ctx.log(
         `mounted ${mountedTools} gateway tool(s) from ${mounted.length} server(s) for ${auth.userId}`,
       );
+      this.registerRefreshGatewaysTool(server, auth.userId, mounted, rebuild);
     }
 
     const transport = new StreamableHTTPServerTransport({
@@ -305,6 +306,69 @@ export class McpSessionManager {
               "The operator decides manually — usually within a day. Tell the user their request is on its way.",
           );
         }),
+    );
+  }
+
+  /**
+   * Re-read the tool lists of the user's connected servers, bypassing the cache.
+   *
+   * Registered only when the session actually mounted gateways. It exists
+   * because the cache trades freshness for a ~4 s saving on every session
+   * start: the escape hatch has to be reachable from inside a conversation,
+   * since that is where the user notices a tool is missing.
+   */
+  private registerRefreshGatewaysTool(
+    server: McpServer,
+    userId: string,
+    mounted: MountedGateway[],
+    rebuild: (next: MountedGateway[]) => number,
+  ): void {
+    server.registerTool(
+      "refresh_connected_servers",
+      {
+        title: "Refresh connected servers' tools",
+        description:
+          "Re-read the tool lists of the user's connected (gateway) servers, bypassing the cache. " +
+          "Tool lists are cached for hours because they rarely change, so use this when the user " +
+          "says they just added, updated or reconfigured a connected server and its tools are " +
+          "missing, stale or wrong. Not needed otherwise, and not a fix for a failing tool call.",
+        annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: true },
+        inputSchema: {},
+      },
+      async () => {
+        const previous = mounted.map((m) => m.gateway.name);
+        let refreshed: MountedGateway[];
+        try {
+          refreshed = await mountUserGateways(this.ctx, userId, { force: true });
+        } catch (err) {
+          return toolError(
+            `refresh_connected_servers: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+        // Replace the session's list in place: transport.onclose closes whatever
+        // this array holds, so assigning a new array would leak the new
+        // connections and double-close the old ones.
+        const stale = [...mounted];
+        mounted.length = 0;
+        mounted.push(...refreshed);
+        const toolCount = rebuild(refreshed);
+        await closeMountedGateways(stale);
+        // The client caches tools/list; without this the refresh is invisible.
+        server.sendToolListChanged();
+        this.ctx.log(
+          `gateway tools refreshed for ${userId}: ${toolCount} tool(s) from ${refreshed.length} server(s)`,
+        );
+        const names = refreshed.map((m) => m.gateway.name);
+        const missing = previous.filter((n) => !names.includes(n));
+        return toolText(
+          `Refreshed: ${toolCount} tool(s) from ${refreshed.length} connected server(s)` +
+            (names.length > 0 ? ` (${names.join(", ")})` : "") +
+            (missing.length > 0
+              ? `. Could not reach: ${missing.join(", ")} — the user can check the connection on their account page.`
+              : ".") +
+            " The updated tools are available now.",
+        );
+      },
     );
   }
 

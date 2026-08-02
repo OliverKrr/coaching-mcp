@@ -7,7 +7,12 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
-import { assertSafeGatewayUrl, sdkInternals } from "../src/gateways.js";
+import {
+  assertSafeGatewayUrl,
+  cachedGatewayCount,
+  invalidateGatewayTools,
+  sdkInternals,
+} from "../src/gateways.js";
 import { unzipSync, strFromU8 } from "fflate";
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
@@ -1441,6 +1446,10 @@ describe("protected app proxy", () => {
 type MockUpstream = {
   url: string;
   issuedTokens: Set<string>;
+  /** How many times a client has initialized against this upstream. */
+  initializations: () => number;
+  /** Publish an extra tool, so a refresh has something new to discover. */
+  addTool: (name: string) => void;
   close: () => Promise<void>;
 };
 
@@ -1460,6 +1469,8 @@ async function startMockUpstream(opts: {
   const authCodes = new Map<string, { challenge: string }>();
   const transports = new Map<string, StreamableHTTPServerTransport>();
   let baseUrl = "http://pending";
+  let initializations = 0;
+  const extraTools: string[] = [];
 
   const httpServer = createServer((req, res) => {
     void (async () => {
@@ -1566,10 +1577,16 @@ async function startMockUpstream(opts: {
         return;
       }
 
+      initializations++;
       const upstream = new McpServer(
         { name: "mock-upstream", version: "1.0.0" },
         opts.instructions ? { instructions: opts.instructions } : undefined,
       );
+      for (const name of extraTools) {
+        upstream.registerTool(name, { description: `extra ${name}`, inputSchema: {} }, () => ({
+          content: [{ type: "text", text: name }],
+        }));
+      }
       upstream.registerTool(
         "get_activities",
         {
@@ -1603,6 +1620,8 @@ async function startMockUpstream(opts: {
   return {
     url,
     issuedTokens,
+    initializations: () => initializations,
+    addTool: (name: string) => extraTools.push(name),
     close: () =>
       new Promise((resolve) => {
         httpServer.closeAllConnections();
@@ -1737,6 +1756,101 @@ describe("MCP gateways (user-attached upstream servers)", () => {
       } finally {
         await client.close();
       }
+    } finally {
+      await removeAllGateways(session);
+    }
+  });
+
+  it("caches tool lists across sessions and defers connecting until a call needs it", async () => {
+    const session = await loginWithCsrf(ALICE);
+    invalidateGatewayTools();
+    try {
+      await addGateway(session, { name: "Fitness", url: upOpen.url });
+      // Adding the gateway runs an account-page Connect, which warms the cache.
+      const afterAdd = upOpen.initializations();
+
+      const alice = await oauthLogin(ALICE);
+      const first = await mcpClient(alice.access);
+      try {
+        // Mounting served tools from cache: no new upstream connection at all.
+        expect((await first.listTools()).tools.map((t) => t.name)).toContain(
+          "fitness_get_activities",
+        );
+        expect(upOpen.initializations()).toBe(afterAdd);
+
+        // ...until a call actually needs the upstream, which connects once and
+        // is then reused by later calls in the same session.
+        expect(
+          toolText(
+            await first.callTool({ name: "fitness_get_activities", arguments: { days: 1 } }),
+          ),
+        ).toContain("activities:1");
+        const afterCall = upOpen.initializations();
+        expect(afterCall).toBe(afterAdd + 1);
+        await first.callTool({ name: "fitness_get_activities", arguments: { days: 2 } });
+        expect(upOpen.initializations()).toBe(afterCall);
+      } finally {
+        await first.close();
+      }
+
+      // A whole second session mounts without touching the upstream.
+      const second = await mcpClient(alice.access);
+      try {
+        expect((await second.listTools()).tools.map((t) => t.name)).toContain(
+          "fitness_get_activities",
+        );
+        expect(upOpen.initializations()).toBe(afterAdd + 1);
+      } finally {
+        await second.close();
+      }
+    } finally {
+      await removeAllGateways(session);
+    }
+  });
+
+  it("refresh_connected_servers re-reads the upstream and exposes newly added tools", async () => {
+    const session = await loginWithCsrf(ALICE);
+    invalidateGatewayTools();
+    try {
+      await addGateway(session, { name: "Fitness", url: upOpen.url });
+      const alice = await oauthLogin(ALICE);
+      const client = await mcpClient(alice.access);
+      try {
+        expect((await client.listTools()).tools.map((t) => t.name)).not.toContain(
+          "fitness_brand_new",
+        );
+
+        // The upstream ships a new tool. The cache would hide it for hours.
+        upOpen.addTool("brand_new");
+        const before = upOpen.initializations();
+        const out = toolText(
+          await client.callTool({ name: "refresh_connected_servers", arguments: {} }),
+        );
+        expect(out).toContain("Refreshed");
+        expect(upOpen.initializations()).toBe(before + 1); // forced past the cache
+
+        const names = (await client.listTools()).tools.map((t) => t.name);
+        expect(names).toContain("fitness_brand_new"); // visible in THIS session
+        expect(names).toContain("get_coaching_context"); // natives still intact
+        expect(
+          toolText(await client.callTool({ name: "fitness_brand_new", arguments: {} })),
+        ).toContain("brand_new");
+      } finally {
+        await client.close();
+      }
+    } finally {
+      await removeAllGateways(session);
+    }
+  });
+
+  it("deleting a gateway drops its cached tools", async () => {
+    const session = await loginWithCsrf(ALICE);
+    invalidateGatewayTools();
+    try {
+      await addGateway(session, { name: "Fitness", url: upOpen.url });
+      expect(cachedGatewayCount()).toBe(1);
+      await removeAllGateways(session);
+      expect(cachedGatewayCount()).toBe(0);
     } finally {
       await removeAllGateways(session);
     }

@@ -121,6 +121,7 @@ which must be backed up alongside per-user snapshots or a restore can't reconstr
 | `delete_routine`                      | write     | Delete a stored routine (confirm=true)                                         |
 | `request_quota_increase`              | write     | Ask the operator for more storage with a reason (serve mode, per-session)      |
 | `notify_user`                         | write     | Telegram message to the user (per-session, only when their chat is linked)     |
+| `refresh_connected_servers`           | write     | Re-read attached gateways' tools past the cache (per-session, only if mounted) |
 | `get_version`                         | read      | Build info + per-table statistics + storage usage vs. quota                    |
 
 **Every tool registration carries a `title` and MCP tool `annotations`** — connector UIs group
@@ -327,6 +328,22 @@ private/internal targets, re-checked per request and per redirect hop;
 credentials (OAuth tokens, DCR client info, static bearer) live in the sealed per-user secret
 store; a failed upstream is skipped for the session and surfaced on the account page, never
 breaking coaching.
+
+**Gateway tool lists are cached; gateway connections never are**: mounting used to connect to
+every upstream and page through `tools/list` on *every* session, synchronously ahead of the
+session being usable — measured at ~4 s of a live deployment's own `initialize`, paid again per
+concurrent session, for data that changes when an upstream ships a release. So `mountUserGateways`
+serves tools from a per-gateway cache (`GATEWAY_TOOLS_TTL_MS`, 12 h) and `MountedGateway.getClient`
+defers the socket until a `tools/call` actually routes upstream — a session that never invokes an
+upstream tool never opens one. The split is the correctness argument: a stale tool *list* costs at
+worst a confusing description until the TTL lapses, whereas a stale *connection* would break calls.
+Invalidate (`invalidateGatewayTools`) on anything that changes what an upstream exposes — the
+account page's Connect refreshes it, `deleteGateway` drops it. The escape hatch is the
+`refresh_connected_servers` tool, registered per session only when gateways mounted: it re-mounts
+with `force`, swaps the exposed set via the `rebuild` returned by `attachGatewayTools` (the SDK
+cannot re-register handlers mid-session, so the tool list behind them is mutable by design), and
+must call `sendToolListChanged()` — without that notification the client keeps serving its cached
+`tools/list` and the refresh is invisible.
 
 **App proxy authorization is allowlist-per-app**: a Google login alone must never expose a
 protected app; the user's email must be on that app's own list (`PROTECTED_APP_<NAME>_EMAILS`).

@@ -280,6 +280,7 @@ function gatewayUrl(ctx: ServeContext, gw: Gateway): URL {
 }
 
 export function deleteGateway(ctx: ServeContext, userId: string, id: string): void {
+  invalidateGatewayTools(id);
   ctx.authDb.prepare("DELETE FROM gateways WHERE id = ? AND user_id = ?").run(id, userId);
   ctx.authDb
     .prepare("DELETE FROM gateway_pending WHERE gateway_id = ? AND user_id = ?")
@@ -510,6 +511,13 @@ export async function startGatewayConnect(ctx: ServeContext, gw: Gateway): Promi
     const { client } = await connectClient(ctx, gw, state);
     try {
       const tools = await listAllTools(client);
+      // A manual Connect is the user asserting "this upstream changed" — take
+      // the fresh list rather than leaving a stale cache to shadow it.
+      toolsCache.set(gw.id, {
+        tools,
+        instructions: client.getInstructions(),
+        fetchedAt: Date.now(),
+      });
       markStatus(ctx.authDb, gw.id, "connected", null);
       return { kind: "connected", toolCount: tools.length };
     } finally {
@@ -576,33 +584,127 @@ export async function finishGatewayConnect(
 
 export type MountedGateway = {
   gateway: Gateway;
-  client: Client;
   tools: Tool[];
   instructions?: string;
+  /**
+   * Opens the upstream connection on first use and memoizes it. Only a
+   * `tools/call` needs it — `tools/list` is served from `tools` above — so a
+   * session that never invokes an upstream tool never opens a socket.
+   */
+  getClient: () => Promise<Client>;
+  /** Closes the upstream if one was ever opened. Safe to call unconditionally. */
+  close: () => Promise<void>;
 };
 
 function trimError(err: unknown): string {
   return (err instanceof Error ? err.message : String(err)).slice(0, 200);
 }
 
+// ---------------------------------------------------------------------------
+// Tool-list cache.
+//
+// Mounting used to connect to every upstream and page through tools/list on
+// EVERY new session, synchronously, before the session could be used. Measured
+// on a live deployment that cost ~4 s of the session's own initialize — paid
+// again for each of ~29 concurrent sessions — for data that changes when an
+// upstream ships a release, i.e. approximately never.
+//
+// So the tool list is cached per gateway and the connection is deferred until a
+// call actually needs it. Correctness rests on that split: a stale tool LIST
+// costs at worst one confusing tool description until the TTL lapses, whereas a
+// stale CONNECTION would break calls — and connections are never cached.
+
+type CachedTools = { tools: Tool[]; instructions?: string; fetchedAt: number };
+
+/** Long on purpose: upstream tool sets change on releases, not on sessions. */
+export const GATEWAY_TOOLS_TTL_MS = 12 * 60 * 60 * 1000;
+
+const toolsCache = new Map<string, CachedTools>();
+
 /**
- * Open every configured upstream for one user's new MCP session. Failures are
- * recorded on the gateway row (surfaced on the account page) and skipped.
+ * Drop cached tools. Call after anything that can change what an upstream
+ * exposes — URL edits, credential changes, removal — and on explicit refresh.
+ * Omit the id to clear everything (tests).
+ */
+export function invalidateGatewayTools(gatewayId?: string): void {
+  if (gatewayId === undefined) toolsCache.clear();
+  else toolsCache.delete(gatewayId);
+}
+
+/** Test seam: how many gateways currently have cached tools. */
+export function cachedGatewayCount(): number {
+  return toolsCache.size;
+}
+
+function mountLazily(
+  ctx: ServeContext,
+  gateway: Gateway,
+  tools: Tool[],
+  instructions: string | undefined,
+  alreadyOpen?: Client,
+): MountedGateway {
+  let open: Client | undefined = alreadyOpen;
+  let opening: Promise<Client> | undefined;
+  return {
+    gateway,
+    tools,
+    instructions,
+    getClient: () => {
+      if (open) return Promise.resolve(open);
+      // Memoize the in-flight connect so parallel tool calls share one socket,
+      // but clear it on failure so a later call can retry rather than inherit
+      // a permanently rejected promise.
+      opening ??= connectClient(ctx, gateway)
+        .then(({ client }) => {
+          open = client;
+          markStatus(ctx.authDb, gateway.id, "connected", null);
+          return client;
+        })
+        .catch((err: unknown) => {
+          opening = undefined;
+          const needsAuth = err instanceof UnauthorizedError;
+          markStatus(ctx.authDb, gateway.id, needsAuth ? "needs_auth" : "error", trimError(err));
+          throw err;
+        });
+      return opening;
+    },
+    close: async () => {
+      const client = open;
+      open = undefined;
+      opening = undefined;
+      if (client) await client.close().catch(() => {});
+    },
+  };
+}
+
+/**
+ * Prepare every configured upstream for one user's new MCP session. Cached tool
+ * lists mount without touching the network; a cache miss (or `force`) connects,
+ * pages through tools/list and repopulates. Failures are recorded on the
+ * gateway row (surfaced on the account page) and skipped.
  */
 export async function mountUserGateways(
   ctx: ServeContext,
   userId: string,
+  opts: { force?: boolean } = {},
 ): Promise<MountedGateway[]> {
   if (!ctx.cfg.secretsKey) return [];
   const rows = listGateways(ctx.authDb, userId);
   if (rows.length === 0) return [];
+  const now = Date.now();
   const mounted = await Promise.all(
     rows.map(async (gw): Promise<MountedGateway | undefined> => {
+      const cached = opts.force ? undefined : toolsCache.get(gw.id);
+      if (cached && now - cached.fetchedAt < GATEWAY_TOOLS_TTL_MS) {
+        return mountLazily(ctx, gw, cached.tools, cached.instructions);
+      }
       try {
         const { client } = await connectClient(ctx, gw);
         const tools = await listAllTools(client);
+        const instructions = client.getInstructions();
+        toolsCache.set(gw.id, { tools, instructions, fetchedAt: now });
         markStatus(ctx.authDb, gw.id, "connected", null);
-        return { gateway: gw, client, tools, instructions: client.getInstructions() };
+        return mountLazily(ctx, gw, tools, instructions, client);
       } catch (err) {
         const needsAuth = err instanceof UnauthorizedError;
         markStatus(ctx.authDb, gw.id, needsAuth ? "needs_auth" : "error", trimError(err));
@@ -616,7 +718,7 @@ export async function mountUserGateways(
 
 export async function closeMountedGateways(mounted: MountedGateway[]): Promise<void> {
   for (const m of mounted) {
-    await m.client.close().catch(() => {});
+    await m.close();
   }
 }
 
@@ -653,7 +755,7 @@ export function attachGatewayTools(
   server: McpServer,
   mounted: MountedGateway[],
   log: (msg: string) => void,
-): { mountedTools: number; skipped: string[] } {
+): { mountedTools: number; skipped: string[]; rebuild: (next: MountedGateway[]) => number } {
   const { handlers, nativeNames } = sdkInternals(server);
   const nativeList = handlers.get("tools/list");
   const nativeCall = handlers.get("tools/call");
@@ -661,46 +763,65 @@ export function attachGatewayTools(
     throw new Error("MCP SDK internals changed — native tools handlers not found");
   }
 
-  const routes = new Map<string, { client: Client; upstreamName: string; gatewayName: string }>();
-  const extraTools: Tool[] = [];
-  const skipped: string[] = [];
-  for (const m of mounted) {
-    const prefix = toolPrefix(m.gateway);
-    for (const tool of m.tools) {
-      const exposed = `${prefix}_${tool.name}`;
-      if (nativeNames.has(exposed) || routes.has(exposed)) {
-        skipped.push(`${m.gateway.name}: ${exposed}`);
-        continue;
+  // Mutable so a refresh can swap the exposed set in place: the request
+  // handlers below close over these, and re-registering handlers mid-session
+  // is not something the SDK supports.
+  let routes = new Map<
+    string,
+    { getClient: () => Promise<Client>; upstreamName: string; gatewayName: string }
+  >();
+  let extraTools: Tool[] = [];
+
+  const build = (list: MountedGateway[]): string[] => {
+    const nextRoutes = new Map<
+      string,
+      { getClient: () => Promise<Client>; upstreamName: string; gatewayName: string }
+    >();
+    const nextTools: Tool[] = [];
+    const skipped: string[] = [];
+    for (const m of list) {
+      const prefix = toolPrefix(m.gateway);
+      for (const tool of m.tools) {
+        const exposed = `${prefix}_${tool.name}`;
+        if (nativeNames.has(exposed) || nextRoutes.has(exposed)) {
+          skipped.push(`${m.gateway.name}: ${exposed}`);
+          continue;
+        }
+        if (nextTools.length >= MAX_GATEWAY_TOOLS) {
+          skipped.push(`${m.gateway.name}: ${exposed} (tool cap reached)`);
+          continue;
+        }
+        nextRoutes.set(exposed, {
+          getClient: m.getClient,
+          upstreamName: tool.name,
+          gatewayName: m.gateway.name,
+        });
+        // Attribution: prefix name + server name in description AND title —
+        // permission UIs render titles, so the title must carry the source too.
+        nextTools.push({
+          ...tool,
+          name: exposed,
+          description: tool.description
+            ? `${m.gateway.name}: ${tool.description}`
+            : `Tool from the connected server "${m.gateway.name}".`,
+          ...(tool.title ? { title: `${m.gateway.name}: ${tool.title}` } : {}),
+          ...(tool.annotations?.title
+            ? {
+                annotations: {
+                  ...tool.annotations,
+                  title: `${m.gateway.name}: ${tool.annotations.title}`,
+                },
+              }
+            : {}),
+        });
       }
-      if (extraTools.length >= MAX_GATEWAY_TOOLS) {
-        skipped.push(`${m.gateway.name}: ${exposed} (tool cap reached)`);
-        continue;
-      }
-      routes.set(exposed, {
-        client: m.client,
-        upstreamName: tool.name,
-        gatewayName: m.gateway.name,
-      });
-      // Attribution: prefix name + server name in description AND title —
-      // permission UIs render titles, so the title must carry the source too.
-      extraTools.push({
-        ...tool,
-        name: exposed,
-        description: tool.description
-          ? `${m.gateway.name}: ${tool.description}`
-          : `Tool from the connected server "${m.gateway.name}".`,
-        ...(tool.title ? { title: `${m.gateway.name}: ${tool.title}` } : {}),
-        ...(tool.annotations?.title
-          ? {
-              annotations: {
-                ...tool.annotations,
-                title: `${m.gateway.name}: ${tool.annotations.title}`,
-              },
-            }
-          : {}),
-      });
     }
-  }
+    routes = nextRoutes;
+    extraTools = nextTools;
+    return skipped;
+  };
+
+  const skipped = build(mounted);
   if (skipped.length > 0) log(`gateway tools skipped (name collision/cap): ${skipped.join(", ")}`);
 
   server.server.setRequestHandler(ListToolsRequestSchema, async (req, extra) => {
@@ -711,7 +832,11 @@ export function attachGatewayTools(
     const route = routes.get(req.params.name);
     if (!route) return (await nativeCall(req, extra)) as CallToolResult;
     try {
-      return (await route.client.callTool(
+      // First call to this upstream in the session pays the connect; the rest
+      // reuse it. A connect failure lands in the same catch as a call failure,
+      // which is what we want — either way the tool did not run.
+      const client = await route.getClient();
+      return (await client.callTool(
         { name: route.upstreamName, arguments: req.params.arguments ?? {} },
         undefined,
         { timeout: CALL_TIMEOUT_MS, resetTimeoutOnProgress: true },
@@ -729,5 +854,18 @@ export function attachGatewayTools(
     }
   });
 
-  return { mountedTools: extraTools.length, skipped };
+  return {
+    mountedTools: extraTools.length,
+    skipped,
+    /**
+     * Swap the exposed upstream tools for a freshly mounted set and report the
+     * new count. The caller is responsible for notifying the client
+     * (`tools/list_changed`) — the SDK will not infer it from a handler swap.
+     */
+    rebuild: (next: MountedGateway[]): number => {
+      const dropped = build(next);
+      if (dropped.length > 0) log(`gateway tools skipped on refresh: ${dropped.join(", ")}`);
+      return extraTools.length;
+    },
+  };
 }
