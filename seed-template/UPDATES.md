@@ -129,3 +129,7 @@ topic:
   mention the pack now ships a `daily-checkin-selfreport` template
   (self-report loop via Telegram quick capture / journal) they can fetch via
   `get_topic_pack("training")`.
+- For EVERY stored routine (any topic): propose replacing its context-loading
+  step (`get_coaching_context` + separate `list_open_items` / `get_journal`
+  calls) with one `start_session` call — same data, one round trip, journal
+  payload bounded as history grows.

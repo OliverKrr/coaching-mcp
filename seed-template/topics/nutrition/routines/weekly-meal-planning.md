@@ -18,12 +18,13 @@ Transient-outage guard: if a coaching-server call times out or errors, retry 2�
 between attempts. If it stays unreachable, do NOT half-produce the plan: stop — the next run
 picks it up. Never write a partial or duplicate plan.
 
-1. Load context: get_coaching_context, then get_reference("dietary-profile"),
-   get_reference("meal-planning"), and get_reference("recipes"). Anchor today's date — never
-   infer it.
-2. Review the week: get_journal since the last plan and list_open_items — how did last week's
-   plan go (meals cooked, skipped, verdicts recorded)? Open with what went well; a skipped week
-   gets a smaller, easier plan, never guilt.
+1. Load context: start_session (coaching context, open items, recent journal — one call), then
+   get_reference("dietary-profile"), get_reference("meal-planning"), and
+   get_reference("recipes"). Anchor today's date — never infer it.
+2. Review the week from the returned journal and open items — how did last week's plan go
+   (meals cooked, skipped, verdicts recorded)? Older entries via get_journal since/ids if the
+   last plan predates the returned window. Open with what went well; a skipped week gets a
+   smaller, easier plan, never guilt.
 3. Draft next week's plan per the meal-planning conventions: [N] meals, reuse loved recipes,
    at most [1–2] new suggestions. EVERY meal must pass the dietary-profile check — severity
    rules, hidden sources, cross-contamination. When unsure whether something is safe, leave it

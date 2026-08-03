@@ -21,15 +21,17 @@ Transient-outage guard: if a coaching-server call times out or errors, retry 2�
 between attempts. If it stays unreachable, end with the one quiet line noting the coaching
 server was down — never invent data.
 
-1. Load context: get_coaching_context (training framework, week skeleton, patterns) and
+1. Load context: start_session (coaching context with training framework, week skeleton and
+   patterns, open items, and the recent journal — one call) and
    get_reference("coaching-method"). Anchor today's date [name the person's date source —
    there is no connector profile]; never infer it.
-2. Read yesterday's self-reports: get_journal (limit 5) — pick up `[via Telegram]` captures and
-   any reported session, sleep, soreness, stress, or skipped workout.
+2. Read yesterday's self-reports from the returned journal part — pick up `[via Telegram]`
+   captures and any reported session, sleep, soreness, stress, or skipped workout (older
+   headlines in full via get_journal ids if needed).
 3. Evaluate what was reported (self-report replaces the wellness feed):
    - Reported multi-day fatigue, poor sleep, or rising soreness → add_open_item (kind=flag,
      source=daily-checkin, dedup_key=[e.g. "fatigue-<YYYY-Www>"], one line: what + recommended
-     action). Never re-raise an open flag — check list_open_items kind=flag first.
+     action). Never re-raise an open flag — start_session already listed the open ones.
    - A reported hard-session-tomorrow conflict with reported fatigue → make tomorrow's session
      conditional in the push, in plain words.
    - Nothing reported for [3+] days → one warm nudge in the push, never guilt (see

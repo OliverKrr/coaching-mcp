@@ -32,8 +32,9 @@ export function renderLanding(
 Coaching-MCP-Connector — nicht in diesem Prompt.
 
 Zu Beginn JEDER Session — nicht verhandelbar:
-1. Rufe zuerst get_coaching_context auf und folge exakt der dort beschriebenen Arbeitsweise.
-2. Rufe list_open_items auf und geh offene Punkte durch, bevor du coachst.
+1. Rufe zuerst start_session auf (liefert Coaching-Kontext, offene Punkte und die letzten
+   Journal-Einträge in einem Aufruf) und folge exakt der im Kontext beschriebenen Arbeitsweise.
+2. Geh die offenen Punkte durch, bevor du coachst — überfällige (OVERDUE) zuerst.
 3. Wenn der Connector nicht erreichbar ist, sag das offen — improvisiere kein Coaching aus dem
    Chat-Gedächtnis.
 
@@ -43,8 +44,9 @@ du irgendetwas planst, und nenne bei Wochenplänen jeden Tag mit Kalenderdatum.`
 MCP connector — not in this prompt.
 
 At the start of EVERY session — non-negotiable:
-1. Call get_coaching_context first and follow its operating procedure exactly.
-2. Call list_open_items and review open items before coaching.
+1. Call start_session first (it returns the coaching context, open items, and recent journal
+   in one call) and follow the operating procedure in the returned context exactly.
+2. Review the open items before coaching — OVERDUE ones first.
 3. If the connector is unreachable, say so openly — never improvise coaching from chat memory.
 
 Date anchor: never assume a date. Confirm today's date (ask me if needed) before any planning,

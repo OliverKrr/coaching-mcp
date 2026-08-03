@@ -161,7 +161,7 @@ beforeAll(async () => {
   );
   writeFileSync(
     join(seedDir, "topics", "training", "routines", "weekly-review.md"),
-    "# Weekly Review\n\nCadence: weekly, Sunday evening\n\nLoad get_coaching_context, then write the check-in of record.\n",
+    "# Weekly Review\n\nCadence: weekly, Sunday evening\n\nLoad start_session, then write the check-in of record.\n",
   );
 
   process.env.ALLOWED_EMAILS = `${ALICE}, ${BOB}`;
@@ -674,7 +674,7 @@ describe("landing page setup guide", () => {
     const en = await (await fetch(`${base}/`)).text();
     expect(en).toContain("Set up in five steps");
     expect(en).toContain(base); // the connector URL is shown for copy-paste
-    expect(en).toContain("get_coaching_context"); // project-instructions block
+    expect(en).toContain("start_session"); // project-instructions block
 
     const de = await (await fetch(`${base}/?lang=de`)).text();
     expect(de).toContain("Einrichtung in fünf Schritten");
@@ -690,7 +690,7 @@ describe("landing page setup guide", () => {
     expect(en).toContain("Design it with your coach");
     expect(en).toContain("Weekly Review"); // template from the topic pack fixture
     expect(en).toContain("weekly, Sunday evening"); // parsed cadence shown
-    expect(en).toContain("get_coaching_context"); // prompt text present
+    expect(en).toContain("start_session"); // prompt text present
 
     const de = await (await fetch(`${base}/routines?lang=de`)).text();
     expect(de).toContain("Mit dem Coach entwerfen");

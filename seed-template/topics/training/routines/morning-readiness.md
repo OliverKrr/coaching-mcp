@@ -20,15 +20,17 @@ Transient-outage guard: if a coaching-server call times out or errors, retry 2�
 between attempts. If it's still unreachable, evaluate only the load-based flags and note in any
 push that the coaching server was down.
 
-1. Load context: get_coaching_context (patterns & lifestyle rules) and get_reference("injuries").
-   Anchor today's date [from the fitness connector's profile].
+1. Load context: start_session (coaching context with patterns & lifestyle rules, open items,
+   recent journal — one call) and get_reference("injuries"). Anchor today's date [from the
+   fitness connector's profile].
 2. Pull signals [from the fitness connector]: wellness (last ~7 days — HRV, RHR, sleep),
    fitness/load (last ~21 days), recent training history (adherence / missed quality).
 3. Data-sync guard: check that last night's wellness row is actually present. If it is NOT synced
    yet, do not infer anything from its absence: skip the HRV/RHR/sleep flags this run, evaluate
    only the load-based flags, and if you push, note that overnight data wasn't in yet. Never
    raise a flag off missing data.
-4. Check existing open flags FIRST: list_open_items kind=flag — never re-raise an open flag.
+4. Check existing open flags FIRST (already delivered by start_session) — never re-raise an
+   open flag.
 5. Evaluate the rules (raise only if the rule holds AND no open flag shares the dedup_key) —
    add_open_item (kind=flag, source=morning-readiness, dedup_key, relevant_date, content = one
    line: what + recommended action). Adapt thresholds to the athlete's injuries reference and

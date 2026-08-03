@@ -18,7 +18,8 @@ between attempts. If it stays unreachable, do NOT half-produce the review: note 
 short journal entry (if reachable) and stop — the next run picks it up. Never write a
 partial/duplicate check-in.
 
-1. Load context: get_coaching_context, then get_reference("coaching-method") and
+1. Load context: start_session (coaching context, open items, recent journal — last week's
+   check-in rides along for the comparison), then get_reference("coaching-method") and
    get_reference("season-plan"). The season plan anchors the verdicts: which phase the week
    belongs to, what the next checkpoint expects, which race is next — a week is only "good" or
    "bad" relative to it. Anchor today's date [from your fitness connector's profile if

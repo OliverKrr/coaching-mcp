@@ -25,14 +25,14 @@ Purpose: brief tomorrow's quality session the evening before, so the intention a
 even for an early-morning workout. Each quality session is briefed once, here — the morning
 readiness routine does NOT brief sessions.
 
-1. Load context: get_coaching_context (training framework, zone-target rules) and
-   get_reference("coaching-method"). Anchor today's date [from the fitness connector's profile];
-   determine tomorrow's date.
+1. Load context: start_session (coaching context with training framework and zone-target
+   rules, open items, recent journal — one call) and get_reference("coaching-method"). Anchor
+   today's date [from the fitness connector's profile]; determine tomorrow's date.
 2. Check tomorrow's plan [fitness connector events + the weekly anchors from the coaching
    context] for a planned quality session. None → end the run with the one quiet line, nothing
    else.
 3. Read readiness context: [recent wellness — HRV/RHR/sleep — from the fitness connector] and
-   list_open_items kind=flag (any open readiness flag or recovery gate).
+   the open flags from start_session (any open readiness flag or recovery gate).
 4. Compose the pre-session intention per coaching-method → "Writing a proactive push": a short,
    warm paragraph that leads with the call — no jargon, no labels. Fold in as prose: what
    adaptation tomorrow's session targets (the why, one clause); the right target metric per the
