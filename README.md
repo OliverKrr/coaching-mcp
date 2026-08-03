@@ -38,28 +38,31 @@ coaching-mcp serve (one container)
 
 ## Tools
 
-| Tool                                  | Description                                                                                                |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `get_coaching_context`                | Returns the full `SKILL.md` content                                                                        |
-| `search_knowledge`                    | FTS5 full-text search across sections, references, journal, and routines                                   |
-| `get_section` / `list_sections`       | One knowledge section / all sections with metadata                                                         |
-| `get_reference` / `list_references`   | One reference document / all references with metadata                                                      |
-| `get_journal`                         | Returns recent journal entries newest-first                                                                |
-| `update_section`                      | Upserts a knowledge section                                                                                |
-| `update_reference`                    | Upserts a reference document                                                                               |
-| `append_journal`                      | Appends a coaching journal entry                                                                           |
-| `delete_section` / `delete_reference` | Deletes a document (confirm required; `main` protected)                                                    |
-| `add_open_item`                       | Records a commitment (if-then next action) or a de-duplicated flag                                         |
-| `list_open_items`                     | Lists open commitments/flags (defaults to status=open) — call at session start                             |
-| `resolve_open_item`                   | Closes an open item (done/dismissed) with an optional note                                                 |
-| `list_topic_packs`                    | Lists installable coaching topics (training, nutrition, custom, …)                                         |
-| `get_topic_pack`                      | Full pack: interview, section/reference skeletons, routine templates                                       |
-| `list_routines` / `get_routine`       | The user's stored scheduled-routine prompts                                                                |
-| `save_routine`                        | Upserts a routine (name, cadence, prompt, status) designed with the user                                   |
-| `delete_routine`                      | Deletes a stored routine (confirm required)                                                                |
-| `request_quota_increase`              | Asks the operator for more storage, with a reason (multi-user mode)                                        |
-| `notify_user`                         | Sends the user a Telegram message — e.g. a routine's check-in summary (only for users who linked Telegram) |
-| `get_version`                         | Build info + per-table statistics incl. storage usage vs. quota                                            |
+| Tool                                  | Description                                                                                                  |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `start_session`                       | One-call session start: context + open items (overdue marked) + latest journal (newest full, rest headlines) |
+| `get_coaching_context`                | Returns the full `SKILL.md` content                                                                          |
+| `search_knowledge`                    | FTS5 full-text search (relevance-ranked) across sections, references, journal, and routines                  |
+| `get_section` / `list_sections`       | One knowledge section / all sections with metadata                                                           |
+| `get_reference` / `list_references`   | One reference document / all references with metadata                                                        |
+| `get_journal`                         | Journal entries newest-first: by count, date range, specific ids, full or one-line headlines                 |
+| `update_section`                      | Upserts a knowledge section                                                                                  |
+| `update_reference`                    | Upserts a reference document                                                                                 |
+| `append_journal`                      | Appends a coaching journal entry                                                                             |
+| `delete_section` / `delete_reference` | Deletes a document (confirm required; `main` protected)                                                      |
+| `add_open_item`                       | Records a commitment (if-then next action) or a de-duplicated flag                                           |
+| `list_open_items`                     | Lists commitments/flags with opened dates and OVERDUE markers (status filter incl. 'all')                    |
+| `resolve_open_item`                   | Closes an open item (done/dismissed); the note is stored beside the preserved content                        |
+| `record_metric` / `get_metrics`       | Structured numeric measurements (weight, resting HR, adherence %) — trends without table edits               |
+| `delete_metric`                       | Removes one mistyped data point (confirm required)                                                           |
+| `list_topic_packs`                    | Lists installable coaching topics (training, nutrition, custom, …)                                           |
+| `get_topic_pack`                      | Full pack: interview, section/reference skeletons, routine templates                                         |
+| `list_routines` / `get_routine`       | The user's stored scheduled-routine prompts                                                                  |
+| `save_routine`                        | Upserts a routine (name, cadence, prompt, status) designed with the user                                     |
+| `delete_routine`                      | Deletes a stored routine (confirm required)                                                                  |
+| `request_quota_increase`              | Asks the operator for more storage, with a reason (multi-user mode)                                          |
+| `notify_user`                         | Sends the user a Telegram message — e.g. a routine's check-in summary (only for users who linked Telegram)   |
+| `get_version`                         | Build info + per-table statistics incl. storage usage vs. quota                                              |
 
 ## Quick start (multi-user, Docker Compose)
 

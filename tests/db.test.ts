@@ -118,6 +118,8 @@ describe("open_items schema", () => {
       "relevant_date",
       "created_at",
       "updated_at",
+      // Added by the additive column migration, hence last.
+      "resolved_note",
     ]);
   });
 

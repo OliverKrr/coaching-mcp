@@ -99,8 +99,9 @@ which must be backed up alongside per-user snapshots or a restore can't reconstr
 
 | Tool                                  | Direction | Description                                                                    |
 | ------------------------------------- | --------- | ------------------------------------------------------------------------------ |
-| `get_coaching_context`                | read      | Full SKILL.md — call at session start                                          |
-| `search_knowledge`                    | read      | FTS5 full-text search (sections, refs, journal, routines)                      |
+| `start_session`                       | read      | Composite session start: context + open items + recent journal in one call     |
+| `get_coaching_context`                | read      | Full SKILL.md — session start on servers without `start_session`               |
+| `search_knowledge`                    | read      | FTS5 full-text search, `ORDER BY rank` (sections, refs, journal, routines)     |
 | `get_section` / `list_sections`       | read      | One section / all sections with metadata                                       |
 | `get_reference` / `list_references`   | read      | One reference doc / all references with metadata                               |
 | `get_journal`                         | read      | Recent journal entries, newest first                                           |
@@ -111,8 +112,10 @@ which must be backed up alongside per-user snapshots or a restore can't reconstr
 | `delete_section` / `delete_reference` | write     | Delete a doc (confirm=true; `main` protected; recoverable via change history)  |
 | `list_changes` / `get_change`         | read      | Change history: what edits/overwrites/deletes removed — for content recovery   |
 | `add_open_item`                       | write     | Record a commitment (if-then next action) or a de-duplicated flag              |
-| `list_open_items`                     | read      | List open commitments/flags (defaults to status=open) — call at session start  |
-| `resolve_open_item`                   | write     | Close an open item (done/dismissed) with an optional note                      |
+| `list_open_items`                     | read      | List commitments/flags with opened dates + OVERDUE markers (status incl. all)  |
+| `resolve_open_item`                   | write     | Close an open item; note stored in `resolved_note`, content preserved verbatim |
+| `record_metric` / `get_metrics`       | r/w       | Structured numeric series (weight, adherence, …) — trends without table edits  |
+| `delete_metric`                       | write     | Remove one data point (confirm=true; not covered by change history)            |
 | `list_topic_packs` / `get_topic_pack` | read      | Installable coaching topics: interview + skeletons + routine templates         |
 | `get_seed_updates`                    | read      | Pending seed-template updates: curated merge instructions for the assistant    |
 | `mark_seed_updates_applied`           | write     | Advance the per-user seed-update watermark after merging (partial ok)          |
@@ -151,7 +154,12 @@ external-content virtual tables. All four require INSERT + UPDATE + DELETE trigg
 sync with their base tables (`journal_au` arrived with web journal editing in v2.1 — the journal
 is append-only over MCP but editable on the account page). Do not remove any trigger from
 `db.ts`; because `createSchema()` uses `CREATE TABLE/TRIGGER IF NOT EXISTS` on every open, new
-tables and triggers self-apply to existing per-user DBs (this is how v2 DBs gained `routines`).
+tables and triggers self-apply to existing per-user DBs (this is how v2 DBs gained `routines`
+and later `metrics`). Column additions have no IF NOT EXISTS, so `createSchema()` probes
+`pragma table_info` before `ALTER TABLE ADD COLUMN` (how `open_items` gained `resolved_note`) —
+new columns land at the end of the column list. The `metrics` table is deliberately outside FTS
+(structured, queried by name) and outside change history (a measurement log, not authored
+prose); its `*_bytes_*` triggers count `name`+`unit`+`note` toward the quota.
 
 **Change history is a delta log, captured at two levels**: the per-user `changes` table records
 what every write REMOVED (edit → the verbatim old/new strings, overwrite → a block diff of the
@@ -330,13 +338,13 @@ store; a failed upstream is skipped for the session and surfaced on the account 
 breaking coaching.
 
 **Gateway tool lists are cached; gateway connections never are**: mounting used to connect to
-every upstream and page through `tools/list` on *every* session, synchronously ahead of the
+every upstream and page through `tools/list` on _every_ session, synchronously ahead of the
 session being usable — measured at ~4 s of a live deployment's own `initialize`, paid again per
 concurrent session, for data that changes when an upstream ships a release. So `mountUserGateways`
 serves tools from a per-gateway cache (`GATEWAY_TOOLS_TTL_MS`, 12 h) and `MountedGateway.getClient`
 defers the socket until a `tools/call` actually routes upstream — a session that never invokes an
-upstream tool never opens one. The split is the correctness argument: a stale tool *list* costs at
-worst a confusing description until the TTL lapses, whereas a stale *connection* would break calls.
+upstream tool never opens one. The split is the correctness argument: a stale tool _list_ costs at
+worst a confusing description until the TTL lapses, whereas a stale _connection_ would break calls.
 Invalidate (`invalidateGatewayTools`) on anything that changes what an upstream exposes — the
 account page's Connect refreshes it, `deleteGateway` drops it. The escape hatch is the
 `refresh_connected_servers` tool, registered per session only when gateways mounted: it re-mounts

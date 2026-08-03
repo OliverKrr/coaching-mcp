@@ -15,6 +15,7 @@ export type OpenItem = {
   source: string | null;
   dedup_key: string | null;
   relevant_date: string | null;
+  resolved_note: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -25,6 +26,15 @@ export type Routine = {
   status: "active" | "paused" | "retired";
   created_at: string;
   updated_at: string;
+};
+export type Metric = {
+  id: number;
+  name: string;
+  value: number;
+  unit: string | null;
+  note: string | null;
+  measured_at: string;
+  created_at: string;
 };
 export const ROUTINE_STATUSES = ["active", "paused", "retired"] as const;
 
@@ -63,7 +73,8 @@ export function recomputeContentBytes(db: Database.Database): void {
 				+ (SELECT COALESCE(SUM(LENGTH(content)), 0) FROM refs)
 				+ (SELECT COALESCE(SUM(LENGTH(entry)), 0) FROM journal)
 				+ (SELECT COALESCE(SUM(LENGTH(prompt)), 0) FROM routines)
-				+ (SELECT COALESCE(SUM(LENGTH(content)), 0) FROM open_items) AS n`,
+				+ (SELECT COALESCE(SUM(LENGTH(content)), 0) FROM open_items)
+				+ (SELECT COALESCE(SUM(LENGTH(name) + LENGTH(COALESCE(unit, '')) + LENGTH(COALESCE(note, ''))), 0) FROM metrics) AS n`,
       )
       .get() as { n: number }
   ).n;
@@ -110,6 +121,16 @@ export function createSchema(db: Database.Database): void {
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
 			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 		);
+		CREATE TABLE IF NOT EXISTS metrics (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			value REAL NOT NULL,
+			unit TEXT,
+			note TEXT,
+			measured_at TEXT NOT NULL DEFAULT (datetime('now')),
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);
+		CREATE INDEX IF NOT EXISTS metrics_name_measured ON metrics(name, measured_at);
 		CREATE VIRTUAL TABLE IF NOT EXISTS sections_fts USING fts5(
 			name UNINDEXED, content,
 			content=sections, content_rowid=rowid
@@ -223,6 +244,12 @@ export function createSchema(db: Database.Database): void {
 		CREATE TRIGGER IF NOT EXISTS open_items_bytes_ad AFTER DELETE ON open_items BEGIN
 			UPDATE meta SET value = value - LENGTH(old.content) WHERE key = 'content_bytes';
 		END;
+		CREATE TRIGGER IF NOT EXISTS metrics_bytes_ai AFTER INSERT ON metrics BEGIN
+			UPDATE meta SET value = value + LENGTH(new.name) + LENGTH(COALESCE(new.unit, '')) + LENGTH(COALESCE(new.note, '')) WHERE key = 'content_bytes';
+		END;
+		CREATE TRIGGER IF NOT EXISTS metrics_bytes_ad AFTER DELETE ON metrics BEGIN
+			UPDATE meta SET value = value - LENGTH(old.name) - LENGTH(COALESCE(old.unit, '')) - LENGTH(COALESCE(old.note, '')) WHERE key = 'content_bytes';
+		END;
 		${CHANGES_TABLE_SQL}
 		CREATE TRIGGER IF NOT EXISTS sections_hist_ad AFTER DELETE ON sections BEGIN
 			INSERT INTO changes(kind, name, op, old_text)
@@ -243,6 +270,12 @@ export function createSchema(db: Database.Database): void {
 				VALUES ('journal', CAST(old.id AS TEXT), 'delete', old.entry);
 		END;
 	`);
+  // Additive column migrations: ALTER TABLE has no IF NOT EXISTS, so probe
+  // table_info first — the same self-applying spirit as the trigger families.
+  const openItemCols = db.pragma("table_info(open_items)") as Array<{ name: string }>;
+  if (!openItemCols.some((c) => c.name === "resolved_note")) {
+    db.exec("ALTER TABLE open_items ADD COLUMN resolved_note TEXT");
+  }
 }
 
 export function seedFromDirectory(db: Database.Database, seedDir: string): void {

@@ -95,7 +95,7 @@ describe("add_open_item", () => {
       relevant_date: "2026-06-28",
     });
     const r = await callTool(server, "list_open_items", {});
-    expect(r.content[0].text).toContain("(2026-06-28)");
+    expect(r.content[0].text).toContain("for 2026-06-28");
   });
 });
 
@@ -134,6 +134,45 @@ describe("list_open_items", () => {
     const r = await callTool(server, "list_open_items", {});
     expect(r.content[0].text).toContain("No open open items");
   });
+
+  it("shows the opened date on every item", async () => {
+    const { server } = makeServer();
+    await callTool(server, "add_open_item", { kind: "flag", content: "dated" });
+    const r = await callTool(server, "list_open_items", {});
+    expect(r.content[0].text).toMatch(/\(opened \d{4}-\d{2}-\d{2}\)/);
+  });
+
+  it("marks items whose relevant_date has passed as OVERDUE", async () => {
+    const { server, db } = makeServer();
+    await callTool(server, "add_open_item", {
+      kind: "commitment",
+      content: "past due",
+      relevant_date: "2020-01-01",
+    });
+    db.prepare("INSERT INTO open_items(kind, content, relevant_date) VALUES (?, ?, ?)").run(
+      "commitment",
+      "far future",
+      "2099-01-01",
+    );
+    const text = (await callTool(server, "list_open_items", {})).content[0].text;
+    expect(text).toMatch(/past due/);
+    expect(text).toMatch(/for 2020-01-01 — OVERDUE\) past due/);
+    expect(text).not.toMatch(/2099-01-01 — OVERDUE/);
+  });
+
+  it("status 'all' returns every status with the status labelled", async () => {
+    const { server } = makeServer();
+    const a = await callTool(server, "add_open_item", { kind: "flag", content: "stays open" });
+    const b = await callTool(server, "add_open_item", { kind: "flag", content: "gets done" });
+    const id = Number(b.content[0].text.match(/#(\d+)/)![1]);
+    await callTool(server, "resolve_open_item", { id, status: "done" });
+    const text = (await callTool(server, "list_open_items", { status: "all" })).content[0].text;
+    expect(text).toContain("stays open");
+    expect(text).toContain("gets done");
+    expect(text).toContain("[flag, done]");
+    expect(text).toContain("[flag, open]");
+    expect(a.content[0].text).toContain("added");
+  });
 });
 
 describe("resolve_open_item", () => {
@@ -155,5 +194,43 @@ describe("resolve_open_item", () => {
     const { server } = makeServer();
     const r = await callTool(server, "resolve_open_item", { id: 999, status: "done" });
     expect(r.content[0].text).toContain("not found");
+  });
+
+  it("preserves the original content verbatim — the note lives beside it", async () => {
+    const { server, db } = makeServer();
+    const a = await callTool(server, "add_open_item", {
+      kind: "commitment",
+      content: "original commitment text",
+    });
+    const id = Number(a.content[0].text.match(/#(\d+)/)![1]);
+    await callTool(server, "resolve_open_item", { id, status: "done", note: "handled" });
+    const row = db
+      .prepare("SELECT content, resolved_note FROM open_items WHERE id = ?")
+      .get(id) as { content: string; resolved_note: string };
+    expect(row.content).toBe("original commitment text");
+    expect(row.resolved_note).toBe("handled");
+  });
+
+  it("resolved_note column self-applies to a pre-migration database", () => {
+    const db = new Database(":memory:");
+    db.pragma("journal_mode = WAL");
+    // Simulate a pre-feature DB: same table without resolved_note.
+    db.exec(`CREATE TABLE open_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind TEXT NOT NULL CHECK (kind IN ('commitment','flag')),
+      content TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','done','dismissed')),
+      source TEXT, dedup_key TEXT, relevant_date TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );`);
+    db.prepare("INSERT INTO open_items(kind, content) VALUES ('flag', 'pre-migration row')").run();
+    createSchema(db);
+    const row = db.prepare("SELECT content, resolved_note FROM open_items WHERE id = 1").get() as {
+      content: string;
+      resolved_note: string | null;
+    };
+    expect(row.content).toBe("pre-migration row");
+    expect(row.resolved_note).toBeNull();
   });
 });

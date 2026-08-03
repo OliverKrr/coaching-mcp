@@ -53,6 +53,12 @@ export function registerOpsTools(
         const routinesCount = (
           db.prepare("SELECT COUNT(*) as n FROM routines").get() as { n: number }
         ).n;
+        const openItemsCount = (
+          db.prepare("SELECT COUNT(*) as n FROM open_items").get() as { n: number }
+        ).n;
+        const metricsCount = (
+          db.prepare("SELECT COUNT(*) as n FROM metrics").get() as { n: number }
+        ).n;
         const changesCount = (
           db.prepare("SELECT COUNT(*) as n FROM changes").get() as { n: number }
         ).n;
@@ -74,6 +80,8 @@ export function registerOpsTools(
           refs_count: refsCount,
           journal_count: journalCount,
           routines_count: routinesCount,
+          open_items_count: openItemsCount,
+          metrics_count: metricsCount,
           changes_count: changesCount,
           db_size_bytes: dbSizeBytes,
           storage_bytes: storageBytes,

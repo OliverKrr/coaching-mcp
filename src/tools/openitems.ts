@@ -5,6 +5,33 @@ import type { OpenItem } from "../db.js";
 import { checkWrite, ENTRY_MAX_BYTES, type WriteLimits } from "../quota.js";
 import { toolError, toolText, withErrorHandling } from "../utils/errors.js";
 
+export type OpenItemWithOverdue = OpenItem & { overdue: number };
+
+const OPEN_ITEM_COLUMNS =
+  "id, kind, content, status, source, dedup_key, relevant_date, resolved_note, created_at, updated_at, " +
+  "(status = 'open' AND relevant_date IS NOT NULL AND relevant_date < date('now')) AS overdue";
+
+/** All currently open items, newest first — shared with start_session. */
+export function openOpenItems(db: Database.Database): OpenItemWithOverdue[] {
+  return db
+    .prepare(`SELECT ${OPEN_ITEM_COLUMNS} FROM open_items WHERE status = 'open' ORDER BY id DESC`)
+    .all() as OpenItemWithOverdue[];
+}
+
+/** One-line rendering of an open item — shared with start_session. */
+export function openItemLine(r: OpenItemWithOverdue, withStatus: boolean): string {
+  const label = withStatus ? `${r.kind}, ${r.status}` : r.kind;
+  const dates =
+    `opened ${r.created_at.slice(0, 10)}` +
+    (r.relevant_date ? `, for ${r.relevant_date}` : "") +
+    (r.overdue ? " — OVERDUE" : "");
+  return (
+    `#${r.id} [${label}] (${dates}) ${r.content}` +
+    (r.resolved_note ? `  — resolved: ${r.resolved_note}` : "") +
+    (r.source ? `  — src: ${r.source}` : "")
+  );
+}
+
 export function registerOpenItemsTools(
   server: McpServer,
   db: Database.Database,
@@ -73,7 +100,8 @@ export function registerOpenItemsTools(
       title: "List open items",
       description:
         "List open coaching items (commitments + flags). Call at session start to surface what needs " +
-        "attention and what to follow up on. Defaults to status='open'.",
+        "attention and what to follow up on. Defaults to status='open'; 'all' includes resolved items. " +
+        "Items whose relevant_date has passed are marked OVERDUE — follow up or renegotiate those first.",
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         kind: z
@@ -81,37 +109,31 @@ export function registerOpenItemsTools(
           .optional()
           .describe("Filter to one kind. Omit for both."),
         status: z
-          .enum(["open", "done", "dismissed"])
+          .enum(["open", "done", "dismissed", "all"])
           .default("open")
-          .describe("Filter by status. Defaults to 'open'."),
+          .describe("Filter by status. Defaults to 'open'; 'all' returns every status."),
       },
     },
     ({ kind, status }) =>
       withErrorHandling("list_open_items", () => {
-        const clauses = ["status = ?"];
-        const params: string[] = [status];
+        const clauses: string[] = [];
+        const params: string[] = [];
+        if (status !== "all") {
+          clauses.push("status = ?");
+          params.push(status);
+        }
         if (kind !== undefined) {
           clauses.push("kind = ?");
           params.push(kind);
         }
+        const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
         const rows = db
-          .prepare(
-            "SELECT id, kind, content, status, source, dedup_key, relevant_date, created_at, updated_at " +
-              `FROM open_items WHERE ${clauses.join(" AND ")} ORDER BY id DESC`,
-          )
-          .all(...params) as OpenItem[];
+          .prepare(`SELECT ${OPEN_ITEM_COLUMNS} FROM open_items ${where} ORDER BY id DESC`)
+          .all(...params) as OpenItemWithOverdue[];
         if (rows.length === 0) {
           return toolText(`No ${status} open items${kind ? ` of kind '${kind}'` : ""}.`);
         }
-        return toolText(
-          rows
-            .map(
-              (r) =>
-                `#${r.id} [${r.kind}]${r.relevant_date ? ` (${r.relevant_date})` : ""} ${r.content}` +
-                (r.source ? `  — src: ${r.source}` : ""),
-            )
-            .join("\n"),
-        );
+        return toolText(rows.map((r) => openItemLine(r, status !== "open")).join("\n"));
       }),
   );
 
@@ -121,30 +143,30 @@ export function registerOpenItemsTools(
       title: "Resolve open item",
       description:
         "Close a coaching open item once it's been acted on or no longer applies. Use 'done' when handled, " +
-        "'dismissed' when dropped. Optional note is appended to the item.",
+        "'dismissed' when dropped. The optional note is stored alongside the item — the original content " +
+        "is preserved verbatim.",
       inputSchema: {
         id: z.number().int().describe("The open item id"),
         status: z.enum(["done", "dismissed"]).describe("'done' (handled) or 'dismissed' (dropped)"),
-        note: z.string().optional().describe("Optional note appended to the item content"),
+        note: z.string().optional().describe("Optional resolution note stored with the item"),
       },
       annotations: { destructiveHint: false, openWorldHint: false },
     },
     ({ id, status, note }) =>
       withErrorHandling("resolve_open_item", () => {
-        const row = db.prepare("SELECT content FROM open_items WHERE id = ?").get(id) as
-          | { content: string }
+        const row = db.prepare("SELECT id FROM open_items WHERE id = ?").get(id) as
+          | { id: number }
           | undefined;
         if (!row) return toolText(`Open item #${id} not found.`);
-        const newContent = note ? `${row.content} — resolved: ${note}` : row.content;
         const refused = checkWrite(db, limits, {
-          docBytes: newContent.length,
+          docBytes: note?.length ?? 0,
           docMax: ENTRY_MAX_BYTES,
-          deltaBytes: newContent.length - row.content.length,
+          deltaBytes: 0,
         });
         if (refused) return toolError(refused);
         db.prepare(
-          "UPDATE open_items SET status = ?, content = ?, updated_at = datetime('now') WHERE id = ?",
-        ).run(status, newContent, id);
+          "UPDATE open_items SET status = ?, resolved_note = COALESCE(?, resolved_note), updated_at = datetime('now') WHERE id = ?",
+        ).run(status, note ?? null, id);
         return toolText(`Open item #${id} marked ${status}.`);
       }),
   );

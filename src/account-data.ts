@@ -38,6 +38,7 @@ type ItemRow = {
   content: string;
   status: string;
   relevant_date: string | null;
+  resolved_note: string | null;
   created_at: string;
 };
 type RoutineRow = {
@@ -421,14 +422,14 @@ function renderOpenItems(ctx: ServeContext, res: ServerResponse, auth: WebAuth, 
   const db = ctx.tenants.open(auth.userId);
   const rows = db
     .prepare(
-      "SELECT id, kind, content, status, relevant_date, created_at FROM open_items ORDER BY (status != 'open'), id DESC",
+      "SELECT id, kind, content, status, relevant_date, resolved_note, created_at FROM open_items ORDER BY (status != 'open'), id DESC",
     )
     .all() as ItemRow[];
   const items = rows
     .map(
       (r) =>
         `<div class="card"><p class="muted">#${r.id} [${htmlEscape(r.kind)}] · ${htmlEscape(r.status)}${r.relevant_date ? ` · ${htmlEscape(r.relevant_date)}` : ""} — <a href="${base}/account/data/open-items/edit?id=${r.id}">${t.edit}</a></p>
-<div class="preview">${renderMarkdown(r.content)}</div></div>`,
+<div class="preview">${renderMarkdown(r.content)}</div>${r.resolved_note ? `<p class="muted">↳ ${htmlEscape(r.resolved_note)}</p>` : ""}</div>`,
     )
     .join("\n");
   const body = `<h1>${t.openItemsTitle}</h1>
@@ -456,7 +457,7 @@ function renderOpenItemEditor(
   const id = Number(url.searchParams.get("id"));
   const row = db
     .prepare(
-      "SELECT id, kind, content, status, relevant_date, created_at FROM open_items WHERE id = ?",
+      "SELECT id, kind, content, status, relevant_date, resolved_note, created_at FROM open_items WHERE id = ?",
     )
     .get(id) as ItemRow | undefined;
   if (!row) {
@@ -473,7 +474,7 @@ function renderOpenItemEditor(
     `<option value="${s}"${row.status === s ? " selected" : ""}>${s}</option>`;
   const title = fill(t.openItemTitle, { ID: String(row.id) });
   const body = `<h1>${title} <span class="muted">[${htmlEscape(row.kind)}]</span></h1>
-<p class="muted">${fill(t.created, { TS: htmlEscape(row.created_at) })}</p>
+<p class="muted">${fill(t.created, { TS: htmlEscape(row.created_at) })}</p>${row.resolved_note ? `\n<p class="muted">↳ ${htmlEscape(row.resolved_note)}</p>` : ""}
 <form method="post" action="${base}/account/data/open-items/save">
 <input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="id" value="${row.id}">
 <textarea name="content" rows="6" class="mono">${htmlEscape(row.content)}</textarea>

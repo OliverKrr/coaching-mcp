@@ -19,8 +19,16 @@ type OpenItemRow = {
   content: string;
   status: string;
   relevant_date: string | null;
+  resolved_note: string | null;
 };
 type RoutineRow = { name: string; cadence: string; prompt: string; status: string };
+type MetricRow = {
+  name: string;
+  value: number;
+  unit: string | null;
+  note: string | null;
+  measured_at: string;
+};
 
 function writeContent(path: string, content: string): string {
   mkdirSync(dirname(path), { recursive: true });
@@ -38,9 +46,32 @@ function formatOpenItems(rows: OpenItemRow[]): string {
   if (rows.length === 0) return "# Open Items\n\n_No items._\n";
   const blocks = rows.map(
     (r) =>
-      `## #${r.id} [${r.kind}/${r.status}]${r.relevant_date ? ` (${r.relevant_date})` : ""}\n\n${r.content}\n`,
+      `## #${r.id} [${r.kind}/${r.status}]${r.relevant_date ? ` (${r.relevant_date})` : ""}\n\n${r.content}\n` +
+      (r.resolved_note ? `\n> resolved: ${r.resolved_note}\n` : ""),
   );
   return `# Open Items\n\n${blocks.join("\n---\n\n")}`;
+}
+
+function formatMetrics(rows: MetricRow[]): string {
+  if (rows.length === 0) return "# Metrics\n\n_No metrics._\n";
+  const byName = new Map<string, MetricRow[]>();
+  for (const r of rows) {
+    const list = byName.get(r.name) ?? [];
+    list.push(r);
+    byName.set(r.name, list);
+  }
+  const blocks = [...byName.entries()].map(
+    ([name, points]) =>
+      `## ${name}\n\n` +
+      points
+        .map(
+          (p) =>
+            `- ${p.measured_at} · ${p.value}${p.unit ? ` ${p.unit}` : ""}${p.note ? ` — ${p.note}` : ""}`,
+        )
+        .join("\n") +
+      "\n",
+  );
+  return `# Metrics\n\n${blocks.join("\n")}`;
 }
 
 function formatRoutines(rows: RoutineRow[]): string {
@@ -100,7 +131,9 @@ export function snapshotDocuments(db: Database.Database, seedOnly = false): Snap
     docs.push({ path: "journal.md", content: formatJournal(journal) });
 
     const openItems = db
-      .prepare("SELECT id, kind, content, status, relevant_date FROM open_items ORDER BY id DESC")
+      .prepare(
+        "SELECT id, kind, content, status, relevant_date, resolved_note FROM open_items ORDER BY id DESC",
+      )
       .all() as OpenItemRow[];
     docs.push({ path: "open-items.md", content: formatOpenItems(openItems) });
 
@@ -108,6 +141,15 @@ export function snapshotDocuments(db: Database.Database, seedOnly = false): Snap
       .prepare("SELECT name, cadence, prompt, status FROM routines ORDER BY name")
       .all() as RoutineRow[];
     docs.push({ path: "routines.md", content: formatRoutines(routines) });
+
+    const metrics = db
+      .prepare(
+        "SELECT name, value, unit, note, measured_at FROM metrics ORDER BY name, measured_at, id",
+      )
+      .all() as MetricRow[];
+    if (metrics.length > 0) {
+      docs.push({ path: "metrics.md", content: formatMetrics(metrics) });
+    }
   }
 
   return docs;
