@@ -133,3 +133,34 @@ topic:
   step (`get_coaching_context` + separate `list_open_items` / `get_journal`
   calls) with one `start_session` call — same data, one round trip, journal
   payload bounded as history grows.
+
+## 6 — 2026-08-03 — Ask the user to update their Claude project instructions
+
+- Apply: propose
+
+The one artifact the assistant cannot edit is the person's Claude **project
+instructions** — they live in the user's own Claude account and most existing
+users' instructions still bootstrap with `get_coaching_context` +
+`list_open_items`. Until they are updated, the transition costs an extra
+round trip (or a doubled context load) every single session.
+
+Tell the person, once, in their language, roughly: "The coaching server got a
+faster session start. Please update this project's instructions: replace the
+session-start steps with the block below (everything else stays)." Then show
+them this block, translated to their language:
+
+> At the start of EVERY session — non-negotiable:
+>
+> 1. Call `start_session` first (it returns the coaching context, open items,
+>    and recent journal in one call) and follow the operating procedure in
+>    the returned context exactly.
+> 2. Review the open items before coaching — OVERDUE ones first.
+> 3. If the connector is unreachable, say so openly — never improvise
+>    coaching from chat memory.
+
+The same block is on the server's setup-guide page (the connector's base URL
+in a browser). Until the person confirms the switch, avoid double-loading:
+when the session already started via `get_coaching_context` (old
+instructions), fetch `list_open_items` + `get_journal` (limit 5) individually
+instead of calling `start_session` on top. Mark this entry applied once the
+person has updated their instructions or explicitly declined.
