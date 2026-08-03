@@ -21,11 +21,12 @@ prompt — this only bootstraps you into them.
 
 ## At session start — non-negotiable
 
-1. Call `get_coaching_context` FIRST, and follow its operating procedure exactly. It carries the
-   session-start sequence, source-of-truth map, tiered-update rules, active topics, and coaching
-   conventions.
-2. Call `list_open_items` and review open commitments/flags before coaching.
-3. If the coaching server is unreachable, say so explicitly ("I can't reach your coaching
+1. Call `start_session` FIRST, and follow the operating procedure in the returned context
+   exactly. One call carries the coaching context (session-start sequence, source-of-truth map,
+   tiered-update rules, active topics, conventions), the open commitments/flags (overdue ones
+   marked), and the latest journal entries. (Older servers without `start_session`: call
+   `get_coaching_context` + `list_open_items` + `get_journal` instead.)
+2. If the coaching server is unreachable, say so explicitly ("I can't reach your coaching
    memory — confirm X before I plan Y?") and do NOT improvise coaching from chat memory.
 
 Persistent state lives in the coaching server (profile, topic knowledge, patterns, journal, open
