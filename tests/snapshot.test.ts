@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createSchema } from "../src/db.js";
-import { runSnapshot } from "../src/snapshot.js";
+import { runSnapshot, snapshotDocuments } from "../src/snapshot.js";
 
 const MAIN = "# Coaching\nGöäl: lift\tweights\nhere";
 
@@ -137,5 +137,22 @@ describe("runSnapshot", () => {
     expect(manifest.sections.main).toBeDefined();
     expect(manifest.sections.nutrition).toBeDefined();
     expect(manifest.refs.squat).toBeDefined();
+  });
+});
+
+describe("snapshotDocuments on a pre-migration database", () => {
+  it("does not throw when the metrics table and resolved_note column are absent", () => {
+    const db = new Database(":memory:");
+    db.pragma("journal_mode = WAL");
+    createSchema(db);
+    db.exec("DROP TABLE metrics");
+    db.exec("ALTER TABLE open_items DROP COLUMN resolved_note");
+    db.prepare("INSERT INTO sections(name, content) VALUES ('main', 'x')").run();
+    db.prepare("INSERT INTO open_items(kind, content) VALUES ('flag', 'legacy item')").run();
+    const docs = snapshotDocuments(db);
+    expect(docs.some((d) => d.path === "SKILL.md")).toBe(true);
+    expect(docs.some((d) => d.path === "metrics.md")).toBe(false);
+    const items = docs.find((d) => d.path === "open-items.md");
+    expect(items?.content).toContain("legacy item");
   });
 });

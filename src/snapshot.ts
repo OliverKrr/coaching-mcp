@@ -130,9 +130,15 @@ export function snapshotDocuments(db: Database.Database, seedOnly = false): Snap
       .all() as JournalRow[];
     docs.push({ path: "journal.md", content: formatJournal(journal) });
 
+    // resolved_note arrives via an additive migration on server open; this CLI
+    // may read (readonly!) a DB that predates it — probe before selecting.
+    const itemCols = db.pragma("table_info(open_items)") as Array<{ name: string }>;
+    const noteExpr = itemCols.some((c) => c.name === "resolved_note")
+      ? "resolved_note"
+      : "NULL AS resolved_note";
     const openItems = db
       .prepare(
-        "SELECT id, kind, content, status, relevant_date, resolved_note FROM open_items ORDER BY id DESC",
+        `SELECT id, kind, content, status, relevant_date, ${noteExpr} FROM open_items ORDER BY id DESC`,
       )
       .all() as OpenItemRow[];
     docs.push({ path: "open-items.md", content: formatOpenItems(openItems) });
@@ -142,13 +148,20 @@ export function snapshotDocuments(db: Database.Database, seedOnly = false): Snap
       .all() as RoutineRow[];
     docs.push({ path: "routines.md", content: formatRoutines(routines) });
 
-    const metrics = db
-      .prepare(
-        "SELECT name, value, unit, note, measured_at FROM metrics ORDER BY name, measured_at, id",
-      )
-      .all() as MetricRow[];
-    if (metrics.length > 0) {
-      docs.push({ path: "metrics.md", content: formatMetrics(metrics) });
+    // The CLI may point at a DB no server has opened since the metrics table
+    // shipped (createSchema runs on open, snapshot must not mutate) — probe.
+    const hasMetrics =
+      db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'metrics'").get() !==
+      undefined;
+    if (hasMetrics) {
+      const metrics = db
+        .prepare(
+          "SELECT name, value, unit, note, measured_at FROM metrics ORDER BY name, measured_at, id",
+        )
+        .all() as MetricRow[];
+      if (metrics.length > 0) {
+        docs.push({ path: "metrics.md", content: formatMetrics(metrics) });
+      }
     }
   }
 
