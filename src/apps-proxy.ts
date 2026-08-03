@@ -12,6 +12,11 @@ import { page } from "./web/layout.js";
  * visible to every coached user). Bodies stream both ways; HTML responses get
  * root-absolute references rewritten onto the prefix so small dashboards that
  * emit href="/…" keep working. WebSockets are not supported.
+ *
+ * The rewrites are idempotent. An app that reads the X-Forwarded-Prefix we send
+ * and emits its own prefixed URLs is the better-behaved case, not a broken one:
+ * prefixing those again would produce /prefix/prefix/… and break every link, so
+ * anything already under the prefix is left alone.
  */
 
 const HOP_BY_HOP = new Set([
@@ -24,6 +29,31 @@ const HOP_BY_HOP = new Set([
   "transfer-encoding",
   "upgrade",
 ]);
+
+/**
+ * Whether a root-absolute URL already sits under `prefix`. The boundary check
+ * matters: "/appstore" must not count as being under "/apps".
+ */
+export function isUnderPrefix(prefix: string, url: string): boolean {
+  if (!url.startsWith(prefix)) return false;
+  const next = url.charAt(prefix.length);
+  return next === "" || next === "/" || next === '"' || next === "?" || next === "#";
+}
+
+/** Move a root-absolute URL onto `prefix`, unless it is already there. */
+export function withPrefix(prefix: string, url: string): string {
+  return isUnderPrefix(prefix, url) ? url : prefix + url;
+}
+
+const ROOT_ABSOLUTE_ATTR =
+  /(\s(?:href|src|action|hx-get|hx-post|hx-put|hx-patch|hx-delete)=")\/(?!\/)/g;
+
+/** Move root-absolute URL attributes in an HTML body onto `prefix`. */
+export function rewriteHtmlPrefix(html: string, prefix: string): string {
+  return html.replace(ROOT_ABSOLUTE_ATTR, (match, attr: string, offset: number) =>
+    isUnderPrefix(prefix, html.slice(offset + match.length - 1)) ? match : `${attr}${prefix}/`,
+  );
+}
 
 export function parseProtectedApps(env: NodeJS.ProcessEnv): ProtectedApp[] {
   const spec = env.PROTECTED_APPS ?? "";
@@ -129,7 +159,7 @@ function proxy(
       }
       // Location + cookie paths move onto the prefix
       const location = upstreamRes.headers.location;
-      if (location?.startsWith("/")) outHeaders.location = prefixPath + location;
+      if (location?.startsWith("/")) outHeaders.location = withPrefix(prefixPath, location);
       const setCookie = upstreamRes.headers["set-cookie"];
       if (setCookie) {
         outHeaders["set-cookie"] = setCookie.map((c) =>
@@ -143,12 +173,7 @@ function proxy(
         const chunks: Buffer[] = [];
         upstreamRes.on("data", (c: Buffer) => chunks.push(c));
         upstreamRes.on("end", () => {
-          const body = Buffer.concat(chunks)
-            .toString("utf8")
-            .replace(
-              /(\s(?:href|src|action|hx-get|hx-post|hx-put|hx-patch|hx-delete)=")\/(?!\/)/g,
-              `$1${prefixPath}/`,
-            );
+          const body = rewriteHtmlPrefix(Buffer.concat(chunks).toString("utf8"), prefixPath);
           delete outHeaders["content-length"];
           res.writeHead(upstreamRes.statusCode ?? 502, {
             ...outHeaders,

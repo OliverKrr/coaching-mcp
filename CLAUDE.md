@@ -348,6 +348,13 @@ must call `sendToolListChanged()` — without that notification the client keeps
 **App proxy authorization is allowlist-per-app**: a Google login alone must never expose a
 protected app; the user's email must be on that app's own list (`PROTECTED_APP_<NAME>_EMAILS`).
 
+**App proxy prefix rewriting must stay idempotent**: the proxy moves root-absolute URLs in HTML
+bodies and `Location` headers onto `/apps/<name>` for apps that only emit `href="/…"`. But we also
+send `X-Forwarded-Prefix`, so a well-behaved app prefixes its own URLs — rewriting those again
+yields `/apps/x/apps/x/…` and breaks every link and redirect on the page. `isUnderPrefix` does the
+boundary-checked skip (`/apps` must not swallow `/appstore`); route any new prefixing through
+`withPrefix`/`rewriteHtmlPrefix` rather than concatenating.
+
 **Prepared statements**: SQL statements used in loops are hoisted outside the loop.
 
 **tsdown + fixedExtension**: output is `dist/*.js` (not `.mjs`), matching `bin` entries.
