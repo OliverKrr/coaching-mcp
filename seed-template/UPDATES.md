@@ -107,3 +107,25 @@ Propose to the user:
   monthly goal-level review (first review of each month) walking the Active
   topics' review points — renegotiate or retire stale goals openly, and ask
   how the coaching itself is working for them.
+
+## 5 — 2026-08-03 — Weekly-review routines anchor on the season plan; self-report daily check-in
+
+- Docs: topics/training/routines/weekly-review, topics/training/routines/daily-checkin-selfreport
+- Apply: propose
+
+Topic-pack templates are delivered fresh on demand, so this entry is only
+about content users already instantiated. For users of the **training**
+topic:
+
+- If they have a stored weekly-review routine, propose adding two things to
+  its prompt: load `get_reference("season-plan")` at the start and judge the
+  week against the current phase and next checkpoint (a season plan that no
+  routine reads is write-only); and flag a checkpoint whose date passed
+  without a target-vs-actual note (deduped open item) so the next interactive
+  session reviews it. If the pack instantiated a `fitness-history` reference,
+  also propose the quarterly staleness check (first review of a quarter →
+  propose an update in the journal entry).
+- If the person trains WITHOUT a fitness connector and has no daily routine,
+  mention the pack now ships a `daily-checkin-selfreport` template
+  (self-report loop via Telegram quick capture / journal) they can fetch via
+  `get_topic_pack("training")`.

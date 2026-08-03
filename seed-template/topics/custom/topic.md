@@ -43,3 +43,30 @@ Instead of skeletons to copy, this pack is an interview for **defining** the top
 - **Strong defaults:** [2–4 rules, incl. when the coach pushes back]
 - **Boundaries:** [where professionals take over]
 - Detail: see `[topic]-profile` reference [if created].
+
+## Worked example (calibration only — never copy content into a real topic)
+
+What a completed instantiation looks like for a person who chose **"Sleep"** as their topic —
+this is the _density and shape_ to aim for, not a template to fill:
+
+### Sleep
+
+- **Goal:** In bed by 23:00 on work nights so that average sleep reaches 7½ h by end of
+  March (wish: stop feeling wrecked on Thursdays; obstacle: evening doomscrolling; if-then:
+  when the 22:30 phone alarm fires, then the phone goes on the charger in the hallway).
+  Review point: first week of April.
+- **Success signals:** one line per morning in the journal — bedtime, wake time, rested 1–5
+  (via `record_metric` name `sleep-rested`, so the trend is queryable). Weekly average
+  reviewed at the check-in.
+- **Approach:** fixed anchor bedtime on work nights, no catch-up-sleep math, weekends free.
+- **Strong defaults:** the coach challenges any plan that trades sleep for a morning workout
+  two days in a row; a rested-score week under 2.5 triggers the "what's stealing the
+  evenings?" conversation, not a new bedtime rule.
+- **Boundaries:** suspected sleep disorder (snoring + daytime sleepiness, restless legs) →
+  physician; the coach supports habits, not diagnoses.
+- Detail: see `sleep-profile` reference (current state, what was tried, the agreed rules).
+
+The matching artifacts for this example: a `sleep-profile` reference (interview answers 4–6 in
+full), the Active-topics row "Sleep — 7½ h avg by end of March — review first week of April",
+and a weekly check-in routine designed per `routine-design` (cadence weekly, silence condition:
+nothing to say when the week averaged ≥7 h and the person reported nothing).

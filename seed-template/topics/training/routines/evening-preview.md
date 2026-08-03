@@ -3,8 +3,9 @@
 Cadence: daily, e.g. ~20:30 — push only when tomorrow has a quality session
 
 Briefs tomorrow's quality session the evening before. Requires a fitness-data connector with the
-training plan. Tailor the bracketed parts and store the instantiated prompt in the person's
-preferred language via `save_routine`.
+training plan — for a self-reporting athlete without one, the `daily-checkin-selfreport`
+template covers tomorrow's intention instead. Tailor the bracketed parts and store the
+instantiated prompt in the person's preferred language via `save_routine`.
 
 ---
 

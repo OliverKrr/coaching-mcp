@@ -3,9 +3,10 @@
 Cadence: daily, shortly after overnight wearable data lands on the fitness platform
 
 Raises readiness flags only — no session briefings, no journal entries. Requires a fitness-data
-connector with wellness data. Tailor the bracketed parts (thresholds come from the person's
-injuries reference and patterns) and store the instantiated prompt in their preferred language
-via `save_routine`.
+connector with wellness data — for a self-reporting athlete without one, offer the
+`daily-checkin-selfreport` template instead. Tailor the bracketed parts (thresholds come from
+the person's injuries reference and patterns) and store the instantiated prompt in their
+preferred language via `save_routine`.
 
 ---
 

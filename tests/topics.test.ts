@@ -120,6 +120,7 @@ describe("shipped seed template", () => {
     const training = packs.find((p) => p.id === "training");
     expect(training?.references.map((r) => r.name)).toContain("zones");
     expect(training?.routines.map((r) => r.name)).toEqual([
+      "daily-checkin-selfreport",
       "evening-preview",
       "morning-readiness",
       "weekly-review",
