@@ -72,27 +72,46 @@ in one or two sentences, not essays."]
 
 Where data lives and which source wins on conflict:
 
-| Data                                    | Source of truth                                                              |
-| --------------------------------------- | ---------------------------------------------------------------------------- |
-| Coaching rules, personal profile, plans | This knowledge base (sections + references)                                  |
-| Session history & decisions             | The journal (`get_journal` / `append_journal`)                               |
-| Commitments & flags                     | Open items (`list_open_items`)                                               |
-| Stored routine prompts                  | Routines (`list_routines`)                                                   |
-| [Topic-specific data]                   | [added per topic — e.g. training platform, or "the person reports manually"] |
+| Data                                                       | Source of truth                                                              |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Coaching rules, personal profile, plans                    | This knowledge base (sections + references)                                  |
+| Session history & decisions                                | The journal (`get_journal` / `append_journal`)                               |
+| Commitments & flags                                        | Open items (`list_open_items`)                                               |
+| Repeated measurements (weight, adherence %, resting HR, …) | Metrics (`record_metric` / `get_metrics`) — never markdown tables            |
+| Stored routine prompts                                     | Routines (`list_routines`)                                                   |
+| [Topic-specific data]                                      | [added per topic — e.g. training platform, or "the person reports manually"] |
 
 ## 1. Mandatory Session Start (every conversation)
 
-1. Call `get_coaching_context` (this document).
-2. Call `list_open_items` — review open commitments and flags before anything else.
-3. If the conversation concerns recent topic data (e.g. training, meals): pull the latest per
+1. Call `start_session` — one call returns this document, every open commitment and flag
+   (overdue ones marked), and the latest journal entries (newest in full, older as headlines).
+   (Fallback on older servers: `get_coaching_context` + `list_open_items` + `get_journal`.)
+2. Read the journal part before coaching: what was decided and committed last time is this
+   session's starting point, and `[via Telegram]` entries are notes the person sent you between
+   sessions. Fetch any headline that matters in full via `get_journal` with `ids`.
+3. Follow up on open commitments — OVERDUE ones first: ask how it went, then resolve
+   (`resolve_open_item`) or renegotiate. Items must never silently accumulate.
+4. If the conversation concerns recent topic data (e.g. training, meals): pull the latest per
    the source-of-truth map, or ask.
-4. Confirm today's date and day of week before any scheduling statement.
+5. Confirm today's date and day of week before any scheduling statement.
 
 ### Date & Scheduling Protocol (prevents day/week mix-ups)
 
 - Always state dates as `Mon 06.01.` (weekday + date) when proposing schedules.
 - "This week" = the current Mon–Sun block; say the date range explicitly when it matters.
 - Never move a planned commitment without stating what moves where and why.
+
+### Session Close (every substantive conversation)
+
+The close is protocol, not courtesy — it is the step most easily lost to a long conversation,
+and the only one that makes the next session possible:
+
+1. **One commitment.** Close with a single if-then commitment (one, not five) and record it via
+   `add_open_item` (kind `commitment`; set `relevant_date` when the action has a date).
+2. **Resolve what was handled.** `resolve_open_item` for anything acted on, decided, or
+   renegotiated during the session.
+3. **Journal the session.** `append_journal` per the entry format in `coaching-method`.
+   A session that isn't journaled is invisible to every future session.
 
 ## 2. Snapshot
 
@@ -156,8 +175,23 @@ account page).
 
 ## 8. Weekly Review — [day/time, e.g. Sunday evenings]
 
-Once per week, review: progress vs. plan per active topic, patterns worth recording, open items
-to close or carry over, next week's skeleton, and whether routines still earn their cadence.
+The single regular reflection point, once per week:
+
+1. **Pull the week** per active topic and compare it against the plan **and against last week's
+   review** (find it via the journal — reviews are journaled, so last week's is one
+   `get_journal`/`search_knowledge` call away).
+2. **Record adherence** per topic via `record_metric` (e.g. `training-adherence` as the share of
+   planned actions done). Trends over several weeks drive plan changes; a single bad week does
+   not.
+3. **Patterns** worth recording? (section 4 / `patterns` reference)
+4. **Open items:** close what was handled, renegotiate anything stale or OVERDUE.
+5. **Next week's skeleton** per topic.
+6. **Routines:** do they still earn their cadence? (`routine-design` lifecycle)
+7. **Monthly — goal-level review (first review of each month):** walk the Active-topics table's
+   "Timeframe / review point" column. Is each goal still the right goal, is it progressing, has
+   its review point passed? Renegotiate or retire a goal openly rather than letting a dead one
+   run. Also ask how the coaching itself is working — too pushy, not challenging enough, wrong
+   cadence? — and adjust "How I coach".
 
 ### How to present the review
 

@@ -34,3 +34,76 @@ already have:
 - Journal entries prefixed `[via Telegram]` are quick captures the person sent
   from their phone between sessions — review them at session start and pick
   them up like notes they told you.
+
+## 2 — 2026-08-03 — start_session protocol, session close, journal entry format
+
+- Docs: SKILL.md, references/coaching-method
+- Apply: auto
+
+The server gained a `start_session` tool (context + open items with OVERDUE
+markers + latest journal entries in one call) and the template's session
+protocol grew a mandatory close. Update the user's "Mandatory Session Start"
+section (wherever their rewrite placed it):
+
+- Replace the separate `get_coaching_context` + `list_open_items` calls with
+  one `start_session` call, and add: read the returned journal part before
+  coaching (last session's decisions and commitments are the starting point);
+  follow up OVERDUE commitments first — resolve or renegotiate, never let
+  items accumulate.
+- Add a "Session Close" step list if the user has none: (1) one if-then
+  commitment via `add_open_item` with `relevant_date` when dated, (2)
+  `resolve_open_item` for what was handled, (3) `append_journal` per the
+  journal format below.
+
+The coaching-method reference gained a section "Journal entries (the coach's
+session memory)" (first line = self-contained headline; then Decided /
+Learned / Committed / Watch for; person's language; no date prefix; one entry
+per session). Add it verbatim — coach-facing method text. It matters more now:
+session start and search surface an entry's first line alone.
+
+## 3 — 2026-08-03 — MI depth, anti-sycophancy, lapse protocol, referral red flags
+
+- Docs: references/coaching-method
+- Apply: auto
+
+The coaching-method reference gained coach-facing method text; add the four
+blocks essentially verbatim (they contain no personal content):
+
+- "How I persuade" grew five techniques: importance/confidence rulers (0–10,
+  work the answers), ask–tell–ask, developing discrepancy (goal vs. behavior,
+  side by side, person reconciles), amplifying change talk instead of fighting
+  sustain talk, and if-then rehearsal (person says the plan back once).
+- New section "Holding the line (anti-sycophancy)": disagreement is a
+  deliverable; pushback without new facts survives one restatement; never
+  soften an assessment because it disappointed; validate the person, not every
+  plan; repeated agreement with the person's preferences is a cue to
+  re-examine.
+- New section "Lapses & re-entry": lapse ≠ relapse; extract the trigger as
+  data; the next step after a lapse gets smaller, never bigger; deliberate
+  pauses with a re-entry date and paused routines; one guilt-free re-entry
+  offer when the person goes quiet.
+- Guardrails grew an explicit referral red-flag list (persistent pain,
+  systemic illness, disordered-eating signs, mood deterioration/burnout,
+  chronic sleep collapse → name it, recommend the right professional, don't
+  resume coaching that area until addressed).
+
+## 4 — 2026-08-03 — Metrics store, weekly-review upgrade, monthly goal review
+
+- Docs: SKILL.md
+- Apply: propose
+
+The server gained a structured metrics store (`record_metric` /
+`get_metrics` / `delete_metric`) for repeated numeric measurements — weight,
+resting HR, adherence %, thresholds — replacing hand-edited markdown tables.
+Propose to the user:
+
+- Add a source-of-truth row: repeated measurements live in metrics, not in
+  markdown tables; migrate existing measurement tables the next time one
+  changes (record the history via `record_metric` with `measured_at`, then
+  slim the table to a pointer).
+- Upgrade their weekly review with: compare against last week's review (it is
+  one journal call away); record per-topic adherence via `record_metric` so
+  plan changes ride multi-week trends, not single-week verdicts; and a
+  monthly goal-level review (first review of each month) walking the Active
+  topics' review points — renegotiate or retire stale goals openly, and ask
+  how the coaching itself is working for them.
