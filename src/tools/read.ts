@@ -5,6 +5,7 @@ import type { JournalEntry, Reference, Section } from "../db.js";
 import { usageWarning, type WriteLimits } from "../quota.js";
 import { loadSeedUpdates, pendingUpdates } from "../seed-updates.js";
 import { toolText, withErrorHandling } from "../utils/errors.js";
+import { journalHeadline } from "../utils/journal.js";
 import { sanitizeFtsQuery, formatSearchHits, type SearchHit } from "../utils/search.js";
 
 export function registerReadTools(
@@ -68,8 +69,8 @@ export function registerReadTools(
           .describe("Max results per searched table"),
       },
     },
-    ({ query, type, limit }) => {
-      try {
+    ({ query, type, limit }) =>
+      withErrorHandling("search_knowledge", () => {
         const fts = sanitizeFtsQuery(query);
         const hits: SearchHit[] = [];
 
@@ -78,7 +79,7 @@ export function registerReadTools(
             .prepare(
               "SELECT s.name as name, snippet(sections_fts, 1, '**', '**', '...', 32) as snippet, s.updated_at as updated_at " +
                 "FROM sections_fts JOIN sections s ON s.rowid = sections_fts.rowid " +
-                "WHERE sections_fts MATCH ? LIMIT ?",
+                "WHERE sections_fts MATCH ? ORDER BY rank LIMIT ?",
             )
             .all(fts, limit) as Array<{ name: string; snippet: string; updated_at: string }>;
           for (const r of rows) {
@@ -96,7 +97,7 @@ export function registerReadTools(
             .prepare(
               "SELECT r.name as name, snippet(refs_fts, 1, '**', '**', '...', 32) as snippet, r.updated_at as updated_at " +
                 "FROM refs_fts JOIN refs r ON r.rowid = refs_fts.rowid " +
-                "WHERE refs_fts MATCH ? LIMIT ?",
+                "WHERE refs_fts MATCH ? ORDER BY rank LIMIT ?",
             )
             .all(fts, limit) as Array<{ name: string; snippet: string; updated_at: string }>;
           for (const r of rows) {
@@ -114,7 +115,7 @@ export function registerReadTools(
             .prepare(
               "SELECT j.id as id, snippet(journal_fts, 0, '**', '**', '...', 32) as snippet, j.created_at as created_at " +
                 "FROM journal_fts JOIN journal j ON j.id = journal_fts.rowid " +
-                "WHERE journal_fts MATCH ? LIMIT ?",
+                "WHERE journal_fts MATCH ? ORDER BY rank LIMIT ?",
             )
             .all(fts, limit) as Array<{ id: number; snippet: string; created_at: string }>;
           for (const r of rows) {
@@ -132,7 +133,7 @@ export function registerReadTools(
             .prepare(
               "SELECT r.name as name, snippet(routines_fts, 1, '**', '**', '...', 32) as snippet, r.updated_at as updated_at " +
                 "FROM routines_fts JOIN routines r ON r.rowid = routines_fts.rowid " +
-                "WHERE routines_fts MATCH ? LIMIT ?",
+                "WHERE routines_fts MATCH ? ORDER BY rank LIMIT ?",
             )
             .all(fts, limit) as Array<{ name: string; snippet: string; updated_at: string }>;
           for (const r of rows) {
@@ -146,12 +147,7 @@ export function registerReadTools(
         }
 
         return toolText(formatSearchHits(hits, query));
-      } catch {
-        return toolText(
-          "Search failed — try simpler terms (avoid special characters like quotes or parentheses).",
-        );
-      }
-    },
+      }),
   );
 
   server.registerTool(
@@ -263,32 +259,61 @@ export function registerReadTools(
     {
       title: "Get journal entries",
       description:
-        "Get recent coaching journal entries. Provide `since` (YYYY-MM-DD) for date-bounded queries, or `limit` for newest-N (default 10). If both are given, `since` wins and `limit` is ignored.",
+        "Get coaching journal entries, newest first. `limit` caps the count (default 10; with `since` default 50). " +
+        "`since` (YYYY-MM-DD) scopes to entries from that date on — a note tells you when more matched than the limit. " +
+        "`format: 'headlines'` returns one compact line per entry (#id, date, first line) for cheap scanning of long ranges; " +
+        "`ids` fetches specific entries in full (e.g. picked from headlines or from search_knowledge journal hits), overriding since/limit.",
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
-        limit: z.number().int().min(1).max(50).optional(),
+        limit: z.number().int().min(1).max(100).optional(),
         since: z
           .string()
           .regex(/^\d{4}-\d{2}-\d{2}$/)
           .optional()
           .describe("ISO date YYYY-MM-DD — returns entries with created_at >= this date"),
+        format: z
+          .enum(["full", "headlines"])
+          .default("full")
+          .describe("'headlines' = one compact line per entry (first line only)"),
+        ids: z
+          .array(z.number().int())
+          .max(20)
+          .optional()
+          .describe("Fetch these entry ids (overrides since/limit)"),
       },
     },
-    ({ limit, since }) =>
+    ({ limit, since, format, ids }) =>
       withErrorHandling("get_journal", () => {
         let rows: JournalEntry[];
         let prefix = "";
-        if (since !== undefined) {
-          if (limit !== undefined) {
-            prefix = "Note: 'limit' was ignored because 'since' was provided.\n\n";
-          }
+        if (ids !== undefined && ids.length > 0) {
+          const placeholders = ids.map(() => "?").join(",");
           rows = db
             .prepare(
-              "SELECT id, entry, created_at FROM journal WHERE created_at >= ? ORDER BY id DESC",
+              `SELECT id, entry, created_at FROM journal WHERE id IN (${placeholders}) ORDER BY id DESC`,
             )
-            .all(since) as JournalEntry[];
+            .all(...ids) as JournalEntry[];
+          const missing = ids.filter((id) => !rows.some((r) => r.id === id));
+          if (missing.length > 0) {
+            prefix = `Note: no entry with id ${missing.map((id) => `#${id}`).join(", ")}.\n\n`;
+          }
+        } else if (since !== undefined) {
+          const effectiveLimit = limit ?? 50;
+          const total = (
+            db.prepare("SELECT COUNT(*) AS n FROM journal WHERE created_at >= ?").get(since) as {
+              n: number;
+            }
+          ).n;
+          rows = db
+            .prepare(
+              "SELECT id, entry, created_at FROM journal WHERE created_at >= ? ORDER BY id DESC LIMIT ?",
+            )
+            .all(since, effectiveLimit) as JournalEntry[];
+          if (total > rows.length) {
+            prefix = `Note: showing the newest ${rows.length} of ${total} entries since ${since} — use format: 'headlines', a higher limit, or a narrower range for the rest.\n\n`;
+          }
         } else {
-          const effectiveLimit = limit ?? 10;
+          const effectiveLimit = limit ?? (format === "headlines" ? 25 : 10);
           rows = db
             .prepare("SELECT id, entry, created_at FROM journal ORDER BY id DESC LIMIT ?")
             .all(effectiveLimit) as JournalEntry[];
@@ -296,8 +321,11 @@ export function registerReadTools(
         if (rows.length === 0) {
           return toolText(`${prefix}No journal entries${since ? ` since ${since}` : ""} yet.`);
         }
+        if (format === "headlines") {
+          return toolText(prefix + rows.map(journalHeadline).join("\n"));
+        }
         return toolText(
-          prefix + rows.map((r) => `[${r.created_at}] ${r.entry}`).join("\n\n---\n\n"),
+          prefix + rows.map((r) => `#${r.id} [${r.created_at}] ${r.entry}`).join("\n\n---\n\n"),
         );
       }),
   );

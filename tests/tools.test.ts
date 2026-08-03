@@ -141,6 +141,35 @@ describe("search_knowledge", () => {
     const result = await callTool(server, "search_knowledge", { query: "calf", limit: 5 });
     expect(result.content[0].text).toMatch(/\[section\] main \(updated \d{4}-\d{2}-\d{2}\)\n> /);
   });
+
+  it("orders journal hits by relevance, not insertion order", async () => {
+    const { server, db } = makeServer();
+    // Weak match first (older row): one occurrence buried in filler.
+    db.prepare("INSERT INTO journal(entry) VALUES (?)").run(
+      "Long easy run today, legs fine, weather warm, slight niggle in the knee but nothing serious, otherwise a completely uneventful session with steady heart rate.",
+    );
+    // Strong match second (newer row): term-dense and short → better bm25 rank.
+    db.prepare("INSERT INTO journal(entry) VALUES (?)").run("knee knee knee");
+    const result = await callTool(server, "search_knowledge", {
+      query: "knee",
+      type: "journal",
+      limit: 1,
+    });
+    // Entry #3 (the term-dense one) must win over #2 (insertion order).
+    expect(result.content[0].text).toContain("[journal] #3");
+  });
+
+  it("surfaces a real DB fault as isError instead of a fake success", async () => {
+    const { server, db } = makeServer();
+    db.exec("DROP TABLE sections_fts");
+    const result = (await callTool(server, "search_knowledge", {
+      query: "calf",
+      type: "section",
+      limit: 5,
+    })) as ToolResult & { isError?: boolean };
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Error");
+  });
 });
 
 describe("list_references", () => {
@@ -213,11 +242,49 @@ describe("get_journal", () => {
     expect(result.content[0].text).not.toContain("older entry");
   });
 
-  it("includes notice line when both since and limit are set", async () => {
-    const { server } = makeServer();
+  it("honors limit together with since and notes the truncation", async () => {
+    const { server, db } = makeServer();
+    db.prepare("INSERT INTO journal(entry) VALUES (?)").run("entry A");
+    db.prepare("INSERT INTO journal(entry) VALUES (?)").run("entry B");
     const result = await callTool(server, "get_journal", { since: "2024-01-01", limit: 1 });
-    expect(result.content[0].text).toContain("Note:");
-    expect(result.content[0].text).toContain("limit");
+    const text = result.content[0].text;
+    expect(text).toContain("entry B");
+    expect(text).not.toContain("entry A");
+    expect(text).toMatch(/showing the newest 1 of 3 entries since 2024-01-01/);
+  });
+
+  it("bounds the since path even without an explicit limit", async () => {
+    const { server, db } = makeServer();
+    const insert = db.prepare("INSERT INTO journal(entry) VALUES (?)");
+    for (let i = 0; i < 60; i++) insert.run(`bulk entry ${i}`);
+    const result = await callTool(server, "get_journal", { since: "2024-01-01" });
+    const text = result.content[0].text;
+    // Default since-limit is 50: the newest 50 are present, older ones are not.
+    expect(text).toContain("bulk entry 59");
+    expect(text).not.toContain("bulk entry 5\n");
+    expect(text).toMatch(/showing the newest 50 of 61 entries/);
+  });
+
+  it("headlines format returns one compact line per entry", async () => {
+    const { server, db } = makeServer();
+    db.prepare("INSERT INTO journal(entry) VALUES (?)").run(
+      "WEEKLY REVIEW — big week\nline two with details\nline three",
+    );
+    const result = await callTool(server, "get_journal", { format: "headlines", limit: 5 });
+    const text = result.content[0].text;
+    expect(text).toMatch(/#\d+ \[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] WEEKLY REVIEW — big week/);
+    expect(text).toContain("(+2 more lines)");
+    expect(text).not.toContain("line two with details");
+  });
+
+  it("fetches specific entries in full via ids", async () => {
+    const { server, db } = makeServer();
+    db.prepare("INSERT INTO journal(entry) VALUES (?)").run("target entry two");
+    const result = await callTool(server, "get_journal", { ids: [2, 999] });
+    const text = result.content[0].text;
+    expect(text).toContain("target entry two");
+    expect(text).not.toContain("Session 1");
+    expect(text).toContain("no entry with id #999");
   });
 
   it("returns dated empty message when nothing matches since", async () => {
@@ -339,12 +406,14 @@ describe("append_journal", () => {
 });
 
 describe("append_journal contract", () => {
-  it("stores entry verbatim; get_journal prepends timestamp exactly once", async () => {
+  it("stores entry verbatim; get_journal prepends id + timestamp exactly once", async () => {
     const { server } = makeServer();
     await callTool(server, "append_journal", { entry: "test entry text without date" });
     const result = await callTool(server, "get_journal", { limit: 1 });
     const text = result.content[0].text;
-    expect(text).toMatch(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] test entry text without date/);
+    expect(text).toMatch(
+      /^#\d+ \[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] test entry text without date/,
+    );
     // Exactly one bracketed timestamp at line start
     const matches = text.match(/\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]/g) ?? [];
     expect(matches.length).toBe(1);
