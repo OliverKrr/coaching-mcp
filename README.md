@@ -42,7 +42,7 @@ coaching-mcp serve (one container)
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | `start_session`                       | One-call session start: context + open items (overdue marked) + latest journal (newest full, rest headlines) |
 | `get_coaching_context`                | Returns the full `SKILL.md` content                                                                          |
-| `search_knowledge`                    | FTS5 full-text search (relevance-ranked) across sections, references, journal, and routines                  |
+| `search_knowledge`                    | FTS5 full-text search (relevance-ranked) across sections, references, journal, routines, and scripts         |
 | `get_section` / `list_sections`       | One knowledge section / all sections with metadata                                                           |
 | `get_reference` / `list_references`   | One reference document / all references with metadata                                                        |
 | `get_journal`                         | Journal entries newest-first: by count, date range, specific ids, full or one-line headlines                 |
@@ -60,6 +60,10 @@ coaching-mcp serve (one container)
 | `list_routines` / `get_routine`       | The user's stored scheduled-routine prompts                                                                  |
 | `save_routine`                        | Upserts a routine (name, cadence, prompt, status) designed with the user                                     |
 | `delete_routine`                      | Deletes a stored routine (confirm required)                                                                  |
+| `list_scripts` / `get_script`         | The user's stored analysis scripts (with verification state) / one script's metadata + source                |
+| `save_script`                         | Upserts an analysis script; Python is ruff-validated (syntax errors reject, lint returns as warnings)        |
+| `mark_script_verified`                | Stamps a script as verified after a successful sandbox run (saving changed code resets the stamp)            |
+| `delete_script`                       | Deletes a stored script (confirm required; recoverable via change history)                                   |
 | `request_quota_increase`              | Asks the operator for more storage, with a reason (multi-user mode)                                          |
 | `notify_user`                         | Sends the user a Telegram message — e.g. a routine's check-in summary (only for users who linked Telegram)   |
 | `get_version`                         | Build info + per-table statistics incl. storage usage vs. quota                                              |
@@ -190,16 +194,25 @@ password exists anywhere — identity comes from the IdP, authorization from the
 ## Integrations (optional, per user)
 
 With `SECRETS_KEY` set, each user can connect third-party services on their account page —
-currently **Hevy** (strength logging; requires the user's own Hevy Pro API key). Keys are
-validated live before being stored, sealed with AES-256-GCM under the server master key (a
-leaked database alone yields nothing; the AAD binds every ciphertext to its user), never
-rendered back, and removed with the account. Users with a stored key get the full Hevy API
-surface as `hevy_*` MCP tools in their coaching sessions — workouts (list/get/count/events,
-create, update), routines (list/get, create, update), exercise templates (search across the
-whole catalog, list/get, create custom, per-exercise history), routine folders (list/get,
-create), body measurements (list/get, create, update), and account info. Users without a key
-see no Hevy tools at all. If Hevy later rejects the key, tools answer with plain guidance to
-update it on the account page.
+**Hevy** (strength logging; requires the user's own Hevy Pro API key) and **Intervals.icu**
+(training analytics; the user's own athlete id + API key). Credentials are validated live
+before being stored, sealed with AES-256-GCM under the server master key (a leaked database
+alone yields nothing; the AAD binds every ciphertext to its user), never rendered back, and
+removed with the account. Users without a stored credential see none of that service's tools;
+if a service later rejects the credential, tools answer with plain guidance to update it on
+the account page.
+
+- **Hevy** (`hevy_*` tools): the full Hevy API surface — workouts (list/get/count/events,
+  create, update), routines (list/get, create, update), exercise templates (search across the
+  whole catalog, list/get, create custom, per-exercise history), routine folders (list/get,
+  create), body measurements (list/get, create, update), and account info.
+- **Intervals.icu** (`icu_*` tools): lean CSV exports built for sandbox-side analysis, not an
+  API mirror — `icu_export_activities` (date range, selectable fields, type filter, optional
+  short-distance exclusion), `icu_export_wellness` (daily fitness/recovery records), and
+  `icu_export_weekly_summary` (server-side per-week × per-type aggregation with an ALL row).
+  Results are compact CSV meant to be heredoc'd into the assistant's code-execution sandbox;
+  oversized results are refused with guidance instead of being silently diverted out of the
+  conversation.
 
 ## Connected MCP servers — the per-user gateway
 
@@ -305,30 +318,31 @@ from `/account/data/routines`. Topic packs ship English master templates as raw 
 
 ## Environment variables (serve mode)
 
-| Variable                      | Default                       | Description                                                                                               |
-| ----------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `PUBLIC_URL`                  | — (required)                  | External base URL incl. any path prefix; OAuth issuer identity                                            |
-| `OIDC_CLIENT_ID`              | — (required)                  | OAuth client registered at the identity provider                                                          |
-| `OIDC_CLIENT_SECRET`          | — (required)                  | …and its secret                                                                                           |
-| `OIDC_ISSUER`                 | `https://accounts.google.com` | Any OIDC-discoverable issuer                                                                              |
-| `ADMIN_EMAILS`                | —                             | Comma-separated admins: implicitly allowed, gate `/admin`                                                 |
-| `REGISTRATION`                | `open`                        | `closed` disables self-registration (invite-only mode)                                                    |
-| `ALLOWED_EMAILS`              | —                             | Comma-separated bootstrap allowlist (skips approval)                                                      |
-| `ALLOWED_EMAILS_FILE`         | —                             | Newline-separated allowlist file; merged, hot-reloaded                                                    |
-| `TELEGRAM_BOT_TOKEN`          | —                             | Bot token (BotFather) — enables Telegram notifications + chat actions                                     |
-| `TELEGRAM_ADMIN_CHAT_ID`      | —                             | Operator's chat id — the only chat allowed to drive membership actions                                    |
-| `NOTIFY_URL`                  | —                             | Send-only webhook: plain-text POST per signup/quota request                                               |
-| `QUOTA_DEFAULT_MB`            | `50`                          | Default per-user storage quota (admins can override per user)                                             |
-| `DATA_DIR`                    | `/data`                       | auth.db + per-user DBs (persistent volume)                                                                |
-| `SEED_DIR`                    | `/seed`                       | Seed template for new users                                                                               |
-| `PORT`                        | `8000`                        | HTTP listen port                                                                                          |
-| `ACCESS_TOKEN_TTL`            | `3600`                        | Access-token lifetime (seconds)                                                                           |
-| `REFRESH_TOKEN_TTL`           | `7776000`                     | Refresh-token lifetime (seconds, rotated on use)                                                          |
-| `SECRETS_KEY`                 | —                             | 32-byte base64 master key for per-user secrets (`openssl rand -base64 32`); unset → integrations disabled |
-| `PROTECTED_APPS`              | —                             | `name=http://host:port,…` internal tools served at `/apps/<name>/` behind the login                       |
-| `PROTECTED_APP_<NAME>_EMAILS` | —                             | Per-app email allowlist (required for anyone to reach the app)                                            |
-| `HEVY_API_BASE`               | `https://api.hevyapp.com/v1`  | Hevy API base (override for tests)                                                                        |
-| `GATEWAY_ALLOW_INSECURE`      | —                             | `1` relaxes the gateway SSRF policy (http + private hosts) — tests only, never production                 |
+| Variable                      | Default                        | Description                                                                                               |
+| ----------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| `PUBLIC_URL`                  | — (required)                   | External base URL incl. any path prefix; OAuth issuer identity                                            |
+| `OIDC_CLIENT_ID`              | — (required)                   | OAuth client registered at the identity provider                                                          |
+| `OIDC_CLIENT_SECRET`          | — (required)                   | …and its secret                                                                                           |
+| `OIDC_ISSUER`                 | `https://accounts.google.com`  | Any OIDC-discoverable issuer                                                                              |
+| `ADMIN_EMAILS`                | —                              | Comma-separated admins: implicitly allowed, gate `/admin`                                                 |
+| `REGISTRATION`                | `open`                         | `closed` disables self-registration (invite-only mode)                                                    |
+| `ALLOWED_EMAILS`              | —                              | Comma-separated bootstrap allowlist (skips approval)                                                      |
+| `ALLOWED_EMAILS_FILE`         | —                              | Newline-separated allowlist file; merged, hot-reloaded                                                    |
+| `TELEGRAM_BOT_TOKEN`          | —                              | Bot token (BotFather) — enables Telegram notifications + chat actions                                     |
+| `TELEGRAM_ADMIN_CHAT_ID`      | —                              | Operator's chat id — the only chat allowed to drive membership actions                                    |
+| `NOTIFY_URL`                  | —                              | Send-only webhook: plain-text POST per signup/quota request                                               |
+| `QUOTA_DEFAULT_MB`            | `50`                           | Default per-user storage quota (admins can override per user)                                             |
+| `DATA_DIR`                    | `/data`                        | auth.db + per-user DBs (persistent volume)                                                                |
+| `SEED_DIR`                    | `/seed`                        | Seed template for new users                                                                               |
+| `PORT`                        | `8000`                         | HTTP listen port                                                                                          |
+| `ACCESS_TOKEN_TTL`            | `3600`                         | Access-token lifetime (seconds)                                                                           |
+| `REFRESH_TOKEN_TTL`           | `7776000`                      | Refresh-token lifetime (seconds, rotated on use)                                                          |
+| `SECRETS_KEY`                 | —                              | 32-byte base64 master key for per-user secrets (`openssl rand -base64 32`); unset → integrations disabled |
+| `PROTECTED_APPS`              | —                              | `name=http://host:port,…` internal tools served at `/apps/<name>/` behind the login                       |
+| `PROTECTED_APP_<NAME>_EMAILS` | —                              | Per-app email allowlist (required for anyone to reach the app)                                            |
+| `HEVY_API_BASE`               | `https://api.hevyapp.com/v1`   | Hevy API base (override for tests)                                                                        |
+| `INTERVALS_API_BASE`          | `https://intervals.icu/api/v1` | Intervals.icu API base (override for tests)                                                               |
+| `GATEWAY_ALLOW_INSECURE`      | —                              | `1` relaxes the gateway SSRF policy (http + private hosts) — tests only, never production                 |
 
 ## Single-user stdio mode
 

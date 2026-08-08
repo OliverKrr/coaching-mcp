@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { ChangeRow } from "../history.js";
 import { toolText, withErrorHandling } from "../utils/errors.js";
 
-const KINDS = ["section", "ref", "routine", "journal"] as const;
+const KINDS = ["section", "ref", "routine", "journal", "script"] as const;
 
 /**
  * Read-only window into the change history. Deliberately the ENTIRE MCP

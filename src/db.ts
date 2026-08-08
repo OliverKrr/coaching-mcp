@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { CHANGES_TABLE_SQL, pruneChanges } from "./history.js";
+import { CHANGES_TABLE_SQL, migrateChangesKindCheck, pruneChanges } from "./history.js";
 import { latestUpdateId, loadSeedUpdates, setAppliedUpdateId } from "./seed-updates.js";
 
 export type Section = { name: string; content: string; updated_at: string };
@@ -35,6 +35,16 @@ export type Metric = {
   note: string | null;
   measured_at: string;
   created_at: string;
+};
+export type Script = {
+  name: string;
+  description: string;
+  language: string;
+  code: string;
+  requires: string | null;
+  verified_at: string | null;
+  created_at: string;
+  updated_at: string;
 };
 export const ROUTINE_STATUSES = ["active", "paused", "retired"] as const;
 
@@ -73,6 +83,7 @@ export function recomputeContentBytes(db: Database.Database): void {
 				+ (SELECT COALESCE(SUM(LENGTH(content)), 0) FROM refs)
 				+ (SELECT COALESCE(SUM(LENGTH(entry)), 0) FROM journal)
 				+ (SELECT COALESCE(SUM(LENGTH(prompt)), 0) FROM routines)
+				+ (SELECT COALESCE(SUM(LENGTH(code) + LENGTH(description) + LENGTH(COALESCE(requires, ''))), 0) FROM scripts)
 				+ (SELECT COALESCE(SUM(LENGTH(content)), 0) FROM open_items)
 				+ (SELECT COALESCE(SUM(LENGTH(name) + LENGTH(COALESCE(unit, '')) + LENGTH(COALESCE(note, ''))), 0) FROM metrics) AS n`,
       )
@@ -131,6 +142,16 @@ export function createSchema(db: Database.Database): void {
 			created_at TEXT NOT NULL DEFAULT (datetime('now'))
 		);
 		CREATE INDEX IF NOT EXISTS metrics_name_measured ON metrics(name, measured_at);
+		CREATE TABLE IF NOT EXISTS scripts (
+			name TEXT PRIMARY KEY,
+			description TEXT NOT NULL,
+			language TEXT NOT NULL DEFAULT 'python',
+			code TEXT NOT NULL,
+			requires TEXT,
+			verified_at TEXT,
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);
 		CREATE VIRTUAL TABLE IF NOT EXISTS sections_fts USING fts5(
 			name UNINDEXED, content,
 			content=sections, content_rowid=rowid
@@ -146,6 +167,10 @@ export function createSchema(db: Database.Database): void {
 		CREATE VIRTUAL TABLE IF NOT EXISTS routines_fts USING fts5(
 			name UNINDEXED, prompt,
 			content=routines, content_rowid=rowid
+		);
+		CREATE VIRTUAL TABLE IF NOT EXISTS scripts_fts USING fts5(
+			name UNINDEXED, description, code,
+			content=scripts, content_rowid=rowid
 		);
 		CREATE TRIGGER IF NOT EXISTS sections_ai AFTER INSERT ON sections BEGIN
 			INSERT INTO sections_fts(rowid, name, content) VALUES (new.rowid, new.name, new.content);
@@ -194,6 +219,20 @@ export function createSchema(db: Database.Database): void {
 		CREATE TRIGGER IF NOT EXISTS routines_ad AFTER DELETE ON routines BEGIN
 			INSERT INTO routines_fts(routines_fts, rowid, name, prompt)
 				VALUES ('delete', old.rowid, old.name, old.prompt);
+		END;
+		CREATE TRIGGER IF NOT EXISTS scripts_ai AFTER INSERT ON scripts BEGIN
+			INSERT INTO scripts_fts(rowid, name, description, code)
+				VALUES (new.rowid, new.name, new.description, new.code);
+		END;
+		CREATE TRIGGER IF NOT EXISTS scripts_au AFTER UPDATE ON scripts BEGIN
+			INSERT INTO scripts_fts(scripts_fts, rowid, name, description, code)
+				VALUES ('delete', old.rowid, old.name, old.description, old.code);
+			INSERT INTO scripts_fts(rowid, name, description, code)
+				VALUES (new.rowid, new.name, new.description, new.code);
+		END;
+		CREATE TRIGGER IF NOT EXISTS scripts_ad AFTER DELETE ON scripts BEGIN
+			INSERT INTO scripts_fts(scripts_fts, rowid, name, description, code)
+				VALUES ('delete', old.rowid, old.name, old.description, old.code);
 		END;
 		CREATE TABLE IF NOT EXISTS meta (
 			key TEXT PRIMARY KEY,
@@ -244,6 +283,18 @@ export function createSchema(db: Database.Database): void {
 		CREATE TRIGGER IF NOT EXISTS open_items_bytes_ad AFTER DELETE ON open_items BEGIN
 			UPDATE meta SET value = value - LENGTH(old.content) WHERE key = 'content_bytes';
 		END;
+		CREATE TRIGGER IF NOT EXISTS scripts_bytes_ai AFTER INSERT ON scripts BEGIN
+			UPDATE meta SET value = value + LENGTH(new.code) + LENGTH(new.description) + LENGTH(COALESCE(new.requires, '')) WHERE key = 'content_bytes';
+		END;
+		CREATE TRIGGER IF NOT EXISTS scripts_bytes_au AFTER UPDATE ON scripts BEGIN
+			UPDATE meta SET value = value
+				+ LENGTH(new.code) + LENGTH(new.description) + LENGTH(COALESCE(new.requires, ''))
+				- LENGTH(old.code) - LENGTH(old.description) - LENGTH(COALESCE(old.requires, ''))
+				WHERE key = 'content_bytes';
+		END;
+		CREATE TRIGGER IF NOT EXISTS scripts_bytes_ad AFTER DELETE ON scripts BEGIN
+			UPDATE meta SET value = value - LENGTH(old.code) - LENGTH(old.description) - LENGTH(COALESCE(old.requires, '')) WHERE key = 'content_bytes';
+		END;
 		CREATE TRIGGER IF NOT EXISTS metrics_bytes_ai AFTER INSERT ON metrics BEGIN
 			UPDATE meta SET value = value + LENGTH(new.name) + LENGTH(COALESCE(new.unit, '')) + LENGTH(COALESCE(new.note, '')) WHERE key = 'content_bytes';
 		END;
@@ -269,7 +320,17 @@ export function createSchema(db: Database.Database): void {
 			INSERT INTO changes(kind, name, op, old_text)
 				VALUES ('journal', CAST(old.id AS TEXT), 'delete', old.entry);
 		END;
+		CREATE TRIGGER IF NOT EXISTS scripts_hist_ad AFTER DELETE ON scripts BEGIN
+			INSERT INTO changes(kind, name, op, old_text)
+				VALUES ('script', old.name, 'delete',
+					'language: ' || old.language || char(10) || 'description: ' || old.description
+						|| char(10) || char(10) || old.code);
+		END;
 	`);
+  // Databases created before the 'script' change kind get their CHECK rebuilt
+  // once. Must run before any script write (or delete-trigger fire) can insert
+  // a 'script' row — i.e. here, on open, right after the trigger families.
+  migrateChangesKindCheck(db);
   // Additive column migrations: ALTER TABLE has no IF NOT EXISTS, so probe
   // table_info first — the same self-applying spirit as the trigger families.
   const openItemCols = db.pragma("table_info(open_items)") as Array<{ name: string }>;

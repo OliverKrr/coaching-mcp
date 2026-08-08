@@ -16,6 +16,11 @@ import {
   type MountedGateway,
 } from "./gateways.js";
 import { HevyClient, registerHevyTools } from "./integrations/hevy.js";
+import {
+  IntervalsClient,
+  parseIntervalsCredentials,
+  registerIntervalsTools,
+} from "./integrations/intervals.js";
 import { sendJson } from "./http-util.js";
 import {
   contentBytes,
@@ -35,6 +40,7 @@ import { registerOpenItemsTools } from "./tools/openitems.js";
 import { registerOpsTools } from "./tools/ops.js";
 import { registerReadTools } from "./tools/read.js";
 import { registerRoutineTools } from "./tools/routines.js";
+import { registerScriptTools } from "./tools/scripts.js";
 import { registerSeedUpdateTools } from "./tools/seed-updates.js";
 import { registerSessionTools } from "./tools/session.js";
 import { registerWriteTools } from "./tools/write.js";
@@ -217,6 +223,7 @@ export class McpSessionManager {
     registerOpenItemsTools(server, db, limits);
     registerMetricsTools(server, db, limits);
     registerRoutineTools(server, db, limits);
+    registerScriptTools(server, db, limits);
     registerTopicTools(server, this.ctx.cfg.seedDir);
     registerSeedUpdateTools(server, db, this.ctx.cfg.seedDir, limits, this.ctx.log);
     this.registerQuotaRequestTool(server, db, auth.userId);
@@ -232,6 +239,14 @@ export class McpSessionManager {
     if (secretsKey) {
       const hevyKey = getUserSecret(this.ctx.authDb, secretsKey, auth.userId, "hevy_api_key");
       if (hevyKey) registerHevyTools(server, new HevyClient(hevyKey));
+      const icuRaw = getUserSecret(
+        this.ctx.authDb,
+        secretsKey,
+        auth.userId,
+        "intervals_credentials",
+      );
+      const icuCreds = icuRaw ? parseIntervalsCredentials(icuRaw) : undefined;
+      if (icuCreds) registerIntervalsTools(server, new IntervalsClient(icuCreds));
     }
 
     if (mounted.length > 0) {

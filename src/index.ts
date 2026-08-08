@@ -10,6 +10,7 @@ import { registerOpenItemsTools } from "./tools/openitems.js";
 import { registerOpsTools } from "./tools/ops.js";
 import { registerReadTools } from "./tools/read.js";
 import { registerRoutineTools } from "./tools/routines.js";
+import { registerScriptTools } from "./tools/scripts.js";
 import { registerSeedUpdateTools } from "./tools/seed-updates.js";
 import { registerSessionTools } from "./tools/session.js";
 import { registerWriteTools } from "./tools/write.js";
@@ -45,6 +46,7 @@ async function main(): Promise<void> {
   registerOpenItemsTools(server, db);
   registerMetricsTools(server, db);
   registerRoutineTools(server, db);
+  registerScriptTools(server, db);
   registerTopicTools(server, seedDir);
   registerSeedUpdateTools(server, db, seedDir, undefined, log);
   log("tools registered");

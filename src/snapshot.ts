@@ -22,6 +22,14 @@ type OpenItemRow = {
   resolved_note: string | null;
 };
 type RoutineRow = { name: string; cadence: string; prompt: string; status: string };
+type ScriptRow = {
+  name: string;
+  description: string;
+  language: string;
+  code: string;
+  requires: string | null;
+  verified_at: string | null;
+};
 type MetricRow = {
   name: string;
   value: number;
@@ -72,6 +80,18 @@ function formatMetrics(rows: MetricRow[]): string {
       "\n",
   );
   return `# Metrics\n\n${blocks.join("\n")}`;
+}
+
+function formatScripts(rows: ScriptRow[]): string {
+  if (rows.length === 0) return "# Scripts\n\n_No scripts._\n";
+  const blocks = rows.map(
+    (r) =>
+      `## ${r.name} (${r.language})${r.verified_at ? ` — verified ${r.verified_at}` : " — unverified"}\n\n` +
+      `${r.description}\n` +
+      (r.requires ? `\nRequires: ${r.requires}\n` : "") +
+      `\n\`\`\`${r.language === "python" ? "python" : ""}\n${r.code}\n\`\`\`\n`,
+  );
+  return `# Scripts\n\n${blocks.join("\n---\n\n")}`;
 }
 
 function formatRoutines(rows: RoutineRow[]): string {
@@ -147,6 +167,22 @@ export function snapshotDocuments(db: Database.Database, seedOnly = false): Snap
       .prepare("SELECT name, cadence, prompt, status FROM routines ORDER BY name")
       .all() as RoutineRow[];
     docs.push({ path: "routines.md", content: formatRoutines(routines) });
+
+    // The CLI may point at a DB no server has opened since the scripts table
+    // shipped (createSchema runs on open, snapshot must not mutate) — probe.
+    const hasScripts =
+      db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'scripts'").get() !==
+      undefined;
+    if (hasScripts) {
+      const scripts = db
+        .prepare(
+          "SELECT name, description, language, code, requires, verified_at FROM scripts ORDER BY name",
+        )
+        .all() as ScriptRow[];
+      if (scripts.length > 0) {
+        docs.push({ path: "scripts.md", content: formatScripts(scripts) });
+      }
+    }
 
     // The CLI may point at a DB no server has opened since the metrics table
     // shipped (createSchema runs on open, snapshot must not mutate) — probe.

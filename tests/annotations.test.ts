@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { createSchema } from "../src/db.js";
 import { HevyClient, registerHevyTools } from "../src/integrations/hevy.js";
+import { IntervalsClient, registerIntervalsTools } from "../src/integrations/intervals.js";
 import { registerDeleteTools } from "../src/tools/delete.js";
 import { registerEditTools } from "../src/tools/edit.js";
 import { registerHistoryTools } from "../src/tools/history.js";
@@ -19,6 +20,7 @@ import { registerOpenItemsTools } from "../src/tools/openitems.js";
 import { registerOpsTools } from "../src/tools/ops.js";
 import { registerReadTools } from "../src/tools/read.js";
 import { registerRoutineTools } from "../src/tools/routines.js";
+import { registerScriptTools } from "../src/tools/scripts.js";
 import { registerSeedUpdateTools } from "../src/tools/seed-updates.js";
 import { registerWriteTools } from "../src/tools/write.js";
 import { registerTopicTools } from "../src/topics.js";
@@ -55,9 +57,11 @@ function registeredTools(): Record<string, RegisteredTool> {
   registerDeleteTools(server, db);
   registerOpenItemsTools(server, db);
   registerRoutineTools(server, db);
+  registerScriptTools(server, db);
   registerTopicTools(server, seedDir);
   registerSeedUpdateTools(server, db, seedDir);
   registerHevyTools(server, new HevyClient("test-key"));
+  registerIntervalsTools(server, new IntervalsClient({ athleteId: "i0", apiKey: "test-key" }));
   return (server as unknown as InternalServer)._registeredTools;
 }
 
@@ -65,7 +69,7 @@ describe("tool metadata", () => {
   const tools = registeredTools();
 
   it("registers the full tool surface", () => {
-    expect(Object.keys(tools).length).toBeGreaterThanOrEqual(49);
+    expect(Object.keys(tools).length).toBeGreaterThanOrEqual(57);
   });
 
   it("every tool carries a title and grouping annotations", () => {

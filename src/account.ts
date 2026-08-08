@@ -30,6 +30,7 @@ import {
   type Gateway,
 } from "./gateways.js";
 import { HevyClient } from "./integrations/hevy.js";
+import { IntervalsClient } from "./integrations/intervals.js";
 import type { ServeContext } from "./context.js";
 import {
   clearedCookie,
@@ -158,6 +159,21 @@ export async function handleAccountRoute(
       redirect(res, `${base}/account`);
       return true;
     }
+    if (path === "/account/integrations/intervals") {
+      await saveIntervalsCredentials(
+        ctx,
+        res,
+        auth,
+        form.get("athlete_id") ?? "",
+        form.get("api_key") ?? "",
+      );
+      return true;
+    }
+    if (path === "/account/integrations/intervals/delete") {
+      deleteUserSecret(ctx.authDb, auth.userId, "intervals_credentials");
+      redirect(res, `${base}/account`);
+      return true;
+    }
     if (path === "/account/telegram/unlink") {
       setUserTelegramChat(ctx.authDb, auth.userId, null);
       redirect(res, `${base}/account`);
@@ -224,6 +240,59 @@ async function saveHevyKey(
   }
   setUserSecret(ctx.authDb, ctx.cfg.secretsKey, auth.userId, "hevy_api_key", key);
   ctx.log(`hevy key configured for ${auth.userId}`);
+  redirect(res, `${base}/account`);
+}
+
+async function saveIntervalsCredentials(
+  ctx: ServeContext,
+  res: ServerResponse,
+  auth: WebAuth,
+  athleteIdRaw: string,
+  apiKeyRaw: string,
+): Promise<void> {
+  const base = ctx.cfg.publicUrl;
+  const athleteId = athleteIdRaw.trim();
+  const apiKey = apiKeyRaw.trim();
+  if (!ctx.cfg.secretsKey || !athleteId || !apiKey) {
+    sendHtml(res, 400, page("Invalid request", "<h1>Invalid request</h1>"));
+    return;
+  }
+  let valid: boolean;
+  try {
+    valid = await new IntervalsClient({ athleteId, apiKey }).validateCredentials();
+  } catch (err) {
+    ctx.log(
+      `intervals credential validation failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    sendHtml(
+      res,
+      502,
+      page(
+        "Intervals.icu unreachable",
+        `<h1>Intervals.icu is unreachable</h1><p>Could not verify the credentials right now — nothing was saved. Try again in a minute.</p><p><a href="${base}/account">Back to account</a></p>`,
+      ),
+    );
+    return;
+  }
+  if (!valid) {
+    sendHtml(
+      res,
+      400,
+      page(
+        "Credentials rejected",
+        `<h1>Intervals.icu rejected these credentials</h1><p>Check athlete id and API key under intervals.icu → Settings → Developer. Nothing was saved.</p><p><a href="${base}/account">Back to account</a></p>`,
+      ),
+    );
+    return;
+  }
+  setUserSecret(
+    ctx.authDb,
+    ctx.cfg.secretsKey,
+    auth.userId,
+    "intervals_credentials",
+    JSON.stringify({ athleteId, apiKey }),
+  );
+  ctx.log(`intervals credentials configured for ${auth.userId}`);
   redirect(res, `${base}/account`);
 }
 
@@ -435,9 +504,32 @@ function renderAccountPage(
 <input type="password" id="hevy_key" name="api_key" autocomplete="off" required>
 <p><button>${t.connectHevy}</button></p>
 </form>`;
+    const icuMeta = getUserSecretMeta(ctx.authDb, user.id, "intervals_credentials");
+    const icuForm = (
+      button: string,
+    ) => `<form method="post" action="${base}/account/integrations/intervals">
+<input type="hidden" name="csrf" value="${csrf}">
+<label for="icu_athlete">${t.intervalsAthleteLabel}</label>
+<input type="text" id="icu_athlete" name="athlete_id" autocomplete="off" required>
+<label for="icu_key">${t.intervalsKeyLabel}</label>
+<input type="password" id="icu_key" name="api_key" autocomplete="off" required>
+<p><button>${button}</button></p>
+</form>`;
+    const icuBlock = icuMeta
+      ? `<p>Intervals.icu: ${badge("ok", t.connected)} <span class="muted">(${t.keyUpdated} ${htmlEscape(icuMeta.updated_at)} UTC)</span></p>
+${icuForm(t.updateKey)}
+<form method="post" action="${base}/account/integrations/intervals/delete">
+<input type="hidden" name="csrf" value="${csrf}">
+<button class="danger">${t.disconnectIntervals}</button>
+</form>`
+      : `<p>Intervals.icu: ${badge("muted", t.notConnected)}</p>
+<p class="muted">${t.intervalsIntro}</p>
+${icuForm(t.connectIntervals)}`;
     integrationsCard = `<div class="card">
 <h2>${t.integrations}</h2>
 ${hevyBlock}
+<hr>
+${icuBlock}
 <p class="muted">${t.keysNote}</p>
 </div>`;
   }
@@ -649,6 +741,12 @@ const ACCOUNT_EN = {
     "Connect your own Hevy account (requires Hevy Pro) and your coach gains tools to read workouts and manage routines. Key: hevy.com → Settings → Developer.",
   hevyKeyLabel: "Hevy API key:",
   connectHevy: "Connect Hevy",
+  intervalsIntro:
+    "Connect your own Intervals.icu account and your coach gains CSV export tools for activities, wellness, and weekly training summaries — the data base for charts and analyses. Athlete id and API key: intervals.icu → Settings → Developer.",
+  intervalsAthleteLabel: "Intervals.icu athlete id:",
+  intervalsKeyLabel: "Intervals.icu API key:",
+  connectIntervals: "Connect Intervals.icu",
+  disconnectIntervals: "Disconnect Intervals.icu",
   keysNote:
     "Keys are stored encrypted, are never shown again, and are removed with your account. New Claude conversations pick changes up immediately.",
   telegramIntro:
@@ -733,6 +831,12 @@ const ACCOUNT_DE: AccountStrings = {
     "Verbinde dein eigenes Hevy-Konto (erfordert Hevy Pro), dann kann dein Coach Workouts lesen und Routinen verwalten. Key: hevy.com → Settings → Developer.",
   hevyKeyLabel: "Hevy-API-Key:",
   connectHevy: "Hevy verbinden",
+  intervalsIntro:
+    "Verbinde dein eigenes Intervals.icu-Konto, dann kann dein Coach Aktivitäten, Wellness-Daten und Wochen-Zusammenfassungen als CSV exportieren — die Datenbasis für Charts und Analysen. Athlete-ID und API-Key: intervals.icu → Settings → Developer.",
+  intervalsAthleteLabel: "Intervals.icu-Athlete-ID:",
+  intervalsKeyLabel: "Intervals.icu-API-Key:",
+  connectIntervals: "Intervals.icu verbinden",
+  disconnectIntervals: "Intervals.icu trennen",
   keysNote:
     "Keys werden verschlüsselt gespeichert, nie wieder angezeigt und mit deinem Account gelöscht. Neue Claude-Unterhaltungen übernehmen Änderungen sofort.",
   telegramIntro:

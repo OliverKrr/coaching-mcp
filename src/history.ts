@@ -21,7 +21,7 @@ import type Database from "better-sqlite3";
  * human-only action on the account page.
  */
 
-export type ChangeKind = "section" | "ref" | "routine" | "journal";
+export type ChangeKind = "section" | "ref" | "routine" | "journal" | "script";
 export type ChangeOp = "edit" | "replace" | "delete";
 export type ChangeSource = "mcp" | "web" | "restore-cli";
 
@@ -49,7 +49,7 @@ const DEFAULT_MAX_BYTES = 10 * 1024 * 1024;
 export const CHANGES_TABLE_SQL = `
 	CREATE TABLE IF NOT EXISTS changes (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		kind TEXT NOT NULL CHECK (kind IN ('section','ref','routine','journal')),
+		kind TEXT NOT NULL CHECK (kind IN ('section','ref','routine','journal','script')),
 		name TEXT NOT NULL,
 		op TEXT NOT NULL CHECK (op IN ('edit','replace','delete')),
 		old_text TEXT NOT NULL,
@@ -62,6 +62,41 @@ export const CHANGES_TABLE_SQL = `
 
 export function ensureChangesSchema(db: Database.Database): void {
   db.exec(CHANGES_TABLE_SQL);
+}
+
+/**
+ * The `kind` CHECK constraint predates 'script'; SQLite cannot alter a CHECK,
+ * so databases created before it are rebuilt once (the documented
+ * create-copy-drop-rename sequence). `legacy_alter_table` keeps the RENAME
+ * from touching the `*_hist_ad` trigger bodies — they reference `changes` by
+ * name, which the rename restores.
+ */
+export function migrateChangesKindCheck(db: Database.Database): void {
+  const row = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'changes'")
+    .get() as { sql: string } | undefined;
+  if (!row || row.sql.includes("'script'")) return;
+  db.transaction(() => {
+    db.exec(`
+			CREATE TABLE changes_migrate_new (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				kind TEXT NOT NULL CHECK (kind IN ('section','ref','routine','journal','script')),
+				name TEXT NOT NULL,
+				op TEXT NOT NULL CHECK (op IN ('edit','replace','delete')),
+				old_text TEXT NOT NULL,
+				new_text TEXT,
+				source TEXT,
+				created_at TEXT NOT NULL DEFAULT (datetime('now'))
+			);
+			INSERT INTO changes_migrate_new (id, kind, name, op, old_text, new_text, source, created_at)
+				SELECT id, kind, name, op, old_text, new_text, source, created_at FROM changes;
+			DROP TABLE changes;
+			PRAGMA legacy_alter_table = ON;
+			ALTER TABLE changes_migrate_new RENAME TO changes;
+			PRAGMA legacy_alter_table = OFF;
+			CREATE INDEX IF NOT EXISTS changes_doc ON changes(kind, name, id);
+		`);
+  })();
 }
 
 const INSERT_SQL =

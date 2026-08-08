@@ -52,12 +52,12 @@ export function registerReadTools(
     {
       title: "Search knowledge",
       description:
-        "Full-text search across coaching knowledge. Optional `type` scopes to one of section/reference/journal/routine; omitted searches all four.",
+        "Full-text search across coaching knowledge. Optional `type` scopes to one of section/reference/journal/routine/script; omitted searches all five.",
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         query: z.string().min(1).describe("Search terms"),
         type: z
-          .enum(["section", "reference", "journal", "routine"])
+          .enum(["section", "reference", "journal", "routine", "script"])
           .optional()
           .describe("Filter: search only this table. Omit to search all."),
         limit: z
@@ -139,6 +139,25 @@ export function registerReadTools(
           for (const r of rows) {
             hits.push({
               type: "routine",
+              name: r.name,
+              date: r.updated_at.slice(0, 10),
+              snippet: r.snippet,
+            });
+          }
+        }
+
+        if (type === undefined || type === "script") {
+          const rows = db
+            .prepare(
+              // snippet column -1: let FTS5 pick the matching column (description or code).
+              "SELECT s.name as name, snippet(scripts_fts, -1, '**', '**', '...', 32) as snippet, s.updated_at as updated_at " +
+                "FROM scripts_fts JOIN scripts s ON s.rowid = scripts_fts.rowid " +
+                "WHERE scripts_fts MATCH ? ORDER BY rank LIMIT ?",
+            )
+            .all(fts, limit) as Array<{ name: string; snippet: string; updated_at: string }>;
+          for (const r of rows) {
+            hits.push({
+              type: "script",
               name: r.name,
               date: r.updated_at.slice(0, 10),
               snippet: r.snippet,

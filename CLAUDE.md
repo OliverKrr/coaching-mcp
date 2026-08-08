@@ -63,6 +63,8 @@ src/account.ts      /account router (session + CSRF for all account routes): pro
 src/account-data.ts /account/data browse & edit: sections/refs/routines (create/edit/delete, optimistic concurrency), journal, open items
 src/auth/secrets.ts encrypted per-user secret store (AES-256-GCM under SECRETS_KEY; AAD binds user+slot)
 src/integrations/hevy.ts  Hevy API client + MCP tools, registered per-session only for users with a key
+src/integrations/intervals.ts  Intervals.icu client + lean CSV export tools (activities, wellness, weekly summary), same opt-in pattern
+src/ruff.ts         lazy in-process Python linting (ruff WASM) for save_script — parse errors reject, lint returns as warnings
 src/apps-proxy.ts   /apps/<name> authenticated reverse proxy (per-app email allowlist, HTML prefix rewriting)
 src/gateways.ts     per-user MCP gateway: users attach upstream MCP servers on /account; sessions mount their tools verbatim
 src/ratelimit.ts    fixed-window per-IP limiter guarding the auth endpoints
@@ -97,35 +99,39 @@ which must be backed up alongside per-user snapshots or a restore can't reconstr
 
 ## MCP tools
 
-| Tool                                  | Direction | Description                                                                    |
-| ------------------------------------- | --------- | ------------------------------------------------------------------------------ |
-| `start_session`                       | read      | Composite session start: context + open items + recent journal in one call     |
-| `get_coaching_context`                | read      | Full SKILL.md — session start on servers without `start_session`               |
-| `search_knowledge`                    | read      | FTS5 full-text search, `ORDER BY rank` (sections, refs, journal, routines)     |
-| `get_section` / `list_sections`       | read      | One section / all sections with metadata                                       |
-| `get_reference` / `list_references`   | read      | One reference doc / all references with metadata                               |
-| `get_journal`                         | read      | Recent journal entries, newest first                                           |
-| `update_section`                      | write     | Create or fully rewrite a knowledge section (use `main` for SKILL.md)          |
-| `update_reference`                    | write     | Create or fully rewrite a reference doc                                        |
-| `edit_section` / `edit_reference`     | write     | Exact-string replacement inside a doc (old_string must match exactly once)     |
-| `append_journal`                      | write     | Append a coaching journal entry                                                |
-| `delete_section` / `delete_reference` | write     | Delete a doc (confirm=true; `main` protected; recoverable via change history)  |
-| `list_changes` / `get_change`         | read      | Change history: what edits/overwrites/deletes removed — for content recovery   |
-| `add_open_item`                       | write     | Record a commitment (if-then next action) or a de-duplicated flag              |
-| `list_open_items`                     | read      | List commitments/flags with opened dates + OVERDUE markers (status incl. all)  |
-| `resolve_open_item`                   | write     | Close an open item; note stored in `resolved_note`, content preserved verbatim |
-| `record_metric` / `get_metrics`       | r/w       | Structured numeric series (weight, adherence, …) — trends without table edits  |
-| `delete_metric`                       | write     | Remove one data point (confirm=true; not covered by change history)            |
-| `list_topic_packs` / `get_topic_pack` | read      | Installable coaching topics: interview + skeletons + routine templates         |
-| `get_seed_updates`                    | read      | Pending seed-template updates: curated merge instructions for the assistant    |
-| `mark_seed_updates_applied`           | write     | Advance the per-user seed-update watermark after merging (partial ok)          |
-| `list_routines` / `get_routine`       | read      | Stored scheduled-routine prompts (users copy them into Claude scheduled tasks) |
-| `save_routine`                        | write     | Upsert a routine (name, cadence, prompt, status; status kept when omitted)     |
-| `delete_routine`                      | write     | Delete a stored routine (confirm=true)                                         |
-| `request_quota_increase`              | write     | Ask the operator for more storage with a reason (serve mode, per-session)      |
-| `notify_user`                         | write     | Telegram message to the user (per-session, only when their chat is linked)     |
-| `refresh_connected_servers`           | write     | Re-read attached gateways' tools past the cache (per-session, only if mounted) |
-| `get_version`                         | read      | Build info + per-table statistics + storage usage vs. quota                    |
+| Tool                                  | Direction | Description                                                                         |
+| ------------------------------------- | --------- | ----------------------------------------------------------------------------------- |
+| `start_session`                       | read      | Composite session start: context + open items + recent journal in one call          |
+| `get_coaching_context`                | read      | Full SKILL.md — session start on servers without `start_session`                    |
+| `search_knowledge`                    | read      | FTS5 full-text search, `ORDER BY rank` (sections, refs, journal, routines, scripts) |
+| `get_section` / `list_sections`       | read      | One section / all sections with metadata                                            |
+| `get_reference` / `list_references`   | read      | One reference doc / all references with metadata                                    |
+| `get_journal`                         | read      | Recent journal entries, newest first                                                |
+| `update_section`                      | write     | Create or fully rewrite a knowledge section (use `main` for SKILL.md)               |
+| `update_reference`                    | write     | Create or fully rewrite a reference doc                                             |
+| `edit_section` / `edit_reference`     | write     | Exact-string replacement inside a doc (old_string must match exactly once)          |
+| `append_journal`                      | write     | Append a coaching journal entry                                                     |
+| `delete_section` / `delete_reference` | write     | Delete a doc (confirm=true; `main` protected; recoverable via change history)       |
+| `list_changes` / `get_change`         | read      | Change history: what edits/overwrites/deletes removed — for content recovery        |
+| `add_open_item`                       | write     | Record a commitment (if-then next action) or a de-duplicated flag                   |
+| `list_open_items`                     | read      | List commitments/flags with opened dates + OVERDUE markers (status incl. all)       |
+| `resolve_open_item`                   | write     | Close an open item; note stored in `resolved_note`, content preserved verbatim      |
+| `record_metric` / `get_metrics`       | r/w       | Structured numeric series (weight, adherence, …) — trends without table edits       |
+| `delete_metric`                       | write     | Remove one data point (confirm=true; not covered by change history)                 |
+| `list_topic_packs` / `get_topic_pack` | read      | Installable coaching topics: interview + skeletons + routine templates              |
+| `get_seed_updates`                    | read      | Pending seed-template updates: curated merge instructions for the assistant         |
+| `mark_seed_updates_applied`           | write     | Advance the per-user seed-update watermark after merging (partial ok)               |
+| `list_routines` / `get_routine`       | read      | Stored scheduled-routine prompts (users copy them into Claude scheduled tasks)      |
+| `save_routine`                        | write     | Upsert a routine (name, cadence, prompt, status; status kept when omitted)          |
+| `delete_routine`                      | write     | Delete a stored routine (confirm=true)                                              |
+| `list_scripts` / `get_script`         | read      | Stored analysis scripts (verification state) / one script's metadata + source       |
+| `save_script`                         | write     | Upsert an analysis script; Python ruff-validated; changed code resets verify        |
+| `mark_script_verified`                | write     | Stamp a script verified after a successful run in the assistant's sandbox           |
+| `delete_script`                       | write     | Delete a stored script (confirm=true; recoverable via change history)               |
+| `request_quota_increase`              | write     | Ask the operator for more storage with a reason (serve mode, per-session)           |
+| `notify_user`                         | write     | Telegram message to the user (per-session, only when their chat is linked)          |
+| `refresh_connected_servers`           | write     | Re-read attached gateways' tools past the cache (per-session, only if mounted)      |
+| `get_version`                         | read      | Build info + per-table statistics + storage usage vs. quota                         |
 
 **Every tool registration carries a `title` and MCP tool `annotations`** — connector UIs group
 tools by these hints (an unannotated tool lands in a flat "other tools" bucket with the most
@@ -149,8 +155,9 @@ retention `HISTORY_MAX_AGE_DAYS` (90) / `HISTORY_MAX_PER_DOC` (40) / `HISTORY_MA
 
 ## Key design decisions
 
-**FTS5 external content tables**: `sections_fts`, `refs_fts`, `journal_fts`, `routines_fts` are
-external-content virtual tables. All four require INSERT + UPDATE + DELETE triggers to stay in
+**FTS5 external content tables**: `sections_fts`, `refs_fts`, `journal_fts`, `routines_fts`,
+`scripts_fts` are
+external-content virtual tables. All five require INSERT + UPDATE + DELETE triggers to stay in
 sync with their base tables (`journal_au` arrived with web journal editing in v2.1 — the journal
 is append-only over MCP but editable on the account page). Do not remove any trigger from
 `db.ts`; because `createSchema()` uses `CREATE TABLE/TRIGGER IF NOT EXISTS` on every open, new
@@ -167,8 +174,10 @@ previous version, delete → the full old content). Deletes are captured by the 
 triggers in `db.ts` (same do-not-remove rule as the FTS/bytes trigger families — no code path
 can bypass them). Overwrites cannot be diffed in SQL, so **every overwrite path must call
 `logReplace` from `src/history.ts` in the same transaction as the write** — currently the write
-tools, the edit tools (`logEdit`), the account-data editor, and the restore CLI; keep that list
-complete when adding write paths. History rows are deliberately NOT counted in `content_bytes`
+tools, the edit tools (`logEdit`), `save_script`, the account-data editor, and the restore CLI;
+keep that list complete when adding write paths. Databases predating the `script` change kind
+get their `changes.kind` CHECK rebuilt once on open (`migrateChangesKindCheck`).
+History rows are deliberately NOT counted in `content_bytes`
 (the safety net must not eat the quota) and are bounded instead by `pruneChanges` on every DB
 open (`HISTORY_*` env vars). The MCP surface is read-only (`list_changes`/`get_change`);
 recovery re-applies content through the normal write tools, and purging history is a

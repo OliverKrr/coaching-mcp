@@ -59,6 +59,9 @@ export function registerOpsTools(
         const metricsCount = (
           db.prepare("SELECT COUNT(*) as n FROM metrics").get() as { n: number }
         ).n;
+        const scriptsCount = (
+          db.prepare("SELECT COUNT(*) as n FROM scripts").get() as { n: number }
+        ).n;
         const changesCount = (
           db.prepare("SELECT COUNT(*) as n FROM changes").get() as { n: number }
         ).n;
@@ -82,6 +85,7 @@ export function registerOpsTools(
           routines_count: routinesCount,
           open_items_count: openItemsCount,
           metrics_count: metricsCount,
+          scripts_count: scriptsCount,
           changes_count: changesCount,
           db_size_bytes: dbSizeBytes,
           storage_bytes: storageBytes,
