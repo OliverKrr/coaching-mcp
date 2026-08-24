@@ -109,6 +109,19 @@ describe("start_session", () => {
     }
   });
 
+  it("flags state metrics past their staleness window", async () => {
+    const { server, db } = makeServer();
+    db.prepare(
+      "INSERT INTO metric_series(name, kind, stale_after_days) VALUES ('cycle-ftp', 'state', 180)",
+    ).run();
+    db.prepare(
+      "INSERT INTO metrics(name, value, unit, measured_at) VALUES ('cycle-ftp', 250, 'W', '2024-05-01')",
+    ).run();
+    const text = (await callTool(server, "start_session", {})).content[0].text;
+    expect(text).toContain("⚠ Stale state metrics: cycle-ftp = 250 W");
+    expect(text).toContain("staleness 180 d");
+  });
+
   it("carries the pending seed-update notice", async () => {
     const seedDir = mkdtempSync(join(tmpdir(), "coaching-seed-"));
     writeFileSync(

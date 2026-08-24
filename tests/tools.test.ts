@@ -326,11 +326,14 @@ describe("get_section", () => {
     expect(result.content[0].text).toContain("main");
   });
 
-  it("get_section('main') equals get_coaching_context() after trimEnd", async () => {
+  it("get_section('main') equals get_coaching_context() minus the session-start preamble", async () => {
     const { server } = makeServer();
     const a = (await callTool(server, "get_section", { name: "main" })).content[0].text;
     const b = (await callTool(server, "get_coaching_context", {})).content[0].text;
-    expect(a.trimEnd()).toBe(b.trimEnd());
+    // get_coaching_context is a session-start tool, so it leads with the index
+    // budget line; the document body after the separator must be identical.
+    expect(b).toMatch(/^\[hub\] main:/);
+    expect(b.split("\n\n---\n\n").slice(1).join("\n\n---\n\n").trimEnd()).toBe(a.trimEnd());
   });
 });
 

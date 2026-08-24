@@ -2,7 +2,13 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type Database from "better-sqlite3";
 import { z } from "zod";
 import type { JournalEntry, Reference, Section } from "../db.js";
-import { formatBytes, indexBudgetBytes, indexBudgetLine, usageWarning, type WriteLimits } from "../quota.js";
+import {
+  formatBytes,
+  indexBudgetBytes,
+  indexBudgetLine,
+  usageWarning,
+  type WriteLimits,
+} from "../quota.js";
 import { loadSeedUpdates, pendingUpdates } from "../seed-updates.js";
 import { toolText, withErrorHandling } from "../utils/errors.js";
 import { journalHeadline } from "../utils/journal.js";

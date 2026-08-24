@@ -6,6 +6,7 @@ import { indexBudgetLine, usageWarning, type WriteLimits } from "../quota.js";
 import { loadSeedUpdates, pendingUpdates } from "../seed-updates.js";
 import { toolText, withErrorHandling } from "../utils/errors.js";
 import { journalHeadline } from "../utils/journal.js";
+import { staleMetricsLine } from "./metrics.js";
 import { openItemLine, openOpenItems } from "./openitems.js";
 
 /**
@@ -84,6 +85,7 @@ export function registerSessionTools(
         const parts = [
           indexBudgetLine(db),
           warning.trim(),
+          staleMetricsLine(db),
           context + notice,
           "---",
           `${itemsHeader}\n\n${itemsBlock}`,

@@ -117,9 +117,9 @@ export function formatBytes(n: number): string {
  * slower, more expensive sessions, never as an error.
  */
 export function indexBudgetLine(db: Database.Database): string {
-  const row = db
-    .prepare("SELECT LENGTH(content) AS n FROM sections WHERE name = 'main'")
-    .get() as { n: number } | undefined;
+  const row = db.prepare("SELECT LENGTH(content) AS n FROM sections WHERE name = 'main'").get() as
+    | { n: number }
+    | undefined;
   if (!row) return "";
   const budget = indexBudgetBytes();
   const base = `[hub] main: ${formatBytes(row.n)} B of ${formatBytes(budget)} B index budget`;

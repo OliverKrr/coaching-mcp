@@ -117,7 +117,7 @@ which must be backed up alongside per-user snapshots or a restore can't reconstr
 | `add_open_item`                       | write     | Record a commitment (if-then next action) or a de-duplicated flag                   |
 | `list_open_items`                     | read      | List commitments/flags with opened dates + OVERDUE markers (status incl. all)       |
 | `resolve_open_item`                   | write     | Close an open item; note stored in `resolved_note`, content preserved verbatim      |
-| `record_metric` / `get_metrics`       | r/w       | Structured numeric series (weight, adherence, …) — trends without table edits       |
+| `record_metric` / `get_metrics`       | r/w       | Numeric series; 'state' kinds supersede via validity windows (`as_of` history)       |
 | `delete_metric`                       | write     | Remove one data point (confirm=true; not covered by change history)                 |
 | `list_topic_packs` / `get_topic_pack` | read      | Installable coaching topics: interview + skeletons + routine templates              |
 | `get_seed_updates`                    | read      | Pending seed-template updates: curated merge instructions for the assistant         |
@@ -163,6 +163,16 @@ lead with a `[hub] main: … B of … B index budget` line (`INDEX_BUDGET_BYTES`
 reports `main_bytes` + `largest_documents`. A hard cap would break writes mid-session, which
 is worse than a large index — the budget makes the cost visible, the model and user decide
 what moves out.
+
+**Metric series are 'state' or 'event', and the two must never be conflated**: in a plain
+append log a changed fact sits next to its old value and the two compete at read time. A
+`state` series (FTP, thresholds, baselines) closes the previous row's validity window on
+every recording — `get_metrics` returns exactly the current value, `as_of` answers "what was
+it then?", `include_superseded` shows the trail; an `event` series (weekly volume,
+adherence) never supersedes, so counting questions keep working. Kind is set on first use
+and fixed (`metric_series` registry; windows are rebuilt idempotently per write/delete, the
+recompute-over-increment spirit). `stale_after_days` on a state series makes
+`start_session` flag an overdue value — a retest reminder that lives in schema, not prose.
 
 **FTS5 external content tables**: `sections_fts`, `refs_fts`, `journal_fts`, `routines_fts`,
 `scripts_fts` are

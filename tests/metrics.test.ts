@@ -126,7 +126,9 @@ describe("get_metrics", () => {
     });
     await callTool(server, "record_metric", { name: "resting-hr", value: 41 });
     const text = (await callTool(server, "get_metrics", {})).content[0].text;
-    expect(text).toContain("**body-weight**: 2 points, 2026-07-01 → 2026-08-01, latest 72.4 kg");
+    expect(text).toContain(
+      "**body-weight** [event]: 2 points, 2026-07-01 → 2026-08-01, latest 72.4 kg",
+    );
     expect(text).toContain("**resting-hr**");
   });
 
@@ -205,5 +207,188 @@ describe("delete_metric", () => {
     const { server } = makeServer();
     const r = await callTool(server, "delete_metric", { id: 99, confirm: true });
     expect(r.content[0].text).toContain("No metric with id #99");
+  });
+});
+
+describe("state series (validity windows)", () => {
+  it("a new state value supersedes the previous one", async () => {
+    const { server, db } = makeServer();
+    await callTool(server, "record_metric", {
+      name: "cycle-ftp",
+      value: 250,
+      unit: "W",
+      measured_at: "2024-05-01",
+      series_kind: "state",
+    });
+    const r = await callTool(server, "record_metric", {
+      name: "cycle-ftp",
+      value: 265,
+      unit: "W",
+      measured_at: "2026-08-01",
+    });
+    expect(r.content[0].text).toContain("Supersedes #1");
+    const rows = db
+      .prepare("SELECT id, valid_to FROM metrics WHERE name='cycle-ftp' ORDER BY id")
+      .all() as Array<{ id: number; valid_to: string | null }>;
+    expect(rows[0].valid_to).toBe("2026-08-01");
+    expect(rows[1].valid_to).toBeNull();
+  });
+
+  it("get_metrics with no as_of returns exactly the current value", async () => {
+    const { server } = makeServer();
+    await callTool(server, "record_metric", {
+      name: "cycle-ftp",
+      value: 250,
+      measured_at: "2024-05-01",
+      series_kind: "state",
+    });
+    await callTool(server, "record_metric", {
+      name: "cycle-ftp",
+      value: 265,
+      measured_at: "2026-08-01",
+    });
+    const text = (await callTool(server, "get_metrics", { name: "cycle-ftp" })).content[0].text;
+    expect(text).toContain("265");
+    expect(text).toContain("current since 2026-08-01");
+    expect(text).not.toContain("#1 ");
+    expect(text).toContain("1 superseded value");
+  });
+
+  it("as_of answers what was valid at a past date", async () => {
+    const { server } = makeServer();
+    await callTool(server, "record_metric", {
+      name: "cycle-ftp",
+      value: 250,
+      measured_at: "2024-05-01",
+      series_kind: "state",
+    });
+    await callTool(server, "record_metric", {
+      name: "cycle-ftp",
+      value: 265,
+      measured_at: "2026-08-01",
+    });
+    const text = (await callTool(server, "get_metrics", { name: "cycle-ftp", as_of: "2025-06-15" }))
+      .content[0].text;
+    expect(text).toContain("as of 2025-06-15: 250");
+    const before = (
+      await callTool(server, "get_metrics", { name: "cycle-ftp", as_of: "2023-01-01" })
+    ).content[0].text;
+    expect(before).toContain("No value of 'cycle-ftp' was valid at 2023-01-01");
+  });
+
+  it("include_superseded shows the full trail with windows", async () => {
+    const { server } = makeServer();
+    await callTool(server, "record_metric", {
+      name: "cycle-ftp",
+      value: 250,
+      measured_at: "2024-05-01",
+      series_kind: "state",
+    });
+    await callTool(server, "record_metric", {
+      name: "cycle-ftp",
+      value: 265,
+      measured_at: "2026-08-01",
+    });
+    const text = (
+      await callTool(server, "get_metrics", { name: "cycle-ftp", include_superseded: true })
+    ).content[0].text;
+    expect(text).toContain("[2024-05-01 → 2026-08-01]");
+    expect(text).toContain("[2026-08-01 → current]");
+  });
+
+  it("a historical backfill closes its own window, not the current one", async () => {
+    const { server, db } = makeServer();
+    await callTool(server, "record_metric", {
+      name: "cycle-ftp",
+      value: 265,
+      measured_at: "2026-08-01",
+      series_kind: "state",
+    });
+    const r = await callTool(server, "record_metric", {
+      name: "cycle-ftp",
+      value: 250,
+      measured_at: "2024-05-01",
+    });
+    expect(r.content[0].text).toContain("Recorded as historical");
+    const open = db
+      .prepare("SELECT value FROM metrics WHERE name='cycle-ftp' AND valid_to IS NULL")
+      .all() as Array<{ value: number }>;
+    expect(open).toEqual([{ value: 265 }]);
+  });
+
+  it("event series never supersede — counting history stays intact", async () => {
+    const { server, db } = makeServer();
+    await callTool(server, "record_metric", {
+      name: "weekly-volume",
+      value: 66,
+      unit: "km",
+      measured_at: "2026-08-10",
+    });
+    await callTool(server, "record_metric", {
+      name: "weekly-volume",
+      value: 62,
+      unit: "km",
+      measured_at: "2026-08-17",
+    });
+    const open = db
+      .prepare("SELECT COUNT(*) AS n FROM metrics WHERE name='weekly-volume' AND valid_to IS NULL")
+      .get() as { n: number };
+    expect(open.n).toBe(2);
+    const text = (await callTool(server, "get_metrics", { name: "weekly-volume" })).content[0].text;
+    expect(text).toContain("2 points");
+    expect(text).toContain("66");
+    expect(text).toContain("62");
+  });
+
+  it("the series kind is fixed once set", async () => {
+    const { server } = makeServer();
+    await callTool(server, "record_metric", {
+      name: "cycle-ftp",
+      value: 250,
+      series_kind: "state",
+    });
+    const r = await callTool(server, "record_metric", {
+      name: "cycle-ftp",
+      value: 260,
+      series_kind: "event",
+    });
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toContain("fixed once set");
+  });
+
+  it("deleting the current state value re-opens the previous one", async () => {
+    const { server, db } = makeServer();
+    await callTool(server, "record_metric", {
+      name: "cycle-ftp",
+      value: 250,
+      measured_at: "2024-05-01",
+      series_kind: "state",
+    });
+    await callTool(server, "record_metric", {
+      name: "cycle-ftp",
+      value: 265,
+      measured_at: "2026-08-01",
+    });
+    await callTool(server, "delete_metric", { id: 2, confirm: true });
+    const open = db
+      .prepare("SELECT value, valid_to FROM metrics WHERE name='cycle-ftp'")
+      .all() as Array<{ value: number; valid_to: string | null }>;
+    expect(open).toEqual([{ value: 250, valid_to: null }]);
+  });
+
+  it("the overview marks kinds and staleness", async () => {
+    const { server } = makeServer();
+    await callTool(server, "record_metric", {
+      name: "cycle-ftp",
+      value: 250,
+      measured_at: "2024-05-01",
+      series_kind: "state",
+      stale_after_days: 180,
+    });
+    await callTool(server, "record_metric", { name: "weekly-volume", value: 66 });
+    const text = (await callTool(server, "get_metrics", {})).content[0].text;
+    expect(text).toContain("**cycle-ftp** [state]");
+    expect(text).toContain("⚠ stale (recorded 2024-05-01, staleness 180 d)");
+    expect(text).toContain("**weekly-volume** [event]");
   });
 });

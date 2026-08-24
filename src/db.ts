@@ -35,6 +35,16 @@ export type Metric = {
   note: string | null;
   measured_at: string;
   created_at: string;
+  /** For 'state' series: when a newer value superseded this one; NULL = currently valid. */
+  valid_to: string | null;
+};
+export type MetricSeries = {
+  name: string;
+  /** 'state' = a new value supersedes the previous one; 'event' = values accumulate. */
+  kind: "state" | "event";
+  /** Days after which the current 'state' value is flagged stale; NULL = never. */
+  stale_after_days: number | null;
+  created_at: string;
 };
 export type Script = {
   name: string;
@@ -142,6 +152,12 @@ export function createSchema(db: Database.Database): void {
 			created_at TEXT NOT NULL DEFAULT (datetime('now'))
 		);
 		CREATE INDEX IF NOT EXISTS metrics_name_measured ON metrics(name, measured_at);
+		CREATE TABLE IF NOT EXISTS metric_series (
+			name TEXT PRIMARY KEY,
+			kind TEXT NOT NULL DEFAULT 'event' CHECK (kind IN ('state','event')),
+			stale_after_days INTEGER,
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);
 		CREATE TABLE IF NOT EXISTS scripts (
 			name TEXT PRIMARY KEY,
 			description TEXT NOT NULL,
@@ -336,6 +352,10 @@ export function createSchema(db: Database.Database): void {
   const openItemCols = db.pragma("table_info(open_items)") as Array<{ name: string }>;
   if (!openItemCols.some((c) => c.name === "resolved_note")) {
     db.exec("ALTER TABLE open_items ADD COLUMN resolved_note TEXT");
+  }
+  const metricCols = db.pragma("table_info(metrics)") as Array<{ name: string }>;
+  if (!metricCols.some((c) => c.name === "valid_to")) {
+    db.exec("ALTER TABLE metrics ADD COLUMN valid_to TEXT");
   }
 }
 
