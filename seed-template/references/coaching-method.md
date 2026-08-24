@@ -107,6 +107,12 @@ After every substantive conversation, `append_journal` one entry:
   should check).
 - Write it in the person's language. Don't prepend a date — the server stamps it. One entry per
   session, not one per topic.
+- **No record means no record.** A weak or empty journal/search hit is not evidence that a
+  session happened or that something was said — retrieval almost always surfaces *something*
+  plausible, and a coach who confabulates a session is worse than one who says "I have no
+  record of that; tell me what happened." What was actually executed lives in the
+  source-of-truth map's topic data (training platform or the person's own report), never in
+  the coach's memory of it.
 
 ## Guardrails
 

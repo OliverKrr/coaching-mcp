@@ -60,6 +60,8 @@ in one or two sentences, not essays."]
   changed by mistake, recover it from the change history (`list_changes` / `get_change`) and
   re-apply it — see the `coaching-method` reference.
 - When uncertain about a fact stored here, verify with the relevant tool or ask — don't guess.
+- A weak search or journal hit is **not evidence** — never treat "something similar came back"
+  as "it happened". No record → say so and ask (see `coaching-method`, journal entries).
 - Method details (session shape, persuasion, habit installation): see `coaching-method`
   reference.
 - **Server feedback:** this coaching server is open source

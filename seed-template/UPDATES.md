@@ -243,3 +243,28 @@ Tool results above roughly 150k characters do not reach the conversation
 inline. The export tools refuse oversized results; respond by narrowing the
 date range, trimming the field list, or switching to the weekly summary.
 ----- END analysis-workflow -----
+
+## 8 — 2026-08-24 — Abstention: a weak retrieval hit is not evidence
+
+- Docs: SKILL.md, references/coaching-method
+- Apply: auto
+
+Knowing that something was NEVER said is the one thing a curated knowledge
+base does better than any retrieval system — protect it explicitly. The
+coaching-method reference's "Journal entries" section gained a closing
+bullet: **"No record means no record."** A weak or empty journal/search hit
+is not evidence a session happened or something was said; retrieval almost
+always surfaces something plausible, and a coach who confabulates a session
+is worse than one who says "I have no record of that; tell me what
+happened." Executed training lives in the source-of-truth map's topic data
+(training platform or the person's own report), never in the coach's memory
+of it. Add that bullet to the user's coaching-method reference verbatim —
+coach-facing method text, not personal content.
+
+SKILL.md's "Coaching conventions (proactivity)" list gained the matching
+bullet; weave an equivalent into the user's conventions section (wherever
+their rewrite placed it), skipping it if they already have one:
+
+- A weak search or journal hit is **not evidence** — never treat "something
+  similar came back" as "it happened". No record → say so and ask (see
+  `coaching-method`, journal entries).
