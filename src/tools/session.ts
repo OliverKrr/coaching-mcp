@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type Database from "better-sqlite3";
 import { z } from "zod";
 import type { JournalEntry, Section } from "../db.js";
-import { usageWarning, type WriteLimits } from "../quota.js";
+import { indexBudgetLine, usageWarning, type WriteLimits } from "../quota.js";
 import { loadSeedUpdates, pendingUpdates } from "../seed-updates.js";
 import { toolText, withErrorHandling } from "../utils/errors.js";
 import { journalHeadline } from "../utils/journal.js";
@@ -81,7 +81,13 @@ export function registerSessionTools(
           .prepare("SELECT id, entry, created_at FROM journal ORDER BY id DESC LIMIT ? OFFSET ?")
           .all(journal_headlines, journal_full) as JournalEntry[];
 
-        const parts = [warning.trim(), context + notice, "---", `${itemsHeader}\n\n${itemsBlock}`];
+        const parts = [
+          indexBudgetLine(db),
+          warning.trim(),
+          context + notice,
+          "---",
+          `${itemsHeader}\n\n${itemsBlock}`,
+        ];
         if (fullEntries.length > 0) {
           parts.push(
             `## Journal — latest ${fullEntries.length === 1 ? "entry" : `${fullEntries.length} entries`} in full\n\n` +

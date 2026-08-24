@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createSchema } from "../src/db.js";
 import { registerSessionTools } from "../src/tools/session.js";
 
@@ -87,6 +87,26 @@ describe("start_session", () => {
     const text = (await callTool(server, "start_session", {})).content[0].text;
     expect(text).toContain("No open items.");
     expect(text).toContain("No journal entries yet.");
+  });
+
+  it("reports the index size before the document body", async () => {
+    const { server } = makeServer();
+    const text = (await callTool(server, "start_session", {})).content[0].text;
+    expect(text.indexOf("[hub] main:")).toBe(0);
+    expect(text).toContain("B index budget");
+    expect(text).not.toContain("OVER by");
+  });
+
+  it("warns when 'main' exceeds the index budget", async () => {
+    vi.stubEnv("INDEX_BUDGET_BYTES", "10");
+    try {
+      const { server } = makeServer();
+      const text = (await callTool(server, "start_session", {})).content[0].text;
+      expect(text).toContain("OVER by");
+      expect(text).toContain("section_outline");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("carries the pending seed-update notice", async () => {

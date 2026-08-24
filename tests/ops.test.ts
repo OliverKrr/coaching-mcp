@@ -60,4 +60,19 @@ describe("get_version", () => {
     expect(info.refs_count).toBe(2);
     expect(info.journal_count).toBe(3);
   });
+
+  it("reports index budget and the largest documents, biggest first", async () => {
+    const { server, db } = makeOpsServer();
+    db.prepare("UPDATE refs SET content = ? WHERE name = (SELECT name FROM refs LIMIT 1)").run(
+      "x".repeat(500),
+    );
+    const result = await callTool(server, "get_version", {});
+    const info = JSON.parse(result.content[0].text);
+    expect(info.index_budget_bytes).toBeGreaterThan(0);
+    expect(info.main_bytes).toBeGreaterThan(0);
+    expect(info.largest_documents.length).toBeGreaterThan(0);
+    expect(info.largest_documents[0].bytes).toBe(500);
+    const sizes = info.largest_documents.map((d: { bytes: number }) => d.bytes);
+    expect([...sizes].sort((a: number, b: number) => b - a)).toEqual(sizes);
+  });
 });

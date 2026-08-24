@@ -105,6 +105,7 @@ which must be backed up alongside per-user snapshots or a restore can't reconstr
 | `get_coaching_context`                | read      | Full SKILL.md — session start on servers without `start_session`                    |
 | `search_knowledge`                    | read      | FTS5 full-text search, `ORDER BY rank` (sections, refs, journal, routines, scripts) |
 | `get_section` / `list_sections`       | read      | One section / all sections with metadata                                            |
+| `section_outline`                     | read      | Heading-level outline of a section with per-heading byte counts (index budget aid)  |
 | `get_reference` / `list_references`   | read      | One reference doc / all references with metadata                                    |
 | `get_journal`                         | read      | Recent journal entries, newest first                                                |
 | `update_section`                      | write     | Create or fully rewrite a knowledge section (use `main` for SKILL.md)               |
@@ -154,6 +155,14 @@ retention `HISTORY_MAX_AGE_DAYS` (90) / `HISTORY_MAX_PER_DOC` (40) / `HISTORY_MA
 (10 MiB). Stdio mode uses only `DATA_DIR`/`SEED_DIR` (+ the `HISTORY_*` retention vars).
 
 ## Key design decisions
+
+**The index budget is a warning, never a cap**: `main` is loaded in full on every session
+start, so its size is fixed per-session overhead. `start_session` and `get_coaching_context`
+lead with a `[hub] main: … B of … B index budget` line (`INDEX_BUDGET_BYTES`, default
+30,000) that turns into an over-budget warning pointing at `section_outline`; `get_version`
+reports `main_bytes` + `largest_documents`. A hard cap would break writes mid-session, which
+is worse than a large index — the budget makes the cost visible, the model and user decide
+what moves out.
 
 **FTS5 external content tables**: `sections_fts`, `refs_fts`, `journal_fts`, `routines_fts`,
 `scripts_fts` are

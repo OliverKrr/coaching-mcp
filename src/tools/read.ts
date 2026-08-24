@@ -2,10 +2,11 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type Database from "better-sqlite3";
 import { z } from "zod";
 import type { JournalEntry, Reference, Section } from "../db.js";
-import { usageWarning, type WriteLimits } from "../quota.js";
+import { formatBytes, indexBudgetBytes, indexBudgetLine, usageWarning, type WriteLimits } from "../quota.js";
 import { loadSeedUpdates, pendingUpdates } from "../seed-updates.js";
 import { toolText, withErrorHandling } from "../utils/errors.js";
 import { journalHeadline } from "../utils/journal.js";
+import { outlineSection } from "../utils/outline.js";
 import { sanitizeFtsQuery, formatSearchHits, type SearchHit } from "../utils/search.js";
 
 export function registerReadTools(
@@ -43,7 +44,9 @@ export function registerReadTools(
           }
         }
       }
-      return toolText((warning ? `${warning.trim()}\n\n---\n\n${context}` : context) + notice);
+      const sizeLine = indexBudgetLine(db);
+      const preamble = [sizeLine, warning.trim()].filter((p) => p.length > 0).join("\n\n");
+      return toolText((preamble ? `${preamble}\n\n---\n\n${context}` : context) + notice);
     },
   );
 
@@ -270,6 +273,63 @@ export function registerReadTools(
           return toolText(`Section '${name}' not found. Available: ${available || "none"}`);
         }
         return toolText(row.content);
+      }),
+  );
+
+  server.registerTool(
+    "section_outline",
+    {
+      title: "Section outline",
+      description:
+        "Heading-level outline of a knowledge section with per-heading byte counts. Byte counts are " +
+        "subtree totals (the heading plus everything under it — what offloading that block would save). " +
+        "Use it when 'main' is over its index budget to pick which lookup-heavy block to move into a " +
+        "reference, without re-reading the whole document.",
+      annotations: { readOnlyHint: true, openWorldHint: false },
+      inputSchema: {
+        name: z.string().min(1).default("main").describe("Section name; defaults to 'main'"),
+      },
+    },
+    ({ name }) =>
+      withErrorHandling("section_outline", () => {
+        const row = db.prepare("SELECT content FROM sections WHERE name = ?").get(name) as
+          | Section
+          | undefined;
+        if (!row) {
+          const available = (
+            db.prepare("SELECT name FROM sections ORDER BY name").all() as Array<{ name: string }>
+          )
+            .map((r) => r.name)
+            .join(", ");
+          return toolText(`Section '${name}' not found. Available: ${available || "none"}`);
+        }
+        const outline = outlineSection(row.content);
+        let header = `Outline of '${name}' — ${formatBytes(outline.totalBytes)} B total`;
+        if (name === "main") {
+          const budget = indexBudgetBytes();
+          header +=
+            outline.totalBytes > budget
+              ? ` (index budget ${formatBytes(budget)} B — OVER by ${Math.round((outline.totalBytes / budget - 1) * 100)}%)`
+              : ` (index budget ${formatBytes(budget)} B)`;
+        }
+        if (outline.entries.length === 0) {
+          return toolText(`${header}\nNo headings found.`);
+        }
+        const width = Math.max(
+          ...outline.entries.map((e) => formatBytes(e.subtreeBytes).length),
+          outline.preambleBytes > 0 ? formatBytes(outline.preambleBytes).length : 0,
+        );
+        const lines: string[] = [];
+        if (outline.preambleBytes > 0) {
+          lines.push(`${formatBytes(outline.preambleBytes).padStart(width)} B  (preamble)`);
+        }
+        for (const e of outline.entries) {
+          const own = e.ownBytes !== e.subtreeBytes ? ` (own ${formatBytes(e.ownBytes)} B)` : "";
+          lines.push(
+            `${formatBytes(e.subtreeBytes).padStart(width)} B  ${"#".repeat(e.level)} ${e.text}${own}`,
+          );
+        }
+        return toolText(`${header}\n${lines.join("\n")}`);
       }),
   );
 

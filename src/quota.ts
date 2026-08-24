@@ -91,6 +91,43 @@ export function quotaExceededMessage(usage: number, quotaBytes: number): string 
   );
 }
 
+/**
+ * Index budget: the size 'main' (SKILL.md) should stay under. 'main' is loaded
+ * in full on every session start, so every byte here is fixed per-session
+ * overhead — an index that grows without bound stops being an index. This is
+ * deliberately a warning, never a hard cap: breaking writes mid-session would
+ * be worse than a large index, and what belongs in the index is a judgment
+ * call the model and user make together (see section_outline for the "which
+ * block should move out" question).
+ */
+export const INDEX_BUDGET_DEFAULT_BYTES = 30_000;
+
+export function indexBudgetBytes(): number {
+  const raw = Number(process.env.INDEX_BUDGET_BYTES);
+  return Number.isFinite(raw) && raw > 0 ? Math.round(raw) : INDEX_BUDGET_DEFAULT_BYTES;
+}
+
+export function formatBytes(n: number): string {
+  return n.toLocaleString("en-US");
+}
+
+/**
+ * The mechanical size signal for session starts: without it, a writing session
+ * has no idea it pushed the index over budget — the cost shows up only as
+ * slower, more expensive sessions, never as an error.
+ */
+export function indexBudgetLine(db: Database.Database): string {
+  const row = db
+    .prepare("SELECT LENGTH(content) AS n FROM sections WHERE name = 'main'")
+    .get() as { n: number } | undefined;
+  if (!row) return "";
+  const budget = indexBudgetBytes();
+  const base = `[hub] main: ${formatBytes(row.n)} B of ${formatBytes(budget)} B index budget`;
+  if (row.n <= budget) return `${base}.`;
+  const over = Math.round((row.n / budget - 1) * 100);
+  return `${base} — OVER by ${over}%. Offload a lookup-heavy block into a reference (section_outline shows which blocks are largest).`;
+}
+
 /** Warning appended to write responses (and session-start context) at ≥80%. */
 export function usageWarning(db: Database.Database, limits: WriteLimits | undefined): string {
   if (!limits) return "";

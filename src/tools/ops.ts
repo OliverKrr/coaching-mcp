@@ -5,7 +5,7 @@ import { readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { historyBytes } from "../history.js";
-import { contentBytes, type WriteLimits } from "../quota.js";
+import { contentBytes, indexBudgetBytes, type WriteLimits } from "../quota.js";
 import { appliedUpdateId, latestUpdateId, loadSeedUpdates } from "../seed-updates.js";
 import { toolText, withErrorHandling } from "../utils/errors.js";
 
@@ -73,6 +73,23 @@ export function registerOpsTools(
           // in-memory db (tests) — leave at 0
         }
         const storageBytes = contentBytes(db);
+        const mainBytes =
+          (
+            db.prepare("SELECT LENGTH(content) AS n FROM sections WHERE name = 'main'").get() as
+              | { n: number }
+              | undefined
+          )?.n ?? 0;
+        // The hygiene routine's "which blocks should move out" starting point —
+        // section_outline then answers it inside the biggest document.
+        const largestDocuments = db
+          .prepare(
+            `SELECT kind, name, bytes FROM (
+							SELECT 'section' AS kind, name, LENGTH(content) AS bytes FROM sections
+							UNION ALL
+							SELECT 'ref' AS kind, name, LENGTH(content) AS bytes FROM refs
+						) ORDER BY bytes DESC, name LIMIT 5`,
+          )
+          .all() as Array<{ kind: string; name: string; bytes: number }>;
         const seedUpdates = seedDir !== undefined ? loadSeedUpdates(seedDir) : null;
         const info = {
           name: "coaching-mcp",
@@ -90,6 +107,9 @@ export function registerOpsTools(
           db_size_bytes: dbSizeBytes,
           storage_bytes: storageBytes,
           history_bytes: historyBytes(db),
+          main_bytes: mainBytes,
+          index_budget_bytes: indexBudgetBytes(),
+          largest_documents: largestDocuments,
           ...(seedUpdates !== null
             ? {
                 seed_updates_latest: latestUpdateId(seedUpdates),
