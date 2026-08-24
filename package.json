@@ -11,6 +11,7 @@
   ],
   "license": "MIT",
   "bin": {
+    "coaching-cli": "dist/cli-main.js",
     "coaching-mcp": "dist/index.js",
     "coaching-mcp-backup-db": "dist/backup-db-cli.js",
     "coaching-mcp-restore": "dist/restore-cli.js",

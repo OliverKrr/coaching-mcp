@@ -2,19 +2,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { openDatabase } from "./db.js";
-import { registerDeleteTools } from "./tools/delete.js";
-import { registerEditTools } from "./tools/edit.js";
-import { registerHistoryTools } from "./tools/history.js";
-import { registerMetricsTools } from "./tools/metrics.js";
-import { registerOpenItemsTools } from "./tools/openitems.js";
-import { registerOpsTools } from "./tools/ops.js";
-import { registerReadTools } from "./tools/read.js";
-import { registerRoutineTools } from "./tools/routines.js";
-import { registerScriptTools } from "./tools/scripts.js";
-import { registerSeedUpdateTools } from "./tools/seed-updates.js";
-import { registerSessionTools } from "./tools/session.js";
-import { registerWriteTools } from "./tools/write.js";
-import { registerTopicTools } from "./topics.js";
+import { registerCoreTools } from "./register.js";
 import { SERVER_INSTRUCTIONS, VERSION } from "./version.js";
 
 function log(msg: string): void {
@@ -36,19 +24,7 @@ async function main(): Promise<void> {
     { instructions: SERVER_INSTRUCTIONS },
   );
   const seedDir = process.env.SEED_DIR ?? "/seed";
-  registerSessionTools(server, db, undefined, seedDir);
-  registerReadTools(server, db, undefined, seedDir);
-  registerWriteTools(server, db);
-  registerEditTools(server, db);
-  registerHistoryTools(server, db);
-  registerOpsTools(server, db, undefined, seedDir);
-  registerDeleteTools(server, db);
-  registerOpenItemsTools(server, db);
-  registerMetricsTools(server, db);
-  registerRoutineTools(server, db);
-  registerScriptTools(server, db);
-  registerTopicTools(server, seedDir);
-  registerSeedUpdateTools(server, db, seedDir, undefined, log);
+  registerCoreTools(server, db, { seedDir, log });
   log("tools registered");
 
   log("connecting stdio transport…");

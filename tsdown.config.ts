@@ -4,6 +4,7 @@ export default defineConfig({
   entry: [
     "src/index.ts",
     "src/serve.ts",
+    "src/cli-main.ts",
     "src/snapshot-cli.ts",
     "src/restore-cli.ts",
     "src/backup-db-cli.ts",

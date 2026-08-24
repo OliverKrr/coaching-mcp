@@ -47,6 +47,8 @@ Direct npm equivalents if just is not installed: `npm run build|test|check|check
 ```
 src/index.ts        bin `coaching-mcp` — stdio single-user server; `serve` arg dispatches to serve.ts
 src/serve.ts        bin path `coaching-mcp serve` — node:http server + router (multi-user mode)
+src/register.ts     registerCoreTools — the one core tool list shared by stdio, HTTP sessions, and the CLI
+src/cli.ts + cli-main.ts  bin `coaching-cli` — local shell access: the same McpServer driven in-process (no HTTP, no OAuth)
 src/mcp-http.ts     /mcp Streamable HTTP endpoint; per-session McpServer bound to the user's DB
 src/auth/oauth.ts   OAuth 2.1 AS: RFC 8414 metadata, RFC 7591 DCR, /authorize, /oidc/callback, /token
 src/auth/oidc.ts    openid-client wrapper (lazy discovery, PKCE toward the IdP, id_token verify)
@@ -166,6 +168,15 @@ lead with a `[hub] main: … B of … B index budget` line (`INDEX_BUDGET_BYTES`
 reports `main_bytes` + `largest_documents`. A hard cap would break writes mid-session, which
 is worse than a large index — the budget makes the cost visible, the model and user decide
 what moves out.
+
+**`coaching-cli` drives the real handlers, never raw SQL**: the CLI builds the same
+McpServer as stdio mode and talks to it over the SDK's linked in-memory transports, so a
+shell write keeps FTS sync, change history and seed semantics — overwrite diffs live in
+application code, not triggers, and a direct SQL write would silently skip them. It exists
+for shell-native callers (agents included): tool discovery via `tools` / `tool <name>`,
+execution via `call <name> '<json>'`, no server, no OAuth, no tool definitions in anyone's
+context. `registerCoreTools` is the single shared tool list, so the three surfaces (stdio,
+HTTP session, CLI) can never drift.
 
 **Tool usage is counted, never inspected**: every session's final `tools/call` handler is
 wrapped (`instrumentToolCalls`, installed after `attachGatewayTools` so native, integration

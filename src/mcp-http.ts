@@ -32,20 +32,8 @@ import {
   type WriteLimits,
 } from "./quota.js";
 import { RateLimiter } from "./ratelimit.js";
-import { registerDeleteTools } from "./tools/delete.js";
-import { registerEditTools } from "./tools/edit.js";
-import { registerHistoryTools } from "./tools/history.js";
-import { registerMetricsTools } from "./tools/metrics.js";
-import { registerOpenItemsTools } from "./tools/openitems.js";
-import { registerOpsTools } from "./tools/ops.js";
-import { registerReadTools } from "./tools/read.js";
-import { registerRoutineTools } from "./tools/routines.js";
-import { registerScriptTools } from "./tools/scripts.js";
-import { registerSeedUpdateTools } from "./tools/seed-updates.js";
-import { registerSessionTools } from "./tools/session.js";
-import { registerWriteTools } from "./tools/write.js";
+import { registerCoreTools } from "./register.js";
 import { instrumentToolCalls, recordToolUsage } from "./telemetry.js";
-import { registerTopicTools } from "./topics.js";
 import { toolError, toolText, withErrorHandling } from "./utils/errors.js";
 import { SERVER_INSTRUCTIONS, VERSION } from "./version.js";
 
@@ -214,19 +202,7 @@ export class McpSessionManager {
     };
 
     const server = new McpServer({ name: "coaching-mcp", version: VERSION }, { instructions });
-    registerSessionTools(server, db, limits, this.ctx.cfg.seedDir);
-    registerReadTools(server, db, limits, this.ctx.cfg.seedDir);
-    registerWriteTools(server, db, limits);
-    registerEditTools(server, db, limits);
-    registerHistoryTools(server, db);
-    registerOpsTools(server, db, limits, this.ctx.cfg.seedDir);
-    registerDeleteTools(server, db);
-    registerOpenItemsTools(server, db, limits);
-    registerMetricsTools(server, db, limits);
-    registerRoutineTools(server, db, limits);
-    registerScriptTools(server, db, limits);
-    registerTopicTools(server, this.ctx.cfg.seedDir);
-    registerSeedUpdateTools(server, db, this.ctx.cfg.seedDir, limits, this.ctx.log);
+    registerCoreTools(server, db, { limits, seedDir: this.ctx.cfg.seedDir, log: this.ctx.log });
     this.registerQuotaRequestTool(server, db, auth.userId);
     // Structural opt-in like the integrations: the tool exists only when the
     // user linked their Telegram chat (and the operator configured a bot).
