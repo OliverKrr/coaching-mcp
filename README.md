@@ -44,6 +44,7 @@ coaching-mcp serve (one container)
 | `get_coaching_context`                | Returns the full `SKILL.md` content                                                                          |
 | `search_knowledge`                    | FTS5 full-text search (relevance-ranked) across sections, references, journal, routines, and scripts         |
 | `get_section` / `list_sections`       | One knowledge section / all sections with metadata                                                           |
+| `section_outline`                     | Heading-level outline of a section with per-heading byte counts — picks what to offload when over budget    |
 | `get_reference` / `list_references`   | One reference document / all references with metadata                                                        |
 | `get_journal`                         | Journal entries newest-first: by count, date range, specific ids, full or one-line headlines                 |
 | `update_section`                      | Upserts a knowledge section                                                                                  |
@@ -53,7 +54,7 @@ coaching-mcp serve (one container)
 | `add_open_item`                       | Records a commitment (if-then next action) or a de-duplicated flag                                           |
 | `list_open_items`                     | Lists commitments/flags with opened dates and OVERDUE markers (status filter incl. 'all')                    |
 | `resolve_open_item`                   | Closes an open item (done/dismissed); the note is stored beside the preserved content                        |
-| `record_metric` / `get_metrics`       | Structured numeric measurements (weight, resting HR, adherence %) — trends without table edits               |
+| `record_metric` / `get_metrics`       | Numeric series: 'event' kinds accumulate, 'state' kinds supersede via validity windows (`as_of` history)     |
 | `delete_metric`                       | Removes one mistyped data point (confirm required)                                                           |
 | `list_topic_packs`                    | Lists installable coaching topics (training, nutrition, custom, …)                                           |
 | `get_topic_pack`                      | Full pack: interview, section/reference skeletons, routine templates                                         |
@@ -343,12 +344,33 @@ from `/account/data/routines`. Topic packs ship English master templates as raw 
 | `HEVY_API_BASE`               | `https://api.hevyapp.com/v1`   | Hevy API base (override for tests)                                                                        |
 | `INTERVALS_API_BASE`          | `https://intervals.icu/api/v1` | Intervals.icu API base (override for tests)                                                               |
 | `GATEWAY_ALLOW_INSECURE`      | —                              | `1` relaxes the gateway SSRF policy (http + private hosts) — tests only, never production                 |
+| `INDEX_BUDGET_BYTES`          | `30000`                        | Size 'main' should stay under; session starts warn when over (never a hard cap)                           |
+| `TOOL_USAGE_MAX_AGE_DAYS`     | `180`                          | Retention for the aggregated per-tool usage counters shown on `/admin` (counts only, no payloads)         |
 
 ## Single-user stdio mode
 
 The bare `coaching-mcp` command is the classic single-user stdio server (database at
 `DATA_DIR/skill.db`, seeded once from `SEED_DIR`) — for local use or MCP clients that spawn a
 subprocess. It needs none of the auth configuration.
+
+## Local CLI (`coaching-cli`)
+
+For shell-native callers — scripts, cron jobs, coding agents — `coaching-cli` gives direct
+access to a coaching database with no server, no OAuth, and no MCP session: it builds the same
+tool set in-process, so every write keeps full-text search, change history, and seed semantics.
+
+```sh
+coaching-cli --db ./mycoach tools                 # discover: name — purpose
+coaching-cli --db ./mycoach tool record_metric    # one tool's description + JSON schema
+coaching-cli --db ./mycoach context               # session start (start_session)
+coaching-cli --db ./mycoach search "calf" journal
+coaching-cli --db ./mycoach call append_journal '{"entry":"Easy 10k, calf fine."}'
+```
+
+`--db` takes the directory containing `skill.db` (or the file itself) and defaults to
+`$DATA_DIR`; `--seed` optionally seeds a fresh database. Exit codes: 0 ok, 1 tool error,
+2 usage error. The database uses WAL, so pointing the CLI at a live server's per-user DB is
+safe.
 
 ## Snapshot & recovery
 
