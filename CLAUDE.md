@@ -68,6 +68,7 @@ src/ruff.ts         lazy in-process Python linting (ruff WASM) for save_script �
 src/apps-proxy.ts   /apps/<name> authenticated reverse proxy (per-app email allowlist, HTML prefix rewriting)
 src/gateways.ts     per-user MCP gateway: users attach upstream MCP servers on /account; sessions mount their tools verbatim
 src/ratelimit.ts    fixed-window per-IP limiter guarding the auth endpoints
+src/telemetry.ts    tool-usage counters (auth.db tool_usage) + per-session tools/call instrumentation
 src/db.ts           coaching DB schema: sections, refs, journal, open_items, routines, changes + FTS5 (per user)
 src/history.ts      change-history delta log: schema, logEdit/logReplace, block diff, retention pruning
 src/seed-updates.ts seed-update ledger (SEED_DIR/UPDATES.md) parser + per-user applied-watermark
@@ -117,7 +118,7 @@ which must be backed up alongside per-user snapshots or a restore can't reconstr
 | `add_open_item`                       | write     | Record a commitment (if-then next action) or a de-duplicated flag                   |
 | `list_open_items`                     | read      | List commitments/flags with opened dates + OVERDUE markers (status incl. all)       |
 | `resolve_open_item`                   | write     | Close an open item; note stored in `resolved_note`, content preserved verbatim      |
-| `record_metric` / `get_metrics`       | r/w       | Numeric series; 'state' kinds supersede via validity windows (`as_of` history)       |
+| `record_metric` / `get_metrics`       | r/w       | Numeric series; 'state' kinds supersede via validity windows (`as_of` history)      |
 | `delete_metric`                       | write     | Remove one data point (confirm=true; not covered by change history)                 |
 | `list_topic_packs` / `get_topic_pack` | read      | Installable coaching topics: interview + skeletons + routine templates              |
 | `get_seed_updates`                    | read      | Pending seed-template updates: curated merge instructions for the assistant         |
@@ -152,7 +153,9 @@ skips approval), `TELEGRAM_BOT_TOKEN`/`TELEGRAM_ADMIN_CHAT_ID` (+ `TELEGRAM_API_
 tests-only), `NOTIFY_URL`, `QUOTA_DEFAULT_MB` (50), `DATA_DIR` (/data), `SEED_DIR` (/seed),
 `PORT` (8000), `ACCESS_TOKEN_TTL` (3600), `REFRESH_TOKEN_TTL` (7776000), change-history
 retention `HISTORY_MAX_AGE_DAYS` (90) / `HISTORY_MAX_PER_DOC` (40) / `HISTORY_MAX_BYTES`
-(10 MiB). Stdio mode uses only `DATA_DIR`/`SEED_DIR` (+ the `HISTORY_*` retention vars).
+(10 MiB), telemetry retention `TOOL_USAGE_MAX_AGE_DAYS` (180), index-size warning threshold
+`INDEX_BUDGET_BYTES` (30000). Stdio mode uses only `DATA_DIR`/`SEED_DIR` (+ the `HISTORY_*`
+retention vars and `INDEX_BUDGET_BYTES`).
 
 ## Key design decisions
 
@@ -163,6 +166,18 @@ lead with a `[hub] main: … B of … B index budget` line (`INDEX_BUDGET_BYTES`
 reports `main_bytes` + `largest_documents`. A hard cap would break writes mid-session, which
 is worse than a large index — the budget makes the cost visible, the model and user decide
 what moves out.
+
+**Tool usage is counted, never inspected**: every session's final `tools/call` handler is
+wrapped (`instrumentToolCalls`, installed after `attachGatewayTools` so native, integration
+AND gateway-proxied calls count through one choke point — the same pinned-SDK-internals
+pattern as the gateway passthrough) into per-day aggregated counters in auth.db
+(`tool_usage(day, user_id, tool, calls, errors, empty)`, pruned past
+`TOOL_USAGE_MAX_AGE_DAYS`, default 180). Counts-only is a privacy line: arguments and
+results are user content and never reach the operator. `search_knowledge` splits by scope
+(`search_knowledge:journal` etc.) and counts zero-hit results in `empty` — the
+retrieval-miss log that decides whether semantic search is ever justified. `/admin` renders
+the 90-day summary; a recording failure never breaks a tool call. Tools that never appear
+are the reduction candidates — removal itself stays a deliberate, versioned change.
 
 **Metric series are 'state' or 'event', and the two must never be conflated**: in a plain
 append log a changed fact sits next to its old value and the two compete at read time. A

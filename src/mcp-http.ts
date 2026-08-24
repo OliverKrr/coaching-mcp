@@ -44,6 +44,7 @@ import { registerScriptTools } from "./tools/scripts.js";
 import { registerSeedUpdateTools } from "./tools/seed-updates.js";
 import { registerSessionTools } from "./tools/session.js";
 import { registerWriteTools } from "./tools/write.js";
+import { instrumentToolCalls, recordToolUsage } from "./telemetry.js";
 import { registerTopicTools } from "./topics.js";
 import { toolError, toolText, withErrorHandling } from "./utils/errors.js";
 import { SERVER_INSTRUCTIONS, VERSION } from "./version.js";
@@ -256,6 +257,12 @@ export class McpSessionManager {
       );
       this.registerRefreshGatewaysTool(server, auth.userId, mounted, rebuild);
     }
+
+    // Last, so the captured tools/call handler is the final composed one —
+    // native, integration AND gateway-proxied calls count through one point.
+    instrumentToolCalls(server, (tool, outcome) => {
+      recordToolUsage(this.ctx.authDb, auth.userId, tool, outcome);
+    });
 
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),

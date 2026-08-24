@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { createToolUsageSchema, pruneToolUsage } from "../telemetry.js";
 
 /**
  * Central auth database (DATA_DIR/auth.db): user registry, DCR clients,
@@ -132,6 +133,8 @@ export function openAuthDatabase(dataDir: string): Database.Database {
 		);
 	`);
   migrateUsersTable(db);
+  createToolUsageSchema(db);
+  pruneToolUsage(db);
   return db;
 }
 

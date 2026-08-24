@@ -17,8 +17,11 @@ export type SearchHit = {
   snippet: string;
 };
 
+/** Shared with telemetry's empty-result detection — keep the two in sync. */
+export const NO_RESULTS_PREFIX = "No results found for:";
+
 export function formatSearchHits(hits: SearchHit[], query: string): string {
-  if (hits.length === 0) return `No results found for: ${query}`;
+  if (hits.length === 0) return `${NO_RESULTS_PREFIX} ${query}`;
   return hits
     .map((h) => {
       const dateLabel = h.type === "journal" ? "created" : "updated";

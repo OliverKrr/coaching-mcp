@@ -2,6 +2,7 @@
 // OAuth flow against a mock OIDC issuer, allowlist gating, per-user tenancy
 // over real MCP sessions, refresh rotation, and the account page (export,
 // delete). No network beyond 127.0.0.1.
+import Database from "better-sqlite3";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -513,6 +514,18 @@ describe("multi-tenant MCP sessions", () => {
     for (const u of users) {
       expect(existsSync(join(dataDir, "users", u, "skill.db"))).toBe(true);
     }
+
+    // Telemetry: the calls above landed as per-user aggregated counters in
+    // auth.db — counts only, tracked at the shared tools/call choke point.
+    const authDb = new Database(join(dataDir, "auth.db"), { readonly: true });
+    const usage = authDb
+      .prepare(
+        "SELECT SUM(calls) AS calls, COUNT(DISTINCT user_id) AS users FROM tool_usage WHERE tool = 'get_coaching_context'",
+      )
+      .get() as { calls: number; users: number };
+    authDb.close();
+    expect(usage.calls).toBeGreaterThanOrEqual(3);
+    expect(usage.users).toBe(2);
   });
 });
 

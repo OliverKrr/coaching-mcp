@@ -15,6 +15,7 @@ import {
 } from "./membership.js";
 import type { McpSessionManager } from "./mcp-http.js";
 import { contentBytes, formatMb } from "./quota.js";
+import { toolUsageSummary } from "./telemetry.js";
 import { page } from "./web/layout.js";
 import { badge, emailText } from "./web/ui.js";
 
@@ -229,6 +230,29 @@ ${
 <p class="muted">Storage counts stored content; the quota field left empty resets to the default. Disabling revokes every token immediately; deleting removes the coaching database — same as self-service deletion.</p>
 </div>`;
 
+  const usage = toolUsageSummary(ctx.authDb, 90);
+  const usageRows = usage
+    .map(
+      (u) => `<tr>
+<td><code>${htmlEscape(u.tool)}</code></td>
+<td>${u.calls}</td>
+<td>${u.errors || ""}</td>
+<td>${u.empty || ""}</td>
+<td>${u.users}</td>
+<td>${htmlEscape(u.last_used)}</td>
+</tr>`,
+    )
+    .join("\n");
+  const usageCard = `<div class="card">
+<h2>Tool usage (last 90 days)</h2>
+${
+  usageRows
+    ? `<div class="scroll"><table><tr><th>Tool</th><th>Calls</th><th>Errors</th><th>Empty</th><th>Users</th><th>Last used</th></tr>${usageRows}</table></div>`
+    : '<p class="muted">No tool calls recorded yet.</p>'
+}
+<p class="muted">Counts only — no arguments or results are stored. "Empty" counts searches with zero hits (per scope). Registered tools that never appear here are reduction candidates. Rows are pruned after their retention window.</p>
+</div>`;
+
   sendHtml(
     res,
     200,
@@ -237,7 +261,8 @@ ${
       `<h1>Admin</h1>
 ${pendingCard}
 ${quotaCard}
-${usersCard}`,
+${usersCard}
+${usageCard}`,
       { wide: true, nav: { base, active: "admin", signedIn: true, admin: true, path: "/admin" } },
     ),
   );
