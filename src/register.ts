@@ -9,7 +9,6 @@ import { registerOpenItemsTools } from "./tools/openitems.js";
 import { registerOpsTools } from "./tools/ops.js";
 import { registerReadTools } from "./tools/read.js";
 import { registerRoutineTools } from "./tools/routines.js";
-import { registerScriptTools } from "./tools/scripts.js";
 import { registerSeedUpdateTools } from "./tools/seed-updates.js";
 import { registerSessionTools } from "./tools/session.js";
 import { registerWriteTools } from "./tools/write.js";
@@ -37,7 +36,6 @@ export function registerCoreTools(
   registerOpenItemsTools(server, db, limits);
   registerMetricsTools(server, db, limits);
   registerRoutineTools(server, db, limits);
-  registerScriptTools(server, db, limits);
   // Seed-dir-dependent tools: absent without a seed dir (the structural-
   // opt-in pattern) — a CLI pointed at a bare DB has no packs or ledger.
   if (seedDir !== undefined) {

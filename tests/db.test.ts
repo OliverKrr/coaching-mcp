@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import { createSchema, seedFromDirectory } from "../src/db.js";
+import { createSchema, recomputeContentBytes, seedFromDirectory } from "../src/db.js";
 import type { Section, Reference } from "../src/db.js";
 
 function makeTestDb(): Database.Database {
@@ -160,5 +160,65 @@ describe("open_items schema", () => {
     expect(idx).toBeTruthy();
     const fts = db.prepare("SELECT name FROM sqlite_master WHERE name='open_items_fts'").get();
     expect(fts).toBeUndefined();
+  });
+});
+
+describe("v3 migration: script store retired", () => {
+  it("moves stored scripts into change history and drops the table + index + triggers", () => {
+    const db = new Database(":memory:");
+    db.pragma("journal_mode = WAL");
+    // A v2-shaped leftover: table, FTS index, and one trigger generation.
+    db.exec(`
+			CREATE TABLE scripts (
+				name TEXT PRIMARY KEY,
+				description TEXT NOT NULL,
+				language TEXT NOT NULL DEFAULT 'python',
+				code TEXT NOT NULL,
+				requires TEXT,
+				verified_at TEXT,
+				created_at TEXT NOT NULL DEFAULT (datetime('now')),
+				updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+			);
+			CREATE VIRTUAL TABLE scripts_fts USING fts5(name UNINDEXED, description, code, content=scripts, content_rowid=rowid);
+			CREATE TRIGGER scripts_ai AFTER INSERT ON scripts BEGIN
+				INSERT INTO scripts_fts(rowid, name, description, code) VALUES (new.rowid, new.name, new.description, new.code);
+			END;
+		`);
+    db.prepare(
+      "INSERT INTO scripts(name, description, code) VALUES ('pace-calib', 'fits pace', 'print(1)')",
+    ).run();
+    createSchema(db);
+    recomputeContentBytes(db);
+
+    const tables = db
+      .prepare("SELECT name FROM sqlite_master WHERE name LIKE 'scripts%'")
+      .all() as Array<{ name: string }>;
+    expect(tables).toEqual([]);
+    const triggers = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'scripts%'")
+      .all();
+    expect(triggers).toEqual([]);
+    const change = db
+      .prepare("SELECT kind, name, op, old_text FROM changes WHERE kind='script'")
+      .get() as { kind: string; name: string; op: string; old_text: string };
+    expect(change.name).toBe("pace-calib");
+    expect(change.op).toBe("delete");
+    expect(change.old_text).toContain("print(1)");
+    // Retired content no longer counts toward the quota.
+    const bytes = Number(
+      (db.prepare("SELECT value FROM meta WHERE key='content_bytes'").get() as { value: string })
+        .value,
+    );
+    expect(bytes).toBe(0);
+  });
+
+  it("is a no-op on a database without a scripts table", () => {
+    const db = new Database(":memory:");
+    db.pragma("journal_mode = WAL");
+    createSchema(db);
+    createSchema(db); // idempotent re-open
+    expect(
+      db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name LIKE 'scripts%'").get(),
+    ).toEqual({ n: 0 });
   });
 });

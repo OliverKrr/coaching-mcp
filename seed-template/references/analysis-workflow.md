@@ -1,11 +1,11 @@
-# Analysis workflow (data, charts, scripts)
+# Analysis workflow (data & charts)
 
 How to run data analyses and produce charts in coaching sessions. The server
 never executes code — you (the assistant) execute in your own code-execution
-sandbox; the server provides clean data exports and stores your analysis
-scripts between sessions.
+environment; the server provides clean data exports and stores the analysis
+_results_ (journal, metrics), never the code.
 
-### Getting data into the sandbox
+### Getting data into your environment
 
 - Prefer aggregated exports over raw pulls. For weekly volume, sport split,
   or load-trend questions use `icu_export_weekly_summary` (when the person
@@ -13,7 +13,7 @@ scripts between sessions.
   server-side, identically every time.
 - Raw exports (`icu_export_activities`, `icu_export_wellness`) return
   compact CSV. Ask only for the date range and fields the question needs.
-- Write CSV tool results into a sandbox file verbatim (`cat > data.csv
+- Write CSV tool results into a file verbatim (`cat > data.csv
 <<'EOF'` … `EOF`). **Never transcribe values by hand** — hand-copied data
   is the number-one source of silent errors.
 - Structured personal measurements live in the metrics store
@@ -29,26 +29,23 @@ scripts between sessions.
   inside the analysis script and copied from its output, never typed from
   memory. Hand-typed tile values have shipped wrong numbers before.
 
-### Reusing analysis scripts
+### Keeping analyses consistent between sessions
 
-Consistency beats speed: the value of a stored script is that the same
-derivation rules apply next month as today, and every change is visible in
-change history.
+Consistency beats speed: the value of a repeated analysis is that the same
+derivation rules apply next month as today.
 
-1. Before writing an analysis from scratch: `list_scripts`, then
-   `get_script` for anything that fits.
-2. Run the stored script unchanged where possible. After a successful run,
-   call `mark_script_verified` — the verification stamp is how the person
-   knows the stored version can be trusted.
-3. If you had to adapt it (new field, changed question), save the new
-   version with `save_script`. Python is validated at save time: syntax
-   errors reject the save, lint warnings deserve a fix. Saving changed code
-   resets the verification stamp until it runs again.
-4. Keep scripts parameterized. Personal parameter values — thresholds,
+1. Keep analysis code in a durable place the assistant environment can reach
+   again — a version-controlled repository or project the person sets up
+   with you. Where no such place exists, record the derivation rules
+   themselves (the formula, the windows, the thresholds' sources) in a
+   reference document so the analysis is reproducible from prose.
+2. Keep scripts parameterized. Personal parameter values — thresholds,
    corridors, baselines — are coaching decisions and live in the person's
-   own documents (SKILL.md or a reference); the script takes them as inputs.
-   A rule that lives only inside a script is invisible to routines and
-   reviews.
+   own documents (SKILL.md or a reference); the code takes them as inputs.
+   A rule that lives only inside code is invisible to routines and reviews.
+3. Results a future session must see go into the journal (what was found,
+   with the why) and the metrics store (the numbers) — sessions read
+   outcomes from the server, not code.
 
 ### Size discipline
 

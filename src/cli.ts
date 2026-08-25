@@ -30,7 +30,7 @@ Commands:
   tool <name>            Show one tool's description and JSON input schema
   call <name> [json]     Call a tool; [json] is its arguments object (default {})
   context                Session start (start_session: context + open items + journal)
-  search <query> [type]  Full-text search (type: section|reference|journal|routine|script)
+  search <query> [type]  Full-text search (type: section|reference|journal|routine)
   help                   This help
 
 Agent workflow: 'tools' to discover, 'tool <name>' for the schema, 'call' to

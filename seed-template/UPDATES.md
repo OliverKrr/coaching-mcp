@@ -268,3 +268,30 @@ their rewrite placed it), skipping it if they already have one:
 - A weak search or journal hit is **not evidence** — never treat "something
   similar came back" as "it happened". No record → say so and ask (see
   `coaching-method`, journal entries).
+
+## 9 — 2026-08-25 — The script store is retired; analysis code lives in the assistant's environment
+
+- Docs: references/analysis-workflow
+- Apply: auto
+
+v3 removes the stored-scripts feature (`list_scripts`, `get_script`,
+`save_script`, `mark_script_verified`, `delete_script`). Analysis code now
+lives where it can be versioned and tested — a repository or project the
+person maintains with the assistant — while the server keeps what it is
+good at: clean data exports plus the durable _results_ (journal entries,
+metrics, reference documents).
+
+Nothing was lost: on the server upgrade every stored script was written
+into the change history as a `script` delete record — recover any content
+with `list_changes` (kind `script`) → `get_change`, and move it into the
+person's analysis environment or, failing that, record its derivation
+rules in a reference document.
+
+Update the user's analysis-workflow reference (wherever their rewrite
+placed it): replace the "Reusing analysis scripts" section (the
+list_scripts/save_script/mark_script_verified workflow) with the new
+"Keeping analyses consistent between sessions" guidance from the template —
+durable code lives outside the server; parameters stay in the person's
+documents; results go to journal + metrics. Remove any other mention of the
+script tools from their documents, and if they had stored scripts, offer
+the recovery path above once.

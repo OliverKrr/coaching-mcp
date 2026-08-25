@@ -42,9 +42,9 @@ coaching-mcp serve (one container)
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | `start_session`                       | One-call session start: context + open items (overdue marked) + latest journal (newest full, rest headlines) |
 | `get_coaching_context`                | Returns the full `SKILL.md` content                                                                          |
-| `search_knowledge`                    | FTS5 full-text search (relevance-ranked) across sections, references, journal, routines, and scripts         |
+| `search_knowledge`                    | FTS5 full-text search (relevance-ranked) across sections, references, journal, and routines                  |
 | `get_section` / `list_sections`       | One knowledge section / all sections with metadata                                                           |
-| `section_outline`                     | Heading-level outline of a section with per-heading byte counts — picks what to offload when over budget    |
+| `section_outline`                     | Heading-level outline of a section with per-heading byte counts — picks what to offload when over budget     |
 | `get_reference` / `list_references`   | One reference document / all references with metadata                                                        |
 | `get_journal`                         | Journal entries newest-first: by count, date range, specific ids, full or one-line headlines                 |
 | `update_section`                      | Upserts a knowledge section                                                                                  |
@@ -61,10 +61,6 @@ coaching-mcp serve (one container)
 | `list_routines` / `get_routine`       | The user's stored scheduled-routine prompts                                                                  |
 | `save_routine`                        | Upserts a routine (name, cadence, prompt, status) designed with the user                                     |
 | `delete_routine`                      | Deletes a stored routine (confirm required)                                                                  |
-| `list_scripts` / `get_script`         | The user's stored analysis scripts (with verification state) / one script's metadata + source                |
-| `save_script`                         | Upserts an analysis script; Python is ruff-validated (syntax errors reject, lint returns as warnings)        |
-| `mark_script_verified`                | Stamps a script as verified after a successful sandbox run (saving changed code resets the stamp)            |
-| `delete_script`                       | Deletes a stored script (confirm required; recoverable via change history)                                   |
 | `request_quota_increase`              | Asks the operator for more storage, with a reason (multi-user mode)                                          |
 | `notify_user`                         | Sends the user a Telegram message — e.g. a routine's check-in summary (only for users who linked Telegram)   |
 | `get_version`                         | Build info + per-table statistics incl. storage usage vs. quota                                              |
