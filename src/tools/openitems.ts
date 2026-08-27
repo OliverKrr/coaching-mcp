@@ -18,15 +18,23 @@ export function openOpenItems(db: Database.Database): OpenItemWithOverdue[] {
     .all() as OpenItemWithOverdue[];
 }
 
-/** One-line rendering of an open item — shared with start_session. */
-export function openItemLine(r: OpenItemWithOverdue, withStatus: boolean): string {
+/**
+ * One-line rendering of an open item — shared with start_session. `maxChars`
+ * caps the body (session starts must stay readable even when an item carries
+ * a long body); the marker names the recovery call, so nothing is hidden.
+ */
+export function openItemLine(r: OpenItemWithOverdue, withStatus: boolean, maxChars = 0): string {
   const label = withStatus ? `${r.kind}, ${r.status}` : r.kind;
   const dates =
     `opened ${r.created_at.slice(0, 10)}` +
     (r.relevant_date ? `, for ${r.relevant_date}` : "") +
     (r.overdue ? " — OVERDUE" : "");
+  const content =
+    maxChars > 0 && r.content.length > maxChars
+      ? `${r.content.slice(0, maxChars)}… (+${r.content.length - maxChars} chars — list_open_items has the full text)`
+      : r.content;
   return (
-    `#${r.id} [${label}] (${dates}) ${r.content}` +
+    `#${r.id} [${label}] (${dates}) ${content}` +
     (r.resolved_note ? `  — resolved: ${r.resolved_note}` : "") +
     (r.source ? `  — src: ${r.source}` : "")
   );
@@ -101,7 +109,9 @@ export function registerOpenItemsTools(
       description:
         "List open coaching items (commitments + flags). Call at session start to surface what needs " +
         "attention and what to follow up on. Defaults to status='open'; 'all' includes resolved items. " +
-        "Items whose relevant_date has passed are marked OVERDUE — follow up or renegotiate those first.",
+        "Items whose relevant_date has passed are marked OVERDUE — follow up or renegotiate those first. " +
+        "`format: 'headlines'` returns one compact line per item (body truncated) for cheap scans of " +
+        "large histories.",
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         kind: z
@@ -112,12 +122,23 @@ export function registerOpenItemsTools(
           .enum(["open", "done", "dismissed", "all"])
           .default("open")
           .describe("Filter by status. Defaults to 'open'; 'all' returns every status."),
+        format: z
+          .enum(["full", "headlines"])
+          .default("full")
+          .describe("'headlines' truncates each item's body to its first ~120 chars"),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(500)
+          .default(100)
+          .describe("Max items returned, newest first — a note tells you when more matched"),
       },
     },
-    ({ kind, status }) =>
+    ({ kind, status, format, limit }) =>
       withErrorHandling("list_open_items", () => {
         const clauses: string[] = [];
-        const params: string[] = [];
+        const params: Array<string | number> = [];
         if (status !== "all") {
           clauses.push("status = ?");
           params.push(status);
@@ -127,13 +148,25 @@ export function registerOpenItemsTools(
           params.push(kind);
         }
         const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+        const total = (
+          db.prepare(`SELECT COUNT(*) AS n FROM open_items ${where}`).get(...params) as {
+            n: number;
+          }
+        ).n;
         const rows = db
-          .prepare(`SELECT ${OPEN_ITEM_COLUMNS} FROM open_items ${where} ORDER BY id DESC`)
-          .all(...params) as OpenItemWithOverdue[];
+          .prepare(`SELECT ${OPEN_ITEM_COLUMNS} FROM open_items ${where} ORDER BY id DESC LIMIT ?`)
+          .all(...params, limit) as OpenItemWithOverdue[];
         if (rows.length === 0) {
           return toolText(`No ${status} open items${kind ? ` of kind '${kind}'` : ""}.`);
         }
-        return toolText(rows.map((r) => openItemLine(r, status !== "open")).join("\n"));
+        const prefix =
+          total > rows.length
+            ? `Note: showing the newest ${rows.length} of ${total} matching items — raise limit or narrow the filter for the rest.\n\n`
+            : "";
+        const maxChars = format === "headlines" ? 120 : 0;
+        return toolText(
+          prefix + rows.map((r) => openItemLine(r, status !== "open", maxChars)).join("\n"),
+        );
       }),
   );
 

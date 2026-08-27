@@ -140,3 +140,16 @@ Instructions for the assistant.
     expect(text).toContain("Seed guidance updates pending (1)");
   });
 });
+
+describe("start_session open-item capping", () => {
+  it("caps very long item bodies with a recovery marker", async () => {
+    const { server, db } = makeServer();
+    db.prepare("INSERT INTO open_items(kind, content) VALUES ('commitment', ?)").run(
+      "y".repeat(1200),
+    );
+    const text = (await callTool(server, "start_session", {})).content[0].text;
+    expect(text).toContain("y".repeat(500));
+    expect(text).not.toContain("y".repeat(501));
+    expect(text).toContain("+700 chars — list_open_items has the full text");
+  });
+});

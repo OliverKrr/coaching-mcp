@@ -166,3 +166,40 @@ describe("routines in search_knowledge (FTS sync)", () => {
     expect(gone).toContain("No results");
   });
 });
+
+describe("save_routine partial updates", () => {
+  it("updates cadence/status without resending the prompt", async () => {
+    const { server, db } = makeServer();
+    await callTool(server, "save_routine", {
+      name: "weekly-review",
+      cadence: "weekly, Sunday",
+      prompt: "The long carefully tuned prompt.",
+    });
+    const r = await callTool(server, "save_routine", {
+      name: "weekly-review",
+      cadence: "weekly, Sunday 19:00 UTC — cloud trigger trig_123",
+      status: "active",
+    });
+    expect(r.content[0].text).toContain("prompt kept unchanged");
+    const row = db
+      .prepare("SELECT cadence, prompt FROM routines WHERE name='weekly-review'")
+      .get() as {
+      cadence: string;
+      prompt: string;
+    };
+    expect(row.cadence).toContain("trig_123");
+    expect(row.prompt).toBe("The long carefully tuned prompt.");
+    // No prompt change → no history noise.
+    const changes = db.prepare("SELECT COUNT(*) AS n FROM changes WHERE kind='routine'").get() as {
+      n: number;
+    };
+    expect(changes.n).toBe(0);
+  });
+
+  it("refuses to create a routine without cadence and prompt", async () => {
+    const { server } = makeServer();
+    const r = await callTool(server, "save_routine", { name: "new-one", status: "paused" });
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toContain("requires both cadence and prompt");
+  });
+});

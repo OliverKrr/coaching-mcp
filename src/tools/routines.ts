@@ -113,11 +113,20 @@ export function registerRoutineTools(
         cadence: z
           .string()
           .min(1)
-          .describe("Human-readable schedule, e.g. 'weekly, Sunday ~19:00'"),
+          .optional()
+          .describe(
+            "Human-readable schedule (+ where it runs), e.g. 'weekly, Sunday ~19:00'. " +
+              "Required when creating; existing cadence is kept when omitted.",
+          ),
         prompt: z
           .string()
           .min(1)
-          .describe("Full prompt for the scheduled task, in the user's preferred language"),
+          .optional()
+          .describe(
+            "Full prompt for the scheduled task, in the user's preferred language. Required " +
+              "when creating. OMIT for metadata-only updates (cadence/status) — retyping a " +
+              "long prompt to change one line is how silent drift gets introduced.",
+          ),
         status: z
           .enum(ROUTINE_STATUSES)
           .optional()
@@ -129,15 +138,20 @@ export function registerRoutineTools(
     },
     ({ name, cadence, prompt, status }) =>
       withErrorHandling("save_routine", () => {
-        const existing = (
-          db.prepare("SELECT prompt FROM routines WHERE name = ?").get(name) as
-            | { prompt: string }
-            | undefined
-        )?.prompt;
+        const existing = db
+          .prepare("SELECT prompt, cadence FROM routines WHERE name = ?")
+          .get(name) as { prompt: string; cadence: string } | undefined;
+        if (!existing && (prompt === undefined || cadence === undefined)) {
+          return toolError(
+            `routine '${name}' does not exist yet — creating one requires both cadence and prompt`,
+          );
+        }
+        const effectivePrompt = prompt ?? existing?.prompt ?? "";
+        const effectiveCadence = cadence ?? existing?.cadence ?? "";
         const refused = checkWrite(db, limits, {
-          docBytes: prompt.length,
+          docBytes: effectivePrompt.length,
           docMax: ENTRY_MAX_BYTES,
-          deltaBytes: prompt.length - (existing?.length ?? 0),
+          deltaBytes: effectivePrompt.length - (existing?.prompt.length ?? 0),
         });
         if (refused) return toolError(refused);
         db.transaction(() => {
@@ -145,11 +159,15 @@ export function registerRoutineTools(
             "INSERT INTO routines(name, cadence, prompt, status) VALUES (?, ?, ?, COALESCE(?, 'active'))" +
               " ON CONFLICT(name) DO UPDATE SET cadence=excluded.cadence, prompt=excluded.prompt," +
               " status=COALESCE(?, routines.status), updated_at=datetime('now')",
-          ).run(name, cadence, prompt, status ?? null, status ?? null);
-          if (existing !== undefined) logReplace(db, "routine", name, existing, prompt, "mcp");
+          ).run(name, effectiveCadence, effectivePrompt, status ?? null, status ?? null);
+          if (existing !== undefined && effectivePrompt !== existing.prompt) {
+            logReplace(db, "routine", name, existing.prompt, effectivePrompt, "mcp");
+          }
         })();
+        const kept =
+          existing !== undefined && prompt === undefined ? " (prompt kept unchanged)" : "";
         return toolText(
-          `Routine '${name}' saved. Remind the user to paste the prompt into a Claude scheduled task (${cadence}) — it is also on their account page under Routines.${usageWarning(db, limits)}`,
+          `Routine '${name}' saved${kept}. Remind the user to update the matching scheduled task (${effectiveCadence}) — the prompt is also on their account page under Routines.${usageWarning(db, limits)}`,
         );
       }),
   );

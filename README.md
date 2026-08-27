@@ -52,14 +52,14 @@ coaching-mcp serve (one container)
 | `append_journal`                      | Appends a coaching journal entry                                                                             |
 | `delete_section` / `delete_reference` | Deletes a document (confirm required; `main` protected)                                                      |
 | `add_open_item`                       | Records a commitment (if-then next action) or a de-duplicated flag                                           |
-| `list_open_items`                     | Lists commitments/flags with opened dates and OVERDUE markers (status filter incl. 'all')                    |
+| `list_open_items`                     | Lists commitments/flags with OVERDUE markers — bounded (`limit`), `headlines` format for cheap scans         |
 | `resolve_open_item`                   | Closes an open item (done/dismissed); the note is stored beside the preserved content                        |
 | `record_metric` / `get_metrics`       | Numeric series: 'event' kinds accumulate, 'state' kinds supersede via validity windows (`as_of` history)     |
 | `delete_metric`                       | Removes one mistyped data point (confirm required)                                                           |
 | `list_topic_packs`                    | Lists installable coaching topics (training, nutrition, custom, …)                                           |
 | `get_topic_pack`                      | Full pack: interview, section/reference skeletons, routine templates                                         |
 | `list_routines` / `get_routine`       | The user's stored scheduled-routine prompts                                                                  |
-| `save_routine`                        | Upserts a routine (name, cadence, prompt, status) designed with the user                                     |
+| `save_routine`                        | Upserts a routine; partial updates keep the stored prompt — no retyping to change cadence/status             |
 | `delete_routine`                      | Deletes a stored routine (confirm required)                                                                  |
 | `request_quota_increase`              | Asks the operator for more storage, with a reason (multi-user mode)                                          |
 | `notify_user`                         | Sends the user a Telegram message — e.g. a routine's check-in summary (only for users who linked Telegram)   |

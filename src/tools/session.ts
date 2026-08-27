@@ -70,10 +70,14 @@ export function registerSessionTools(
         const items = openOpenItems(db);
         const overdueCount = items.filter((i) => i.overdue).length;
         const itemsHeader = `## Open items (${items.length} open${overdueCount > 0 ? `, ${overdueCount} OVERDUE` : ""})`;
+        // Session start is a fixed per-session cost — cap each item's body
+        // (the marker names list_open_items for the full text). One very long
+        // commitment must not turn every future session start into a file
+        // spill; 500 chars keeps the actionable core of any sane item.
         const itemsBlock =
           items.length === 0
             ? "No open items."
-            : items.map((r) => openItemLine(r, false)).join("\n");
+            : items.map((r) => openItemLine(r, false, 500)).join("\n");
 
         const fullEntries = db
           .prepare("SELECT id, entry, created_at FROM journal ORDER BY id DESC LIMIT ?")

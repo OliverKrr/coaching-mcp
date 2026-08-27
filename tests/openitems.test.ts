@@ -234,3 +234,26 @@ describe("resolve_open_item", () => {
     expect(row.resolved_note).toBeNull();
   });
 });
+
+describe("list_open_items bounding", () => {
+  it("caps results at limit and notes the remainder", async () => {
+    const { server } = makeServer();
+    for (let i = 0; i < 5; i++) {
+      await callTool(server, "add_open_item", { kind: "flag", content: `flag number ${i}` });
+    }
+    const text = (await callTool(server, "list_open_items", { limit: 2 })).content[0].text;
+    expect(text).toContain("showing the newest 2 of 5");
+    expect(text).toContain("flag number 4");
+    expect(text).not.toContain("flag number 0");
+  });
+
+  it("headlines format truncates long bodies with a recovery marker", async () => {
+    const { server } = makeServer();
+    await callTool(server, "add_open_item", { kind: "commitment", content: "x".repeat(400) });
+    const text = (await callTool(server, "list_open_items", { format: "headlines" })).content[0]
+      .text;
+    expect(text).toContain("+280 chars — list_open_items has the full text");
+    const full = (await callTool(server, "list_open_items", {})).content[0].text;
+    expect(full).toContain("x".repeat(400));
+  });
+});
