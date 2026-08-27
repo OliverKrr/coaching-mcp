@@ -29,7 +29,9 @@ export function registerSessionTools(
       description:
         "One-call session start: the full coaching context (SKILL.md) + open items (overdue marked) + " +
         "the most recent journal entries in full + older entries as headlines. Prefer this over separate " +
-        "get_coaching_context / list_open_items / get_journal calls at the start of every session.",
+        "get_coaching_context / list_open_items / get_journal calls at the start of every session. " +
+        "`scope` trims the payload for runs that need only a slice — the full payload is a fixed " +
+        "per-session cost, so scheduled routines especially should ask only for what they use.",
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         journal_full: z
@@ -46,9 +48,16 @@ export function registerSessionTools(
           .max(50)
           .default(10)
           .describe("How many older entries to include as one-line headlines"),
+        scope: z
+          .enum(["full", "context", "items"])
+          .default("full")
+          .describe(
+            "'full' = context + open items + journal (the default); 'context' = the coaching " +
+              "context document only; 'items' = open items + journal without the context document",
+          ),
       },
     },
-    ({ journal_full, journal_headlines }) =>
+    ({ journal_full, journal_headlines, scope }) =>
       withErrorHandling("start_session", () => {
         const warning = usageWarning(db, limits);
         const row = db.prepare("SELECT content FROM sections WHERE name = 'main'").get() as
@@ -86,28 +95,32 @@ export function registerSessionTools(
           .prepare("SELECT id, entry, created_at FROM journal ORDER BY id DESC LIMIT ? OFFSET ?")
           .all(journal_headlines, journal_full) as JournalEntry[];
 
-        const parts = [
-          indexBudgetLine(db),
-          warning.trim(),
-          staleMetricsLine(db),
-          context + notice,
-          "---",
-          `${itemsHeader}\n\n${itemsBlock}`,
-        ];
-        if (fullEntries.length > 0) {
-          parts.push(
-            `## Journal — latest ${fullEntries.length === 1 ? "entry" : `${fullEntries.length} entries`} in full\n\n` +
-              fullEntries.map((r) => `#${r.id} [${r.created_at}] ${r.entry}`).join("\n\n---\n\n"),
-          );
+        // The size line, quota warning, staleness flags and the seed-update
+        // notice ride along on every scope — they are the mechanical signals
+        // a narrowed payload must not hide.
+        const parts = [indexBudgetLine(db), warning.trim(), staleMetricsLine(db)];
+        if (scope !== "items") {
+          parts.push(context + notice);
+        } else if (notice.length > 0) {
+          parts.push(notice.trim());
         }
-        if (headlineEntries.length > 0) {
-          parts.push(
-            "## Journal — earlier headlines (get_journal with ids for full text)\n\n" +
-              headlineEntries.map(journalHeadline).join("\n"),
-          );
-        }
-        if (fullEntries.length === 0 && headlineEntries.length === 0) {
-          parts.push("## Journal\n\nNo journal entries yet.");
+        if (scope !== "context") {
+          parts.push("---", `${itemsHeader}\n\n${itemsBlock}`);
+          if (fullEntries.length > 0) {
+            parts.push(
+              `## Journal — latest ${fullEntries.length === 1 ? "entry" : `${fullEntries.length} entries`} in full\n\n` +
+                fullEntries.map((r) => `#${r.id} [${r.created_at}] ${r.entry}`).join("\n\n---\n\n"),
+            );
+          }
+          if (headlineEntries.length > 0) {
+            parts.push(
+              "## Journal — earlier headlines (get_journal with ids for full text)\n\n" +
+                headlineEntries.map(journalHeadline).join("\n"),
+            );
+          }
+          if (fullEntries.length === 0 && headlineEntries.length === 0) {
+            parts.push("## Journal\n\nNo journal entries yet.");
+          }
         }
         return toolText(parts.filter((p) => p.length > 0).join("\n\n"));
       }),

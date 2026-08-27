@@ -295,3 +295,28 @@ durable code lives outside the server; parameters stay in the person's
 documents; results go to journal + metrics. Remove any other mention of the
 script tools from their documents, and if they had stored scripts, offer
 the recovery path above once.
+
+## 10 — 2026-08-27 — Session start is tiered by topic; scoped start_session
+
+- Docs: SKILL.md
+- Apply: auto
+
+The "Mandatory Session Start" rule gains a scope exception, and `start_session`
+gains a `scope` parameter (`full` default, `context`, `items`) so scheduled
+runs can ask for only the slice they use.
+
+Update the user's session-start section (wherever their rewrite placed it):
+
+- Add the scope exception verbatim in spirit: work that touches **no coaching
+  data** — repo, tooling, deployment, routine plumbing — may skip
+  `start_session` and call only the tools it needs; the moment a conversation
+  touches training, planning, personal facts, or coaching-document writes,
+  `start_session` runs first. Never answer a coaching question from memory;
+  the topic judgment happens before context is loaded, so it stays
+  conservative — when in doubt, it counts as coaching.
+- Where their routines' prompts call `start_session`, mention the `scope`
+  parameter for runs that need only open items or only the context.
+
+Also suggest the person updates their Claude project instructions from the
+setup page — the recommended block gained the same exception, and the two
+must not drift.

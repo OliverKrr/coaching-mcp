@@ -153,3 +153,37 @@ describe("start_session open-item capping", () => {
     expect(text).toContain("+700 chars — list_open_items has the full text");
   });
 });
+
+describe("start_session scope", () => {
+  it("scope 'context' returns the document without items or journal", async () => {
+    const { server, db } = makeServer();
+    db.prepare("INSERT INTO open_items(kind, content) VALUES ('flag', 'watch the calf')").run();
+    db.prepare("INSERT INTO journal(entry) VALUES ('a note')").run();
+    const text = (await callTool(server, "start_session", { scope: "context" })).content[0].text;
+    expect(text).toContain("FTP 414W");
+    expect(text).not.toContain("Open items");
+    expect(text).not.toContain("a note");
+    expect(text).toContain("[hub] main:"); // the mechanical signals still ride along
+  });
+
+  it("scope 'items' returns items + journal without the context document", async () => {
+    const { server, db } = makeServer();
+    db.prepare("INSERT INTO open_items(kind, content) VALUES ('flag', 'watch the calf')").run();
+    db.prepare("INSERT INTO journal(entry) VALUES ('a note')").run();
+    const text = (await callTool(server, "start_session", { scope: "items" })).content[0].text;
+    expect(text).not.toContain("FTP 414W");
+    expect(text).toContain("watch the calf");
+    expect(text).toContain("a note");
+  });
+
+  it("scope 'items' still carries a pending seed-update notice", async () => {
+    const seedDir = mkdtempSync(join(tmpdir(), "coaching-seed-"));
+    writeFileSync(
+      join(seedDir, "UPDATES.md"),
+      "# Seed updates\n\n## 1 — 2026-01-01 — Test\n\n- Apply: auto\n\nDo the thing.\n",
+    );
+    const { server } = makeServer(seedDir);
+    const text = (await callTool(server, "start_session", { scope: "items" })).content[0].text;
+    expect(text).toContain("Seed guidance updates pending (1)");
+  });
+});

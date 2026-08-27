@@ -83,11 +83,19 @@ Where data lives and which source wins on conflict:
 | Stored routine prompts                                     | Routines (`list_routines`)                                                   |
 | [Topic-specific data]                                      | [added per topic — e.g. training platform, or "the person reports manually"] |
 
-## 1. Mandatory Session Start (every conversation)
+## 1. Mandatory Session Start (every coaching conversation)
+
+**Scope exception:** work that touches no coaching data — repo, tooling, deployment, routine
+plumbing — may skip `start_session` and call only the tools it needs. The moment a
+conversation touches training, planning, personal facts, or writes to the coaching documents,
+run `start_session` first. Never answer a coaching question from memory; the topic judgment
+happens before the context is loaded, so it must stay conservative — when in doubt, it counts
+as coaching. For every coaching conversation:
 
 1. Call `start_session` — one call returns this document, every open commitment and flag
    (overdue ones marked), and the latest journal entries (newest in full, older as headlines).
-   (Fallback on older servers: `get_coaching_context` + `list_open_items` + `get_journal`.)
+   (Fallback on older servers: `get_coaching_context` + `list_open_items` + `get_journal`.
+   Scheduled runs that need only a slice can pass `scope: 'context'` or `'items'`.)
 2. Read the journal part before coaching: what was decided and committed last time is this
    session's starting point, and `[via Telegram]` entries are notes the person sent you between
    sessions. Fetch any headline that matters in full via `get_journal` with `ids`.
