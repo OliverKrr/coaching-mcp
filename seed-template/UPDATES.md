@@ -355,3 +355,24 @@ Update the user's documents (wherever their rewrite placed the equivalent sectio
 Also mention, only if it comes up: the server's own feedback invitation now says to check that
 the session can actually file a GitHub issue before promising one, and to hand over a
 ready-to-paste issue body otherwise.
+
+## 12 — 2026-08-30 — A push that is too long is lost, not shortened
+
+- Docs: references/coaching-method, references/routine-design
+- Apply: auto
+
+Delivery has hard limits and none of them trim anything: `notify_user` refuses a message over
+4096 characters, and a relay that forwards a scheduled run's output to the phone can only read a
+truncated copy of that output — a careful relay then sends nothing at all rather than a cut-off
+report. So an over-long final message is not a longer push, it is a missing one.
+
+Update the user's documents (wherever their rewrite placed the equivalent sections):
+
+- The coaching-method reference's delivery mechanics gained a bullet saying exactly that: write
+  the push as a push (headline, one read, one action, a few hundred characters) and leave the
+  full write-up in the journal or a reference, with the push pointing at it.
+- The routine-design reference's output contract now asks for an **explicit character budget for
+  the push, written into the routine's prompt**.
+- Then check the person's existing routines: any whose final message IS the push and which
+  currently produces a full report needs that budget added to its prompt, and its report moved
+  into a journal entry. Offer this once, name the routines you found, and let them decide.

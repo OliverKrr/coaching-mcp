@@ -389,14 +389,19 @@ export class McpSessionManager {
           "a scheduled routine's final check-in or summary to their phone, or a short " +
           "safety-relevant flag. Plain text only; keep it self-contained (it arrives as a push " +
           "notification, hours away from any conversation). Not a chat channel — the user " +
-          "cannot reply to the coaching session through it.",
+          "cannot reply to the coaching session through it. Hard limit 4096 characters, and an " +
+          "over-long message is refused, not trimmed — a push is a headline plus one action, a " +
+          "few hundred characters; the long version belongs in the journal.",
         annotations: { destructiveHint: false, openWorldHint: true },
         inputSchema: {
           message: z
             .string()
             .min(1)
             .max(4096)
-            .describe("The message, in the user's preferred language; first line ≤70 chars"),
+            .describe(
+              "The message, in the user's preferred language; first line ≤70 chars, whole " +
+                "message ≤4096 (aim far lower — it is a notification, not a report)",
+            ),
         },
       },
       async ({ message }) => {

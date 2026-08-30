@@ -184,3 +184,8 @@ Delivery mechanics — how a scheduled-task run actually reaches the person:
   Telegram), send the same final push there too — verbatim, no second draft, after composing
   it. If the tool is absent, the person has not opted in; never mention the omission. Telegram
   is delivery only — replies to the bot land in the journal, not in this run's chat.
+- **A push that is too long is not shortened, it is lost.** `notify_user` refuses anything over
+  4096 characters, and any relay that carries a run's output to the phone cuts it earlier still
+  (a truncated report cannot be forwarded verbatim, so a careful relay sends nothing at all).
+  Write the push as a push: headline, one read, one action, a few hundred characters. The full
+  write-up belongs in the journal or a reference document, and the push points at it.

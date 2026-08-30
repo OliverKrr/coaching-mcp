@@ -52,6 +52,12 @@ so design **few, high-value routines**, not many small ones.
    `coaching-method`).
 4. **Output contract.** What it writes (journal entry? flags with dedup keys?) and what it
    pushes. One push = the single most important thing, closed with one concrete action.
+   **Give the push an explicit character budget in the prompt** — a few hundred characters, not
+   a report. Delivery has hard limits and none of them shorten anything for you: `notify_user`
+   refuses more than 4096 characters, and a relay that forwards a run's output can only read a
+   truncated copy of it, so an over-long final message is dropped rather than trimmed. A routine
+   that produces a full report writes it to the journal and pushes the headline plus the one
+   action.
 5. **Silence conditions.** When does it send nothing? Silence is a first-class outcome — pushing
    without substance erodes trust faster than not pushing at all.
 6. **Review point.** When do we check whether the routine still earns its cadence (typically at
