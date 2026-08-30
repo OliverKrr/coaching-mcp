@@ -32,9 +32,24 @@ so design **few, high-value routines**, not many small ones.
    - _monthly+_ — goal-level "is this still the right goal" reviews.
      Anchor timing to the person's existing rhythm (before their shopping day, Sunday planning
      hour, after wearable data syncs) — routine-based cues beat arbitrary clock times.
+     Record the cadence **with the timezone it is meant in** ("Sundays 18:00, Europe/Berlin")
+     and check that the runner honours it: a scheduler that only understands UTC shifts the
+     routine by an hour at each daylight-saving switch, and a check-in that arrives at the
+     wrong hour for half the year gets ignored.
 3. **Connectors & data.** Which sources the routine reads (this coaching server; any data
    connector the person has). If a source is missing, the routine must degrade gracefully, never
-   guess.
+   guess. **Ask what is still provisional at the moment the routine fires.** A record the
+   person, another app, or a sync job is still editing (a workout's gear or title, an order's
+   status, a manually confirmed field) reads as fact but is not one yet, and a routine that
+   quotes it writes something wrong into the journal. Split the routine rather than delaying
+   it: everything computable from data that is final immediately (load, heart rate, pace,
+   anything touching an active injury) runs at once, and the part that depends on the
+   still-changing fields waits for a **ripeness signal** — a field only the person fills in, an
+   interaction that only happens later. Never a timer: "ripe after N hours" reintroduces
+   exactly the wrong data the rule prevents, on the day the person edits late. If a record
+   never ripens, that claim is simply never made — the correct outcome, not a failure. When it
+   turns out the routine did write something wrong, correct it via `correct_journal` (see
+   `coaching-method`).
 4. **Output contract.** What it writes (journal entry? flags with dedup keys?) and what it
    pushes. One push = the single most important thing, closed with one concrete action.
 5. **Silence conditions.** When does it send nothing? Silence is a first-class outcome — pushing

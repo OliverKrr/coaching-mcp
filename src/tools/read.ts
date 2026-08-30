@@ -11,7 +11,13 @@ import {
 } from "../quota.js";
 import { loadSeedUpdates, pendingUpdates } from "../seed-updates.js";
 import { toolText, withErrorHandling } from "../utils/errors.js";
-import { journalHeadline } from "../utils/journal.js";
+import {
+  correctionSnippet,
+  JOURNAL_COLUMNS,
+  journalFull,
+  journalHeadline,
+  journalListed,
+} from "../utils/journal.js";
 import { outlineSection } from "../utils/outline.js";
 import { sanitizeFtsQuery, formatSearchHits, type SearchHit } from "../utils/search.js";
 
@@ -120,19 +126,34 @@ export function registerReadTools(
         }
 
         if (type === undefined || type === "journal") {
+          // snippet column -1 = best-matching column, so a hit that lives in a
+          // correction is quoted from the correction. Archived entries are
+          // indexed like any other: archiving bounds session-start payload,
+          // never findability.
           const rows = db
             .prepare(
-              "SELECT j.id as id, snippet(journal_fts, 0, '**', '**', '...', 32) as snippet, j.created_at as created_at " +
+              "SELECT j.id as id, snippet(journal_fts, -1, '**', '**', '...', 32) as snippet, " +
+                "j.correction as correction, j.archived_at as archived_at, j.created_at as created_at " +
                 "FROM journal_fts JOIN journal j ON j.id = journal_fts.rowid " +
                 "WHERE journal_fts MATCH ? ORDER BY rank LIMIT ?",
             )
-            .all(fts, limit) as Array<{ id: number; snippet: string; created_at: string }>;
+            .all(fts, limit) as Array<{
+            id: number;
+            snippet: string;
+            correction: string | null;
+            archived_at: string | null;
+            created_at: string;
+          }>;
           for (const r of rows) {
             hits.push({
               type: "journal",
               name: `#${r.id}`,
               date: r.created_at.slice(0, 10),
               snippet: r.snippet,
+              flag: r.archived_at !== null ? "archived" : undefined,
+              // A snippet of a corrected entry must never stand alone — the
+              // hit would quote exactly the statement that was wrong.
+              correction: r.correction === null ? undefined : correctionSnippet(r.correction),
             });
           }
         }
@@ -328,7 +349,9 @@ export function registerReadTools(
         "Get coaching journal entries, newest first. `limit` caps the count (default 10; with `since` default 50). " +
         "`since` (YYYY-MM-DD) scopes to entries from that date on — a note tells you when more matched than the limit. " +
         "`format: 'headlines'` returns one compact line per entry (#id, date, first line) for cheap scanning of long ranges; " +
-        "`ids` fetches specific entries in full (e.g. picked from headlines or from search_knowledge journal hits), overriding since/limit.",
+        "`ids` fetches specific entries in full (e.g. picked from headlines or from search_knowledge journal hits), overriding since/limit. " +
+        "Archived entries are listed as headlines and returned in full only by `ids`. Any correction attached to an " +
+        "entry (see correct_journal) comes back with it in every format — an entry is never returned as if it still stood.",
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         limit: z.number().int().min(1).max(100).optional(),
@@ -356,7 +379,7 @@ export function registerReadTools(
           const placeholders = ids.map(() => "?").join(",");
           rows = db
             .prepare(
-              `SELECT id, entry, created_at FROM journal WHERE id IN (${placeholders}) ORDER BY id DESC`,
+              `SELECT ${JOURNAL_COLUMNS} FROM journal WHERE id IN (${placeholders}) ORDER BY id DESC`,
             )
             .all(...ids) as JournalEntry[];
           const missing = ids.filter((id) => !rows.some((r) => r.id === id));
@@ -372,7 +395,7 @@ export function registerReadTools(
           ).n;
           rows = db
             .prepare(
-              "SELECT id, entry, created_at FROM journal WHERE created_at >= ? ORDER BY id DESC LIMIT ?",
+              `SELECT ${JOURNAL_COLUMNS} FROM journal WHERE created_at >= ? ORDER BY id DESC LIMIT ?`,
             )
             .all(since, effectiveLimit) as JournalEntry[];
           if (total > rows.length) {
@@ -381,7 +404,7 @@ export function registerReadTools(
         } else {
           const effectiveLimit = limit ?? (format === "headlines" ? 25 : 10);
           rows = db
-            .prepare("SELECT id, entry, created_at FROM journal ORDER BY id DESC LIMIT ?")
+            .prepare(`SELECT ${JOURNAL_COLUMNS} FROM journal ORDER BY id DESC LIMIT ?`)
             .all(effectiveLimit) as JournalEntry[];
         }
         if (rows.length === 0) {
@@ -390,9 +413,15 @@ export function registerReadTools(
         if (format === "headlines") {
           return toolText(prefix + rows.map(journalHeadline).join("\n"));
         }
-        return toolText(
-          prefix + rows.map((r) => `#${r.id} [${r.created_at}] ${r.entry}`).join("\n\n---\n\n"),
-        );
+        // An explicit `ids` fetch is the one path that expands archived
+        // entries — it is how the full text of an archived entry is reached.
+        const render = ids !== undefined && ids.length > 0 ? journalFull : journalListed;
+        const archived = rows.filter((r) => r.archived_at !== null).length;
+        const archivedNote =
+          render === journalListed && archived > 0
+            ? `Note: ${archived} archived ${archived === 1 ? "entry is" : "entries are"} shown as headlines — get_journal with ids for the full text.\n\n`
+            : "";
+        return toolText(prefix + archivedNote + rows.map(render).join("\n\n---\n\n"));
       }),
   );
 }

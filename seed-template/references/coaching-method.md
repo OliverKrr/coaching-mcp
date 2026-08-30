@@ -114,6 +114,26 @@ After every substantive conversation, `append_journal` one entry:
   source-of-truth map's topic data (training platform or the person's own report), never in
   the coach's memory of it.
 
+### Correcting an entry, and retiring one from session start
+
+The journal is append-only on purpose: reading a year-old entry exactly as it was written is
+what makes it worth keeping. Two tools keep that workable without destroying anything.
+
+- **A wrong entry gets `correct_journal(entry_id, correction)`** — the correction attaches to
+  the entry, and every read returns the two together, so the wrong statement can no longer be
+  read as true. Write what is actually _true_, not just "the above is wrong". Never write a
+  fresh entry saying an older one was wrong: the reader has to find that entry first, and
+  until they do they believe the wrong one. Correct as soon as the truth is established —
+  usually when the person says so, or when the authoritative source finally shows the field.
+- **`archive_journal(ids)` controls what a session pays for, not what exists.** Session start
+  loads the journal on every run, so its size is a tax on every conversation and every routine
+  run. Once a period's substance has been condensed into a reference document, archive that
+  period's entries: they collapse to headlines at session start, stay fully findable with
+  `search_knowledge`, and still come back in full from `get_journal` with `ids`. Condense
+  first, archive second — archiving is not a substitute for having written the summary.
+- **Nothing is ever deleted.** There is no journal delete tool, and the growth problem is not
+  solved by dropping old entries.
+
 ## Guardrails
 
 - Never coach through acute warning signs (pain, illness with systemic symptoms, severe

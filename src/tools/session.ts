@@ -5,7 +5,7 @@ import type { JournalEntry, Section } from "../db.js";
 import { indexBudgetLine, usageWarning, type WriteLimits } from "../quota.js";
 import { loadSeedUpdates, pendingUpdates } from "../seed-updates.js";
 import { toolText, withErrorHandling } from "../utils/errors.js";
-import { journalHeadline } from "../utils/journal.js";
+import { JOURNAL_COLUMNS, journalHeadline, journalListed } from "../utils/journal.js";
 import { staleMetricsLine } from "./metrics.js";
 import { openItemLine, openOpenItems } from "./openitems.js";
 
@@ -14,7 +14,10 @@ import { openItemLine, openOpenItems } from "./openitems.js";
  * round trip — coaching context, open items (with overdue markers), the latest
  * journal entries in full plus older ones as headlines, and the pending
  * seed-update notice. Headlines keep the payload bounded as the journal grows;
- * full history stays one get_journal / search_knowledge call away.
+ * full history stays one get_journal / search_knowledge call away. Archived
+ * entries collapse to headlines wherever they appear here, and a corrected
+ * entry always carries its correction — the payload shrinks with age without
+ * any statement losing its correction.
  */
 export function registerSessionTools(
   server: McpServer,
@@ -89,10 +92,10 @@ export function registerSessionTools(
             : items.map((r) => openItemLine(r, false, 500)).join("\n");
 
         const fullEntries = db
-          .prepare("SELECT id, entry, created_at FROM journal ORDER BY id DESC LIMIT ?")
+          .prepare(`SELECT ${JOURNAL_COLUMNS} FROM journal ORDER BY id DESC LIMIT ?`)
           .all(journal_full) as JournalEntry[];
         const headlineEntries = db
-          .prepare("SELECT id, entry, created_at FROM journal ORDER BY id DESC LIMIT ? OFFSET ?")
+          .prepare(`SELECT ${JOURNAL_COLUMNS} FROM journal ORDER BY id DESC LIMIT ? OFFSET ?`)
           .all(journal_headlines, journal_full) as JournalEntry[];
 
         // The size line, quota warning, staleness flags and the seed-update
@@ -107,9 +110,12 @@ export function registerSessionTools(
         if (scope !== "context") {
           parts.push("---", `${itemsHeader}\n\n${itemsBlock}`);
           if (fullEntries.length > 0) {
+            // journalListed, not journalFull: an archived entry collapses to
+            // its headline even in the newest slice — that is what archiving
+            // buys, a session start that stops growing with journal age.
             parts.push(
               `## Journal — latest ${fullEntries.length === 1 ? "entry" : `${fullEntries.length} entries`} in full\n\n` +
-                fullEntries.map((r) => `#${r.id} [${r.created_at}] ${r.entry}`).join("\n\n---\n\n"),
+                fullEntries.map(journalListed).join("\n\n---\n\n"),
             );
           }
           if (headlineEntries.length > 0) {

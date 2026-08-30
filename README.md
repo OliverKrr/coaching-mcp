@@ -50,6 +50,8 @@ coaching-mcp serve (one container)
 | `update_section`                      | Upserts a knowledge section                                                                                |
 | `update_reference`                    | Upserts a reference document                                                                               |
 | `append_journal`                      | Appends a coaching journal entry                                                                           |
+| `correct_journal`                     | Attaches a correction to an entry — original text untouched, both returned by every read                   |
+| `archive_journal`                     | Flags entries as archived: headlines at session start, full text still via `ids`, search unaffected        |
 | `delete_section` / `delete_reference` | Deletes a document (confirm required; `main` protected)                                                    |
 | `add_open_item`                       | Records a commitment (if-then next action) or a de-duplicated flag                                         |
 | `list_open_items`                     | Lists commitments/flags with OVERDUE markers — bounded (`limit`), `headlines` format for cheap scans       |
@@ -151,8 +153,8 @@ anytime). Once linked, three things work:
 
 Each user gets a storage quota (default 50 MB of stored content — generous for coaching
 knowledge, hard against misuse as free file storage). Per-document caps: 1 MB per
-section/reference, 64 KB per journal entry/routine/open item; writes are also budgeted at
-60/min per user. The connected assistant sees the quota: write responses and the session-start
+section/reference, 64 KB per journal entry (text plus any attached correction), routine, or open
+item; writes are also budgeted at 60/min per user. The connected assistant sees the quota: write responses and the session-start
 context carry a warning from 80% usage, `get_version` reports usage, an over-quota write returns
 a self-describing error, and the `request_quota_increase` tool lets the assistant ask the
 operator for more (with a reason) — grantable from Telegram or `/admin`. Admins can set
@@ -173,8 +175,9 @@ are handled.
 - **View & edit** (`/account/data`): browse every document the server stores — knowledge
   sections, reference documents, journal entries, open items, stored routines — and edit them
   directly in the browser: fix a section the assistant got wrong, create or delete documents
-  (the `main` SKILL.md section is edit-only), correct or remove journal entries, change an open
-  item's content or status, copy a routine prompt into a Claude scheduled task.
+  (the `main` SKILL.md section is edit-only), edit a journal entry along with its correction and
+  archive flag (or remove it), change an open item's content or status, copy a routine prompt
+  into a Claude scheduled task.
   Section/reference/routine saves are guarded by an optimistic-concurrency check, so a save
   never silently overwrites a change a coaching session made in the meantime.
 - **Export**: one click downloads a zip with every document as markdown (`SKILL.md`,

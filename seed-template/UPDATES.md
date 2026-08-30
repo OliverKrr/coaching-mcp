@@ -320,3 +320,38 @@ Update the user's session-start section (wherever their rewrite placed it):
 Also suggest the person updates their Claude project instructions from the
 setup page — the recommended block gained the same exception, and the two
 must not drift.
+
+## 11 — 2026-08-30 — Journal corrections and archiving; routines wait for ripeness
+
+- Docs: SKILL.md, references/coaching-method, references/routine-design
+- Apply: auto
+
+The server gained two journal tools. `correct_journal(entry_id, correction)` attaches a
+correction to an existing entry — the original text is never changed, and every read path
+(`get_journal` in any format, `start_session`, `search_knowledge` hits) returns the two
+together. `archive_journal(ids)` marks entries as archived: they collapse to headlines at
+session start and in `get_journal` listings, stay fully findable via `search_knowledge`, and
+still come back in full via `get_journal` with `ids`. There is still no way to delete a journal
+entry, and that is deliberate.
+
+Update the user's documents (wherever their rewrite placed the equivalent sections):
+
+- Coaching conventions: add a bullet — an entry that turns out to be wrong gets
+  `correct_journal`, never a new entry saying an older one was wrong, because the reader has to
+  find that entry first and believes the wrong one until they do.
+- The coaching-method reference's journal section gained "Correcting an entry, and retiring one
+  from session start" — add it: correct as soon as the truth is established and write what is
+  actually true (not "the above is wrong"); archive a period's entries only **after** its
+  substance has been condensed into a reference document; nothing is ever deleted.
+- The routine-design reference gained two design rules that came out of routines writing wrong
+  facts into the journal. (a) A routine reading a record that someone or something else is still
+  editing must wait for a **ripeness signal** — a field only the person fills in, an interaction
+  that happens later — never a timer, and the safety-relevant half that needs only immediately
+  final data runs at once. (b) A stored cadence carries the timezone it is meant in, because a
+  UTC-only scheduler drifts by an hour at every daylight-saving switch.
+- If the person has routines that read a third-party record shortly after an event (workout
+  gear, activity titles, order status), offer once to split them along the ripeness rule.
+
+Also mention, only if it comes up: the server's own feedback invitation now says to check that
+the session can actually file a GitHub issue before promising one, and to hand over a
+ready-to-paste issue body otherwise.

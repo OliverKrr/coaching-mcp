@@ -60,6 +60,9 @@ in one or two sentences, not essays."]
   changed by mistake, recover it from the change history (`list_changes` / `get_change`) and
   re-apply it — see the `coaching-method` reference.
 - When uncertain about a fact stored here, verify with the relevant tool or ask — don't guess.
+- A journal entry that turns out to be wrong gets `correct_journal` — the original stays, the
+  correction travels with it on every read. Never write a new entry saying an older one was
+  wrong: the reader would have to find that entry first.
 - A weak search or journal hit is **not evidence** — never treat "something similar came back"
   as "it happened". No record → say so and ask (see `coaching-method`, journal entries).
 - Method details (session shape, persuasion, habit installation): see `coaching-method`
@@ -67,8 +70,10 @@ in one or two sentences, not essays."]
 - **Server feedback:** this coaching server is open source
   (<https://github.com/OliverKrr/coaching-mcp>). When the person wants a capability the server
   lacks, or something misbehaves, offer to pass it upstream as a GitHub issue or pull request
-  there. Describe it generically — issues and PRs are **public**, so never include personal or
-  coaching data, names, health details, e-mail addresses, deployment URLs, or API keys.
+  there — checking first that this session can actually file one; if not, hand over a
+  ready-to-paste issue body instead of promising. Describe it generically — issues and PRs are
+  **public**, so never include personal or coaching data, names, health details, e-mail
+  addresses, deployment URLs, or API keys.
 
 ## Source-of-truth map
 

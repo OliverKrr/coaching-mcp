@@ -3,12 +3,14 @@ import type { ServerResponse } from "node:http";
 import type { WebAuth } from "./account.js";
 import { getUser } from "./auth/db.js";
 import type { ServeContext } from "./context.js";
-import { type ChangeKind, type ChangeRow, logReplace } from "./history.js";
+import { type ChangeKind, type ChangeRow, logEdit, logReplace } from "./history.js";
 import { htmlEscape, redirect, sendHtml } from "./http-util.js";
 import { renderMarkdown } from "./markdown.js";
+import { JOURNAL_COLUMNS } from "./utils/journal.js";
 import { checkWrite, DOC_MAX_BYTES, ENTRY_MAX_BYTES, quotaBytesForUser } from "./quota.js";
 import type { Lang } from "./web/i18n.js";
 import { type NavOpts, page } from "./web/layout.js";
+import { badge } from "./web/ui.js";
 
 /**
  * Browse & edit area under /account/data: every document the server stores
@@ -31,7 +33,22 @@ const DOC_TABLES = { section: "sections", reference: "refs" } as const;
 type DocType = keyof typeof DOC_TABLES;
 
 type DocRow = { name: string; content: string; updated_at: string };
-type JournalRow = { id: number; entry: string; created_at: string };
+type JournalRow = {
+  id: number;
+  entry: string;
+  created_at: string;
+  correction: string | null;
+  corrected_at: string | null;
+  archived_at: string | null;
+};
+/** Corrections travel with the entry on every surface — the web pages must
+ * not be the one place a wrong statement is still shown as if it stood. */
+function correctionBlock(r: JournalRow, t: typeof DATA_EN): string {
+  if (!r.correction) return "";
+  const when = r.corrected_at ? ` (${htmlEscape(r.corrected_at)} UTC)` : "";
+  return `<div class="preview note">⚠ ${t.journalCorrectionTitle}${when}: ${renderMarkdown(r.correction)}</div>`;
+}
+
 type ItemRow = {
   id: number;
   kind: string;
@@ -329,15 +346,15 @@ function renderJournal(
   const total = (db.prepare("SELECT COUNT(*) AS n FROM journal").get() as { n: number }).n;
   const rows = db
     .prepare(
-      "SELECT id, entry, created_at FROM journal ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+      `SELECT ${JOURNAL_COLUMNS} FROM journal ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
     )
     .all(JOURNAL_PAGE_SIZE, pageNo * JOURNAL_PAGE_SIZE) as JournalRow[];
 
   const entries = rows
     .map(
       (r) =>
-        `<div class="card"><p class="muted">${htmlEscape(r.created_at)} UTC — <a href="${base}/account/data/journal/edit?id=${r.id}">${t.edit}</a></p>
-<div class="preview">${renderMarkdown(r.entry)}</div></div>`,
+        `<div class="card"><p class="muted">${htmlEscape(r.created_at)} UTC${r.archived_at ? ` ${badge("muted", t.journalArchivedBadge)}` : ""} — <a href="${base}/account/data/journal/edit?id=${r.id}">${t.edit}</a></p>
+<div class="preview">${renderMarkdown(r.entry)}</div>${correctionBlock(r, t)}</div>`,
     )
     .join("\n");
   const pager = [
@@ -374,7 +391,7 @@ function renderJournalEditor(
   const t = lang === "de" ? DATA_DE : DATA_EN;
   const db = ctx.tenants.open(auth.userId);
   const id = Number(url.searchParams.get("id"));
-  const row = db.prepare("SELECT id, entry, created_at FROM journal WHERE id = ?").get(id) as
+  const row = db.prepare(`SELECT ${JOURNAL_COLUMNS} FROM journal WHERE id = ?`).get(id) as
     | JournalRow
     | undefined;
   if (!row) {
@@ -395,6 +412,9 @@ function renderJournalEditor(
 <form method="post" action="${base}/account/data/journal/save">
 <input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="id" value="${row.id}">
 <textarea name="entry" class="editor short">${htmlEscape(row.entry)}</textarea>
+<p class="muted">${t.journalCorrectionLabel}</p>
+<textarea name="correction" class="editor short" placeholder="${t.journalCorrectionPlaceholder}">${htmlEscape(row.correction ?? "")}</textarea>
+<p><label><input type="checkbox" name="archived" value="1"${row.archived_at ? " checked" : ""}> ${t.journalArchivedLabel}</label></p>
 <p><button>${t.save}</button></p>
 </form>
 <form method="post" action="${base}/account/data/journal/delete">
@@ -403,7 +423,7 @@ function renderJournalEditor(
 </div>
 <div>
 <p class="muted">${t.previewHint}</p>
-<div class="preview">${renderMarkdown(row.entry)}</div>
+<div class="preview">${renderMarkdown(row.entry)}</div>${correctionBlock(row, t)}
 </div>
 </div>`;
   sendHtml(
@@ -758,27 +778,47 @@ function saveJournal(
   const base = ctx.cfg.publicUrl;
   const id = Number(form.get("id"));
   const entry = form.get("entry") ?? "";
+  const correction = (form.get("correction") ?? "").trim();
+  const archived = form.get("archived") === "1";
   const db = ctx.tenants.open(auth.userId);
-  const old = (
-    db.prepare("SELECT entry FROM journal WHERE id = ?").get(id) as { entry: string } | undefined
-  )?.entry;
+  const old = db.prepare("SELECT entry, correction FROM journal WHERE id = ?").get(id) as
+    | { entry: string; correction: string | null }
+    | undefined;
   if (old === undefined) {
     errorPage(res, 404, "Not found", `<p>No journal entry #${htmlEscape(String(id))}.</p>`);
     return;
   }
+  const oldBytes = old.entry.length + (old.correction?.length ?? 0);
   if (
     refuseOversizedWrite(ctx, res, auth, db, {
-      docBytes: entry.length,
+      docBytes: entry.length + correction.length,
       docMax: ENTRY_MAX_BYTES,
-      deltaBytes: entry.length - old.length,
+      deltaBytes: entry.length + correction.length - oldBytes,
     })
   ) {
     return;
   }
   // created_at is intentionally preserved: the edit corrects content, not history
   db.transaction(() => {
-    db.prepare("UPDATE journal SET entry = ? WHERE id = ?").run(entry, id);
-    logReplace(db, "journal", String(id), old, entry, "web");
+    db.prepare(
+      "UPDATE journal SET entry = ?, correction = ?," +
+        " corrected_at = CASE WHEN ? = '' THEN NULL WHEN ? IS correction THEN corrected_at ELSE datetime('now') END," +
+        " archived_at = CASE WHEN ? = 1 THEN COALESCE(archived_at, datetime('now')) ELSE NULL END" +
+        " WHERE id = ?",
+    ).run(
+      entry,
+      correction === "" ? null : correction,
+      correction,
+      correction === "" ? null : correction,
+      archived ? 1 : 0,
+      id,
+    );
+    logReplace(db, "journal", String(id), old.entry, entry, "web");
+    // Same doc name as the entry, so the correction's history shows up in the
+    // entry's own history view rather than under a name nothing links to.
+    if ((old.correction ?? "") !== correction) {
+      logEdit(db, "journal", String(id), old.correction ?? "", correction, "web");
+    }
   })();
   redirect(res, `${base}/account/data/journal`);
 }
@@ -1171,6 +1211,13 @@ const DATA_EN = {
   older: "older →",
   journalEntryTitle: "Journal entry #%ID%",
   journalWritten: "Written %TS% UTC (timestamp is preserved on edit)",
+  journalCorrectionTitle: "Correction",
+  journalCorrectionLabel:
+    "Correction — shown with the entry everywhere it is read, so a wrong statement can no longer be read as true. Leave empty for none.",
+  journalCorrectionPlaceholder: "What is actually true",
+  journalArchivedLabel:
+    "Archived — kept and still searchable, but no longer loaded in full at session start",
+  journalArchivedBadge: "archived",
   deleteEntry: "Delete entry",
   openItemsIntro: "Commitments and flags from your coaching sessions (open first).",
   openItemTitle: "Open item #%ID%",
@@ -1262,6 +1309,13 @@ const DATA_DE: typeof DATA_EN = {
   older: "ältere →",
   journalEntryTitle: "Journaleintrag #%ID%",
   journalWritten: "Geschrieben %TS% UTC (der Zeitstempel bleibt beim Bearbeiten erhalten)",
+  journalCorrectionTitle: "Korrektur",
+  journalCorrectionLabel:
+    "Korrektur — wird überall mit dem Eintrag zusammen angezeigt, damit eine falsche Aussage nicht mehr als wahr gelesen werden kann. Leer lassen, wenn keine nötig ist.",
+  journalCorrectionPlaceholder: "Was tatsächlich stimmt",
+  journalArchivedLabel:
+    "Archiviert — bleibt erhalten und durchsuchbar, wird aber beim Sitzungsstart nicht mehr vollständig geladen",
+  journalArchivedBadge: "archiviert",
   deleteEntry: "Eintrag löschen",
   openItemsIntro: "Zusagen und Hinweise aus deinen Coaching-Sessions (offene zuerst).",
   openItemTitle: "Offener Punkt #%ID%",

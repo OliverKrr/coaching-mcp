@@ -1057,6 +1057,61 @@ describe("account data editor", () => {
     await client.close();
   });
 
+  it("carries a web-entered correction and archive flag into the MCP reads", async () => {
+    const alice = await oauthLogin(ALICE);
+    const client = await mcpClient(alice.access);
+    await client.callTool({
+      name: "append_journal",
+      arguments: { entry: "Long run in the frobnicator shoes.\nSecond line with detail." },
+    });
+
+    const cookie = await accountLogin(ALICE);
+    const csrf = await csrfFor(cookie);
+    const journalPage = await (
+      await fetch(`${base}/account/data/journal`, { headers: { cookie } })
+    ).text();
+    const id = /journal\/edit\?id=(\d+)/.exec(journalPage)?.[1] ?? "";
+    const save = await fetch(`${base}/account/data/journal/save`, {
+      method: "POST",
+      headers: { cookie, "content-type": FORM },
+      body: new URLSearchParams({
+        csrf,
+        id,
+        entry: "Long run in the frobnicator shoes.\nSecond line with detail.",
+        correction: "It was the quuxrunner shoes.",
+        archived: "1",
+      }),
+      redirect: "manual",
+    });
+    expect(save.status).toBe(302);
+
+    // Archived: session start shows the headline only — with the correction.
+    const listed = toolText(await client.callTool({ name: "get_journal", arguments: {} }));
+    expect(listed).toContain("[archived]");
+    expect(listed).toContain("quuxrunner");
+    expect(listed).not.toContain("Second line with detail");
+    // Full text still reachable by id, and the correction is searchable.
+    const byId = toolText(
+      await client.callTool({ name: "get_journal", arguments: { ids: [Number(id)] } }),
+    );
+    expect(byId).toContain("Second line with detail");
+    const hit = toolText(
+      await client.callTool({
+        name: "search_knowledge",
+        arguments: { query: "quuxrunner", type: "journal" },
+      }),
+    );
+    expect(hit).toContain(`#${id}`);
+
+    // The page renders both, and the checkbox comes back checked.
+    const editor = await (
+      await fetch(`${base}/account/data/journal/edit?id=${id}`, { headers: { cookie } })
+    ).text();
+    expect(editor).toContain("quuxrunner");
+    expect(editor).toContain('name="archived" value="1" checked');
+    await client.close();
+  });
+
   it("edits open items in a way the MCP tools observe", async () => {
     const alice = await oauthLogin(ALICE);
     const client = await mcpClient(alice.access);

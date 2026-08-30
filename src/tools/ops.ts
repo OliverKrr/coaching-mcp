@@ -50,6 +50,13 @@ export function registerOpsTools(
         const journalCount = (
           db.prepare("SELECT COUNT(*) as n FROM journal").get() as { n: number }
         ).n;
+        // Archived vs total is the one number that says whether the journal's
+        // session-start cost is being managed or just growing.
+        const journalArchived = (
+          db.prepare("SELECT COUNT(*) as n FROM journal WHERE archived_at IS NOT NULL").get() as {
+            n: number;
+          }
+        ).n;
         const routinesCount = (
           db.prepare("SELECT COUNT(*) as n FROM routines").get() as { n: number }
         ).n;
@@ -96,6 +103,7 @@ export function registerOpsTools(
           sections_count: sectionsCount,
           refs_count: refsCount,
           journal_count: journalCount,
+          journal_archived: journalArchived,
           routines_count: routinesCount,
           open_items_count: openItemsCount,
           metrics_count: metricsCount,

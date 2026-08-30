@@ -109,11 +109,13 @@ which must be backed up alongside per-user snapshots or a restore can't reconstr
 | `get_section` / `list_sections`       | read      | One section / all sections with metadata                                           |
 | `section_outline`                     | read      | Heading-level outline of a section with per-heading byte counts (index budget aid) |
 | `get_reference` / `list_references`   | read      | One reference doc / all references with metadata                                   |
-| `get_journal`                         | read      | Recent journal entries, newest first                                               |
+| `get_journal`                         | read      | Journal entries newest first; corrections attached, archived ones as headlines     |
 | `update_section`                      | write     | Create or fully rewrite a knowledge section (use `main` for SKILL.md)              |
 | `update_reference`                    | write     | Create or fully rewrite a reference doc                                            |
 | `edit_section` / `edit_reference`     | write     | Exact-string replacement inside a doc (old_string must match exactly once)         |
 | `append_journal`                      | write     | Append a coaching journal entry                                                    |
+| `correct_journal`                     | write     | Attach a correction to an entry; the original text is never changed                |
+| `archive_journal`                     | write     | Flag entries as archived: headlines at session start, full text still by `ids`     |
 | `delete_section` / `delete_reference` | write     | Delete a doc (confirm=true; `main` protected; recoverable via change history)      |
 | `list_changes` / `get_change`         | read      | Change history: what edits/overwrites/deletes removed — for content recovery       |
 | `add_open_item`                       | write     | Record a commitment (if-then next action) or a de-duplicated flag                  |
@@ -195,6 +197,21 @@ and fixed (`metric_series` registry; windows are rebuilt idempotently per write/
 recompute-over-increment spirit). `stale_after_days` on a state series makes
 `start_session` flag an overdue value — a retest reminder that lives in schema, not prose.
 
+**The journal is append-only, and stays that way — corrections attach, archiving bounds
+cost**: an entry must still read exactly as written a year later, so there is no journal
+delete tool and no rewrite path over MCP. The two problems that creates are solved without
+touching stored text. A wrong entry gets `correct_journal`, which writes the `correction`
+column and is rendered by every read path (`journalListed`/`journalHeadline`/`journalFull` in
+`src/utils/journal.ts`, plus the search-hit `correction` field and the account pages) — the
+invariant is that no path returns a corrected entry alone, which is why the renderers are
+shared rather than reimplemented per tool, and why a correction is never truncated outside
+search snippets. Growth is the second problem: the journal loads at every session start, so
+`archive_journal` sets `archived_at` and archived entries collapse to headlines there and in
+`get_journal` listings, while `get_journal ids:[…]` still returns them in full and the FTS
+index is untouched — archiving costs nothing in findability, which is the whole reason old
+entries are worth keeping. Archive only what has already been condensed into a reference; the
+flag is a load-time decision, never a retention one.
+
 **The script store is retired (v3)**: analysis code lives in the assistant's own
 environment (a versioned repository), not in the coaching DB — the server keeps data exports
 and durable _results_ (journal, metrics, references). `migrateDropScripts` retires v2
@@ -208,7 +225,13 @@ legacy history stays readable. The ruff-WASM dependency left with the feature.
 `routines_fts` are
 external-content virtual tables. All four require INSERT + UPDATE + DELETE triggers to stay in
 sync with their base tables (`journal_au` arrived with web journal editing in v2.1 — the journal
-is append-only over MCP but editable on the account page). Do not remove any trigger from
+is append-only over MCP but editable on the account page). `journal_fts` indexes two columns
+(`entry, correction`) and its whole trigger family, the quota counters and the delete-capture
+trigger live in one `JOURNAL_INDEX_SQL` string, because widening it was not expressible as
+`CREATE ... IF NOT EXISTS`: an FTS5 table cannot gain a column and a trigger body cannot be
+altered, so `migrateJournalIndex` drops and recreates the family once and `rebuild`s the index
+from the base table. Any further change to what the journal indexes goes the same way — edit
+the shared string, extend the migration probe. Do not remove any trigger from
 `db.ts`; because `createSchema()` uses `CREATE TABLE/TRIGGER IF NOT EXISTS` on every open, new
 tables and triggers self-apply to existing per-user DBs (this is how v2 DBs gained `routines`
 and later `metrics`). Column additions have no IF NOT EXISTS, so `createSchema()` probes

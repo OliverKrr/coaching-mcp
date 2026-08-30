@@ -12,7 +12,12 @@ export type SnapshotDoc = { path: string; content: string };
 
 type SectionRow = { name: string; content: string; updated_at: string };
 type RefRow = { name: string; content: string; updated_at: string };
-type JournalRow = { entry: string; created_at: string };
+type JournalRow = {
+  entry: string;
+  created_at: string;
+  correction: string | null;
+  archived_at: string | null;
+};
 type OpenItemRow = {
   id: number;
   kind: string;
@@ -46,7 +51,11 @@ function writeContent(path: string, content: string): string {
 
 function formatJournal(rows: JournalRow[]): string {
   if (rows.length === 0) return "# Journal\n\n_No entries._\n";
-  const blocks = rows.map((r) => `## ${r.created_at}\n\n${r.entry}\n`);
+  const blocks = rows.map(
+    (r) =>
+      `## ${r.created_at}${r.archived_at ? " [archived]" : ""}\n\n${r.entry}\n` +
+      (r.correction ? `\n> ⚠ Correction: ${r.correction}\n` : ""),
+  );
   return `# Journal\n\n${blocks.join("\n---\n\n")}`;
 }
 
@@ -145,8 +154,17 @@ export function snapshotDocuments(db: Database.Database, seedOnly = false): Snap
   docs.push({ path: "seed-manifest.json", content: `${JSON.stringify(manifest, null, 2)}\n` });
 
   if (!seedOnly) {
+    // Corrections and the archive flag arrive via an additive migration on
+    // server open; this CLI may read (readonly!) a DB that predates them —
+    // probe before selecting, as with resolved_note below.
+    const journalCols = db.pragma("table_info(journal)") as Array<{ name: string }>;
+    const correctionExpr = journalCols.some((c) => c.name === "correction")
+      ? "correction, archived_at"
+      : "NULL AS correction, NULL AS archived_at";
     const journal = db
-      .prepare("SELECT entry, created_at FROM journal ORDER BY created_at DESC, id DESC")
+      .prepare(
+        `SELECT entry, created_at, ${correctionExpr} FROM journal ORDER BY created_at DESC, id DESC`,
+      )
       .all() as JournalRow[];
     docs.push({ path: "journal.md", content: formatJournal(journal) });
 

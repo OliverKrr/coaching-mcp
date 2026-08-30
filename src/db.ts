@@ -6,7 +6,16 @@ import { latestUpdateId, loadSeedUpdates, setAppliedUpdateId } from "./seed-upda
 
 export type Section = { name: string; content: string; updated_at: string };
 export type Reference = { name: string; content: string; updated_at: string };
-export type JournalEntry = { id: number; entry: string; created_at: string };
+export type JournalEntry = {
+  id: number;
+  entry: string;
+  /** Correction attached by a later session; NULL = the entry stands as written. */
+  correction: string | null;
+  corrected_at: string | null;
+  /** Set once a period has been condensed elsewhere; NULL = still inlined in full. */
+  archived_at: string | null;
+  created_at: string;
+};
 export type OpenItem = {
   id: number;
   kind: "commitment" | "flag";
@@ -81,7 +90,7 @@ export function recomputeContentBytes(db: Database.Database): void {
       .prepare(
         `SELECT (SELECT COALESCE(SUM(LENGTH(content)), 0) FROM sections)
 				+ (SELECT COALESCE(SUM(LENGTH(content)), 0) FROM refs)
-				+ (SELECT COALESCE(SUM(LENGTH(entry)), 0) FROM journal)
+				+ (SELECT COALESCE(SUM(LENGTH(entry) + LENGTH(COALESCE(correction, ''))), 0) FROM journal)
 				+ (SELECT COALESCE(SUM(LENGTH(prompt)), 0) FROM routines)
 				+ (SELECT COALESCE(SUM(LENGTH(content)), 0) FROM open_items)
 				+ (SELECT COALESCE(SUM(LENGTH(name) + LENGTH(COALESCE(unit, '')) + LENGTH(COALESCE(note, ''))), 0) FROM metrics) AS n`,
@@ -93,6 +102,51 @@ export function recomputeContentBytes(db: Database.Database): void {
       " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
   ).run(n);
 }
+
+/**
+ * The journal's FTS index, quota counters and delete-capture trigger — one
+ * string because `migrateJournalIndex` has to drop and recreate the whole
+ * family: FTS5 cannot gain a column and a trigger body cannot be altered, so
+ * `CREATE ... IF NOT EXISTS` alone would leave a database that predates
+ * corrections indexing (and counting) only `entry`.
+ */
+const JOURNAL_INDEX_SQL = `
+		CREATE VIRTUAL TABLE IF NOT EXISTS journal_fts USING fts5(
+			entry, correction,
+			content=journal, content_rowid=id
+		);
+		CREATE TRIGGER IF NOT EXISTS journal_ai AFTER INSERT ON journal BEGIN
+			INSERT INTO journal_fts(rowid, entry, correction)
+				VALUES (new.id, new.entry, new.correction);
+		END;
+		CREATE TRIGGER IF NOT EXISTS journal_au AFTER UPDATE ON journal BEGIN
+			INSERT INTO journal_fts(journal_fts, rowid, entry, correction)
+				VALUES ('delete', old.id, old.entry, old.correction);
+			INSERT INTO journal_fts(rowid, entry, correction)
+				VALUES (new.id, new.entry, new.correction);
+		END;
+		CREATE TRIGGER IF NOT EXISTS journal_ad AFTER DELETE ON journal BEGIN
+			INSERT INTO journal_fts(journal_fts, rowid, entry, correction)
+				VALUES ('delete', old.id, old.entry, old.correction);
+		END;
+		CREATE TRIGGER IF NOT EXISTS journal_bytes_ai AFTER INSERT ON journal BEGIN
+			UPDATE meta SET value = value + LENGTH(new.entry) + LENGTH(COALESCE(new.correction, ''))
+				WHERE key = 'content_bytes';
+		END;
+		CREATE TRIGGER IF NOT EXISTS journal_bytes_au AFTER UPDATE ON journal BEGIN
+			UPDATE meta SET value = value + LENGTH(new.entry) + LENGTH(COALESCE(new.correction, ''))
+				- LENGTH(old.entry) - LENGTH(COALESCE(old.correction, '')) WHERE key = 'content_bytes';
+		END;
+		CREATE TRIGGER IF NOT EXISTS journal_bytes_ad AFTER DELETE ON journal BEGIN
+			UPDATE meta SET value = value - LENGTH(old.entry) - LENGTH(COALESCE(old.correction, ''))
+				WHERE key = 'content_bytes';
+		END;
+		CREATE TRIGGER IF NOT EXISTS journal_hist_ad AFTER DELETE ON journal BEGIN
+			INSERT INTO changes(kind, name, op, old_text)
+				VALUES ('journal', CAST(old.id AS TEXT), 'delete',
+					old.entry || COALESCE(char(10) || char(10) || 'Correction: ' || old.correction, ''));
+		END;
+`;
 
 export function createSchema(db: Database.Database): void {
   db.exec(`
@@ -109,7 +163,10 @@ export function createSchema(db: Database.Database): void {
 		CREATE TABLE IF NOT EXISTS journal (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			entry TEXT NOT NULL,
-			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			correction TEXT,
+			corrected_at TEXT,
+			archived_at TEXT
 		);
 		CREATE TABLE IF NOT EXISTS open_items (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -155,10 +212,6 @@ export function createSchema(db: Database.Database): void {
 			name UNINDEXED, content,
 			content=refs, content_rowid=rowid
 		);
-		CREATE VIRTUAL TABLE IF NOT EXISTS journal_fts USING fts5(
-			entry,
-			content=journal, content_rowid=id
-		);
 		CREATE VIRTUAL TABLE IF NOT EXISTS routines_fts USING fts5(
 			name UNINDEXED, prompt,
 			content=routines, content_rowid=rowid
@@ -179,14 +232,6 @@ export function createSchema(db: Database.Database): void {
 				VALUES ('delete', old.rowid, old.name, old.content);
 			INSERT INTO refs_fts(rowid, name, content) VALUES (new.rowid, new.name, new.content);
 		END;
-		CREATE TRIGGER IF NOT EXISTS journal_ai AFTER INSERT ON journal BEGIN
-			INSERT INTO journal_fts(rowid, entry) VALUES (new.id, new.entry);
-		END;
-		CREATE TRIGGER IF NOT EXISTS journal_au AFTER UPDATE ON journal BEGIN
-			INSERT INTO journal_fts(journal_fts, rowid, entry)
-				VALUES ('delete', old.id, old.entry);
-			INSERT INTO journal_fts(rowid, entry) VALUES (new.id, new.entry);
-		END;
 		CREATE TRIGGER IF NOT EXISTS sections_ad AFTER DELETE ON sections BEGIN
 			INSERT INTO sections_fts(sections_fts, rowid, name, content)
 				VALUES ('delete', old.rowid, old.name, old.content);
@@ -194,10 +239,6 @@ export function createSchema(db: Database.Database): void {
 		CREATE TRIGGER IF NOT EXISTS refs_ad AFTER DELETE ON refs BEGIN
 			INSERT INTO refs_fts(refs_fts, rowid, name, content)
 				VALUES ('delete', old.rowid, old.name, old.content);
-		END;
-		CREATE TRIGGER IF NOT EXISTS journal_ad AFTER DELETE ON journal BEGIN
-			INSERT INTO journal_fts(journal_fts, rowid, entry)
-				VALUES ('delete', old.id, old.entry);
 		END;
 		CREATE TRIGGER IF NOT EXISTS routines_ai AFTER INSERT ON routines BEGIN
 			INSERT INTO routines_fts(rowid, name, prompt) VALUES (new.rowid, new.name, new.prompt);
@@ -232,15 +273,6 @@ export function createSchema(db: Database.Database): void {
 		END;
 		CREATE TRIGGER IF NOT EXISTS refs_bytes_ad AFTER DELETE ON refs BEGIN
 			UPDATE meta SET value = value - LENGTH(old.content) WHERE key = 'content_bytes';
-		END;
-		CREATE TRIGGER IF NOT EXISTS journal_bytes_ai AFTER INSERT ON journal BEGIN
-			UPDATE meta SET value = value + LENGTH(new.entry) WHERE key = 'content_bytes';
-		END;
-		CREATE TRIGGER IF NOT EXISTS journal_bytes_au AFTER UPDATE ON journal BEGIN
-			UPDATE meta SET value = value + LENGTH(new.entry) - LENGTH(old.entry) WHERE key = 'content_bytes';
-		END;
-		CREATE TRIGGER IF NOT EXISTS journal_bytes_ad AFTER DELETE ON journal BEGIN
-			UPDATE meta SET value = value - LENGTH(old.entry) WHERE key = 'content_bytes';
 		END;
 		CREATE TRIGGER IF NOT EXISTS routines_bytes_ai AFTER INSERT ON routines BEGIN
 			UPDATE meta SET value = value + LENGTH(new.prompt) WHERE key = 'content_bytes';
@@ -281,10 +313,7 @@ export function createSchema(db: Database.Database): void {
 					'cadence: ' || old.cadence || char(10) || 'status: ' || old.status
 						|| char(10) || char(10) || old.prompt);
 		END;
-		CREATE TRIGGER IF NOT EXISTS journal_hist_ad AFTER DELETE ON journal BEGIN
-			INSERT INTO changes(kind, name, op, old_text)
-				VALUES ('journal', CAST(old.id AS TEXT), 'delete', old.entry);
-		END;
+		${JOURNAL_INDEX_SQL}
 	`);
   // Databases created before the 'script' change kind get their CHECK rebuilt
   // once. Must run before any script write (or delete-trigger fire) can insert
@@ -300,7 +329,49 @@ export function createSchema(db: Database.Database): void {
   if (!metricCols.some((c) => c.name === "valid_to")) {
     db.exec("ALTER TABLE metrics ADD COLUMN valid_to TEXT");
   }
+  const journalCols = db.pragma("table_info(journal)") as Array<{ name: string }>;
+  if (!journalCols.some((c) => c.name === "correction")) {
+    db.exec("ALTER TABLE journal ADD COLUMN correction TEXT");
+    db.exec("ALTER TABLE journal ADD COLUMN corrected_at TEXT");
+  }
+  if (!journalCols.some((c) => c.name === "archived_at")) {
+    db.exec("ALTER TABLE journal ADD COLUMN archived_at TEXT");
+  }
+  // Must follow the column probes above — the rebuilt index reads `correction`.
+  migrateJournalIndex(db);
   migrateDropScripts(db);
+}
+
+/**
+ * The journal index widened from `entry` to `entry, correction` when journal
+ * corrections arrived. An FTS5 table cannot gain a column and a trigger body
+ * cannot be altered, so a database created before that keeps indexing only
+ * the original text — a correction would be invisible to `search_knowledge`
+ * and uncounted by the quota. Rebuild once: drop the trigger family and the
+ * index, recreate both from `JOURNAL_INDEX_SQL`, repopulate from the base
+ * table. Every later open sees `correction` in the stored SQL and returns.
+ */
+function migrateJournalIndex(db: Database.Database): void {
+  const row = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'journal_fts'")
+    .get() as { sql: string } | undefined;
+  if (!row || row.sql.includes("correction")) return;
+  db.transaction(() => {
+    for (const trigger of [
+      "journal_ai",
+      "journal_au",
+      "journal_ad",
+      "journal_bytes_ai",
+      "journal_bytes_au",
+      "journal_bytes_ad",
+      "journal_hist_ad",
+    ]) {
+      db.exec(`DROP TRIGGER IF EXISTS ${trigger}`);
+    }
+    db.exec("DROP TABLE IF EXISTS journal_fts");
+    db.exec(JOURNAL_INDEX_SQL);
+    db.exec("INSERT INTO journal_fts(journal_fts) VALUES('rebuild')");
+  })();
 }
 
 /**
