@@ -186,6 +186,37 @@ describe("archive_journal", () => {
   });
 });
 
+describe("session-start body cap", () => {
+  const LONG = `Weekly review headline.\n${"detail ".repeat(400)}`;
+
+  it("caps an inlined entry and names the recovery call", async () => {
+    const { server } = makeServer();
+    await call(server, "append_journal", { entry: LONG });
+    const session = await call(server, "start_session", {});
+    expect(session).toContain("get_journal ids:[1] has the full text");
+    expect(session.length).toBeLessThan(LONG.length);
+    // The cap is mechanical: no curation, no archiving, still bounded.
+    expect(await call(server, "get_journal", { ids: [1] })).toContain(LONG.trimEnd());
+  });
+
+  it("never truncates the correction of a capped entry", async () => {
+    const { server } = makeServer();
+    await call(server, "append_journal", { entry: LONG });
+    await call(server, "correct_journal", { entry_id: 1, correction: TRUTH });
+    const session = await call(server, "start_session", {});
+    expect(session).toContain("+");
+    expect(session).toContain(TRUTH);
+  });
+
+  it("leaves a normal-length entry untouched", async () => {
+    const { server } = makeServer();
+    await call(server, "append_journal", { entry: "Short entry, nothing elided." });
+    const session = await call(server, "start_session", {});
+    expect(session).toContain("Short entry, nothing elided.");
+    expect(session).not.toContain("has the full text");
+  });
+});
+
 describe("quota accounting", () => {
   it("counts correction text, and the trigger-kept counter matches the recompute", async () => {
     const { server, db } = makeServer();

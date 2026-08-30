@@ -6,6 +6,15 @@ import { indexBudgetLine, usageWarning, type WriteLimits } from "../quota.js";
 import { loadSeedUpdates, pendingUpdates } from "../seed-updates.js";
 import { toolText, withErrorHandling } from "../utils/errors.js";
 import { JOURNAL_COLUMNS, journalHeadline, journalListed } from "../utils/journal.js";
+
+/**
+ * Per-entry body cap for the inlined journal slice. Session start is a fixed
+ * per-session cost paid by every client and every scheduled run, so no single
+ * entry may set it: one 12 KB debrief would otherwise spill the whole payload
+ * to a file. 1200 chars is a full session entry (headline + decided/learned/
+ * committed/watch-for); the marker names get_journal for the rest.
+ */
+const JOURNAL_INLINE_MAX = 1200;
 import { staleMetricsLine } from "./metrics.js";
 import { openItemLine, openOpenItems } from "./openitems.js";
 
@@ -112,10 +121,12 @@ export function registerSessionTools(
           if (fullEntries.length > 0) {
             // journalListed, not journalFull: an archived entry collapses to
             // its headline even in the newest slice — that is what archiving
-            // buys, a session start that stops growing with journal age.
+            // buys, a session start that stops growing with journal age. The
+            // body cap is the mechanical half of the same job: curation can be
+            // forgotten, JOURNAL_INLINE_MAX cannot.
             parts.push(
               `## Journal — latest ${fullEntries.length === 1 ? "entry" : `${fullEntries.length} entries`} in full\n\n` +
-                fullEntries.map(journalListed).join("\n\n---\n\n"),
+                fullEntries.map((r) => journalListed(r, JOURNAL_INLINE_MAX)).join("\n\n---\n\n"),
             );
           }
           if (headlineEntries.length > 0) {

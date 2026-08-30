@@ -31,10 +31,19 @@ export function journalHeadline(r: JournalEntry): string {
   return `#${r.id} [${r.created_at}]${archived} ${head}${suffix}${correctionLine(r)}`;
 }
 
-/** Full text, correction attached. */
-export function journalFull(r: JournalEntry): string {
+/**
+ * Full text, correction attached. `maxChars` caps the ENTRY body only (the
+ * same shape as `openItemLine`, with a marker naming the recovery call) — a
+ * correction is never truncated, or the truncation would restore exactly the
+ * wrong statement it exists to overrule.
+ */
+export function journalFull(r: JournalEntry, maxChars = 0): string {
   const archived = r.archived_at !== null ? " [archived]" : "";
-  return `#${r.id} [${r.created_at}]${archived} ${r.entry}${correctionLine(r)}`;
+  const entry =
+    maxChars > 0 && r.entry.length > maxChars
+      ? `${r.entry.slice(0, maxChars)}… (+${r.entry.length - maxChars} chars — get_journal ids:[${r.id}] has the full text)`
+      : r.entry;
+  return `#${r.id} [${r.created_at}]${archived} ${entry}${correctionLine(r)}`;
 }
 
 /**
@@ -43,8 +52,8 @@ export function journalFull(r: JournalEntry): string {
  * pays for at load time — nothing is lost, `get_journal` with `ids` still
  * returns the entry in full, and `search_knowledge` still indexes it.
  */
-export function journalListed(r: JournalEntry): string {
-  return r.archived_at !== null ? journalHeadline(r) : journalFull(r);
+export function journalListed(r: JournalEntry, maxChars = 0): string {
+  return r.archived_at !== null ? journalHeadline(r) : journalFull(r, maxChars);
 }
 
 /** Correction text for a search hit, trimmed to snippet length. */

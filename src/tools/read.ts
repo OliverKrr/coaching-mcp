@@ -421,7 +421,10 @@ export function registerReadTools(
           render === journalListed && archived > 0
             ? `Note: ${archived} archived ${archived === 1 ? "entry is" : "entries are"} shown as headlines — get_journal with ids for the full text.\n\n`
             : "";
-        return toolText(prefix + archivedNote + rows.map(render).join("\n\n---\n\n"));
+        // Called through an arrow, never passed to map directly: these
+        // renderers take an optional cap as their second argument, which
+        // map's index would silently become.
+        return toolText(prefix + archivedNote + rows.map((r) => render(r)).join("\n\n---\n\n"));
       }),
   );
 }

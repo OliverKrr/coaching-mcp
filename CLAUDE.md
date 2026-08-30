@@ -210,7 +210,15 @@ search snippets. Growth is the second problem: the journal loads at every sessio
 `get_journal` listings, while `get_journal ids:[…]` still returns them in full and the FTS
 index is untouched — archiving costs nothing in findability, which is the whole reason old
 entries are worth keeping. Archive only what has already been condensed into a reference; the
-flag is a load-time decision, never a retention one.
+flag is a load-time decision, never a retention one. Archiving is curation and curation gets
+forgotten, so the mechanical half sits next to it: `start_session` caps each inlined entry body
+at `JOURNAL_INLINE_MAX` (1200 chars) with a marker naming `get_journal ids:[…]`, the same shape
+as the open-item cap. Together they bound the payload by construction — count (`journal_full`),
+per-entry size (the cap), and curation (the flag). The cap never touches a correction: a
+truncated correction would restore exactly the statement it overrules. Note the trap these
+optional cap parameters create: pass such a renderer to `Array.map` directly and the index
+becomes the cap (caught in review by a two-entry listing test) — always call it through an
+arrow.
 
 **The script store is retired (v3)**: analysis code lives in the assistant's own
 environment (a versioned repository), not in the coaching DB — the server keeps data exports
