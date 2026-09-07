@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { webAuth } from "./account.js";
 import type { ServeContext } from "./context.js";
 import { htmlEscape, sendHtml } from "./http-util.js";
-import { pickLang, type Lang } from "./web/i18n.js";
+import { pickLang } from "./web/i18n.js";
 import { page } from "./web/layout.js";
 import { badge, copyBox } from "./web/ui.js";
 import { allRoutineTemplates } from "./topics.js";
