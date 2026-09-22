@@ -376,3 +376,34 @@ Update the user's documents (wherever their rewrite placed the equivalent sectio
 - Then check the person's existing routines: any whose final message IS the push and which
   currently produces a full report needs that budget added to its prompt, and its report moved
   into a journal entry. Offer this once, name the routines you found, and let them decide.
+
+## 13 — 2026-09-22 — Training thresholds and personal bests move to dated metrics
+
+- Docs: topics/training/topic, topics/training/references/zones
+- Apply: propose
+
+The training pack no longer seeds "Thresholds" and "Personal Bests" value tables into `main`.
+Each threshold and PB is now a `state` metric series: a new value supersedes the old one and the
+old one stays readable (`get_metrics` with `as_of` or `include_superseded`). A table that gets
+overwritten on every retest loses the starting value a block has to be judged against, and a
+`Last verified` column nobody reads does not stop a plan being built on an outdated FTP.
+
+Entry 4 already asked for measurement tables to move to metrics "the next time one changes".
+Thresholds change rarely, so for users of the **training** topic whose `main` (or `zones`
+reference) still carries such tables, propose migrating them now:
+
+1. Record each threshold via `record_metric` with `series_kind: "state"`, its `measured_at` set
+   to the date it was set (the table's date column, not today), and `stale_after_days` set to
+   the retest cadence the person agrees to (ask; 90 is a reasonable default). Record older
+   values first if the table or the journal still has them, so the trail starts early.
+2. Record each personal best the same way, as a `state` series without `stale_after_days`.
+   Pace and times in seconds, units fixed per series.
+3. Replace the tables in `main` with the short "Thresholds & personal bests" section from the
+   training pack (`get_topic_pack("training")`): the series names in use, the staleness rule,
+   and the rule to record new values instead of editing them. Add a source-of-truth row naming
+   metrics as the home of thresholds and PBs.
+4. In the `zones` reference, point each "Anchored on" line at the series and value it derives
+   from.
+
+From then on, session start flags a threshold that has outlived its window. Treat a flagged
+value as unverified until it is retested, confirmed against current data, or re-recorded.

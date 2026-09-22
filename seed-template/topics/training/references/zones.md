@@ -1,7 +1,8 @@
 # Zones Reference — [Athlete Name]
 
-Full zone tables. Update after every test or breakthrough performance; the main skill's
-"Thresholds" section holds the headline numbers, this file the detail.
+Full zone tables. The threshold values themselves are metric series (`get_metrics`), dated and
+with their history; this file derives the zones from them. When a threshold is re-recorded,
+recompute the affected table here and update its "Anchored on" line to match.
 
 ## Zone Target Selection Rule
 
@@ -18,7 +19,7 @@ by HR cap; bike everything by power". Fill during onboarding.]
 | Z4   | Threshold        | [..]                  | [..]           |
 | Z5   | VO2max+          | [..]                  | [..]           |
 
-Anchored on: [test/race, date].
+Anchored on: [series and value, e.g. `threshold-pace` 265 s/km, from test/race on date].
 
 ## [Secondary sport] zones
 

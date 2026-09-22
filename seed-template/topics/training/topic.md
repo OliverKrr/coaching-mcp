@@ -12,10 +12,14 @@ injury awareness.
 >    whole references that don't apply (e.g. `strength` for someone who won't do strength work).
 > 3. Weave the section skeleton below into section `main` (under "Topic sections"; renumber as
 >    needed), replacing placeholders with interview answers; write `TBD` for unknowns.
-> 4. In `main`: add this topic with its goal and review point to the snapshot's Active-topics
+> 4. Record every threshold and personal best from the interview as a metric (see "Thresholds &
+>    personal bests" below), each with the date it was set as `measured_at`. They are never
+>    written as value tables into `main` or a reference.
+> 5. In `main`: add this topic with its goal and review point to the snapshot's Active-topics
 >    table; add a source-of-truth row for completed workouts (training platform, or "reports
->    manually"); add the topic's reference rows to the reference table.
-> 5. Offer the routine templates in this pack (tailored, in the person's language, stored via
+>    manually") and one for thresholds and personal bests (metrics); add the topic's reference
+>    rows to the reference table.
+> 6. Offer the routine templates in this pack (tailored, in the person's language, stored via
 >    `save_routine` per the `routine-design` reference) — they are optional.
 
 ## Interview
@@ -24,7 +28,9 @@ injury awareness.
    target events with dates.
 2. **Background** — training age, past events and results, what has and hasn't worked before.
 3. **Current fitness** — recent test results or race performances; known thresholds (pace,
-   power, heart rate); typical weekly volume.
+   power, heart rate); typical weekly volume. Ask **when** each number was set: a threshold
+   without a date cannot be judged current, and a later block cannot be compared against it.
+   Ask how often they are willing to retest.
 4. **Schedule & constraints** — days/hours available, fixed commitments, preferred days for long
    or hard sessions.
 5. **Injury & health history** — current niggles, past injuries, anything a plan must respect.
@@ -45,19 +51,25 @@ injury awareness.
 - **Days available:** [e.g. Mon/Wed/Fri + weekend long session]
 - **Season goal:** [one sentence, with target event + date]
 
-### Training — Thresholds
+### Training — Thresholds & personal bests
 
-Verify against current data before prescribing; update after tests or breakthrough performances.
+Thresholds and personal bests live in **metrics**, not in this document: one `state` series per
+number, so a new value supersedes the old one without erasing it. `get_metrics` with `as_of`
+answers "what was my FTP in March?", and `include_superseded` shows the whole trail. That trail
+is what lets a block be judged against its starting point. A table here would overwrite exactly
+the value that comparison needs.
 
-| Metric                            | Value   | Last verified |
-| --------------------------------- | ------- | ------------- |
-| [Threshold pace / FTP / LTHR ...] | [value] | [date]        |
-
-### Training — Personal Bests
-
-| Event / distance | Result | Date | Notes |
-| ---------------- | ------ | ---- | ----- |
-| [..]             | [..]   | [..] | [..]  |
+- **Series:** [list the series in use, e.g. `ftp` (W), `threshold-pace` (s/km), `lthr` (bpm),
+  `pb-5k` (s), `pb-half-marathon` (s)]. Keep names and units fixed; pace and times in seconds.
+- **Thresholds:** record with `series_kind: "state"`, `measured_at` = the test or race date (not
+  today), and `stale_after_days` = the agreed retest cadence ([e.g. 90]). Session start then
+  flags a threshold that has outlived it. Treat a flagged value as unverified: retest, confirm
+  it against current data, or re-record it, before prescribing from it.
+- **Personal bests:** `state` series without a staleness window. A PB stays true, but it is
+  not current fitness; plan from thresholds, and read a PB with its date.
+- **Update** after every test or breakthrough performance, with a `note` naming the source
+  (e.g. "ramp test", "HM race, flat course"). Never edit a value in place; record the new one.
+- The zone tables in the `zones` reference derive from these values; update them together.
 
 ### Training — Framework
 
