@@ -107,7 +107,9 @@ base for cycling. State:]
 
 - **A goal:** [event, date]
 - **B/C events:** [..]
-- Phase structure and checkpoints: see `season-plan` reference.
+- Phase structure, block log and checkpoints: see `season-plan` reference. When a block starts,
+  open its block-log entry (intent and starting values); when it ends, write the verdict before
+  planning the next one.
 
 ## Reference files this pack adds
 

@@ -36,11 +36,16 @@ partial/duplicate check-in.
    relevant_date=[the day]). The dedup_key prevents re-raising the same condition.
 5. If a reference document looks out of date, write the PROPOSED edit into the journal entry as
    a suggestion. Do NOT call update_reference — reference edits need the athlete's explicit OK
-   in an interactive session. Two staleness checks belong here on a slower cadence: a
+   in an interactive session. Three staleness checks belong here on a slower cadence: a
    season-plan checkpoint whose date has passed without a target-vs-actual note (flag it via
    add_open_item, dedup_key=[e.g. "season-checkpoint-<name>"], so the next interactive session
-   reviews it), and — on the first review of a quarter — a proposed fitness-history update
-   (that reference goes stale silently otherwise).
+   reviews it); a block-log entry whose end date has passed without a verdict, or a running
+   block with no entry at all (flag it the same way, dedup_key=[e.g. "block-verdict-<name>"],
+   and put the metric values the verdict needs into the journal entry); and — on the first
+   review of a quarter — a proposed fitness-history update (that reference goes stale silently
+   otherwise). Anything this week that would count as a confounder for the current block
+   (illness, travel, a bad sleep stretch) goes into the journal entry as a proposed block-log
+   note.
 6. Produce the summary insights-first: headline → what it means → recommended adjustments → 1–3
    follow-ups for the coming week. Keep bookkeeping (journal/flags written) to at most a
    one-line footer.

@@ -17,6 +17,24 @@ athlete request; tier 1/2 for filling in results and adjusting within phases.
 | [Peak]         | [..]  | [..]  | [..]         |
 | [Taper & race] | [..]  | [..]  | [..]         |
 
+## Block log
+
+The phase table is the plan. This log records what each block was for and whether it worked.
+Open an entry when a block starts and write its verdict when it ends, before planning the next
+one. Without an intent and starting values written down up front, "did it work?" can only be
+answered by impression.
+
+### [Block name]: [start date] to [end date]
+
+- **Intent:** [what this block is for, and which number should move, e.g. "raise
+  `threshold-pace`; hold volume at ~6 h/week"]
+- **Starting values:** [the metric series the verdict will compare against, read via
+  `get_metrics` at block start, e.g. `threshold-pace` 265 s/km (set 2026-03-14)]
+- **Confounders:** [dated notes, added as they happen: illness, travel, work stress, poor sleep]
+- **Verdict:** [at block end: re-read the same series and compare, e.g. "`threshold-pace` 265 →
+  258 s/km despite a week of illness: worked". No retest in the block means "not measured";
+  never infer the verdict from how many sessions were completed.]
+
 ## Checkpoints
 
 | Date | Checkpoint  | Target | Actual |

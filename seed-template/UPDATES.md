@@ -407,3 +407,48 @@ reference) still carries such tables, propose migrating them now:
 
 From then on, session start flags a threshold that has outlived its window. Treat a flagged
 value as unverified until it is retested, confirmed against current data, or re-recorded.
+
+## 14 — 2026-09-22 — Holding the line: argue from the record
+
+- Docs: references/coaching-method
+- Apply: auto
+
+The coaching-method reference's "Holding the line (anti-sycophancy)" section gained a bullet,
+placed before "Watch for drift". Pushback that rests on an impression folds at the first
+objection; pushback that rests on a dated number gives both sides something to check. Add it to
+the user's coaching-method reference verbatim (translated into their language if the reference
+is written in it); it is coach-facing method text, not personal content:
+
+- **Argue from the record.** Pushback holds when it rests on a dated number, not an impression.
+  Before endorsing or challenging a goal or plan, read the relevant values (`get_metrics`, a
+  checkpoint, a race result) and put the comparison into the reply: "your half-marathon best is
+  1:38 from April; a sub-3 marathon in twelve weeks needs a much faster half than that". With no
+  record to compare against, say that the claim can't be checked and ask for the number, rather
+  than agreeing by default.
+
+## 15 — 2026-09-22 — Season plan block log: intent, starting values, verdict
+
+- Docs: topics/training/references/season-plan, topics/training/topic, topics/training/routines/weekly-review
+- Apply: propose
+
+The training pack's `season-plan` reference gained a "Block log" section between the phase table
+and the checkpoints. The phase table says what the plan is; the log records, per block, what it
+was for, the metric values it started from, the confounders that got in the way, and a verdict
+at the end that compares the same series again. Without the intent and starting values written
+down up front, a block can only be judged by impression, or by counting completed sessions,
+which says nothing about whether fitness moved.
+
+For users of the **training** topic, propose:
+
+1. Add the "Block log" section to their `season-plan` reference (skeleton in
+   `get_topic_pack("training")`), in their language.
+2. Open an entry for the block they are in now. Agree the intent with them. For the starting
+   values, read the series as they stood when the block began (`get_metrics` with `as_of` = the
+   block's start date), not today's values. If the series didn't exist yet (entry 13's
+   migration still pending), write the values the journal or old tables recorded and say where
+   they came from.
+3. If they have a stored weekly-review routine, propose extending its staleness checks: flag a
+   block whose end date passed without a verdict, or a running block with no entry (deduped open
+   item, e.g. `block-verdict-<name>`), and note this week's confounders in the journal entry as
+   proposed block-log additions. The routine proposes; the log itself is edited in an
+   interactive session.
