@@ -1,472 +1,157 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code sessions in this repository.
 
-> **Standalone package — keep it self-contained.** This repo must not reference any specific
-> deployment or sibling repo: no hostnames, no domains, no other repo names or paths, no external
-> `just`/CI recipes, no "the Raspberry Pi". That includes source, CLI output, tests, and this
-> CLAUDE.md. Describe behaviour in terms of this package's own tools/CLIs and use only **generic
-> examples**. Deployment-specific wiring belongs in the deployment repo, never here.
+## Keep the package self-contained
 
-## What this repo is
+coaching-mcp is a standalone public package that operators deploy on their own infrastructure.
+Write source, CLI output, tests, docs and this file in terms of the package's own tools and CLIs,
+with generic examples only (`example.com`, `/data/users/<id>/skill.db`). Hostnames, domains, other
+repo names or paths, external `just`/CI recipes and descriptions of any particular host belong in
+the deployment repo that consumes this package.
 
-Multi-user coaching MCP server for Claude AI. Serves a `SKILL.md` knowledge base (goals, rules,
-personal profile) plus reference documents, a session journal, open items, and stored scheduled
-routines — stored in SQLite+FTS5 and exposed as MCP tools over Streamable HTTP. Coaching is
-topic-based: installable **topic packs** (training, nutrition, custom) live under
-`seed-template/topics/` and are delivered on demand via read-only tools, so each user picks
-their own topics during onboarding. v2 is multi-tenant: a built-in OAuth 2.1 authorization
-server federates login to an OIDC identity provider (Google by default), membership lives in
-auth.db (self-registration with operator approval; `ADMIN_EMAILS` implicitly allowed;
-`ALLOWED_EMAILS` as optional pre-approval bootstrap), and every user gets an isolated per-user
-database seeded from a generic template, governed by a storage quota. A self-service `/account`
-page provides data export and account deletion; `/admin` is the operator console; an optional
-Telegram bot (plus a plain `NOTIFY_URL` webhook) delivers signup/quota notifications with
-inline approve/grant buttons. The bare `coaching-mcp` command remains the v1-style single-user
-stdio server.
+## What this is
+
+A multi-user coaching MCP server for Claude. Each user's knowledge base (a `SKILL.md` "main"
+section plus references, journal, open items, metrics and stored routines) lives in its own
+SQLite+FTS5 database under `DATA_DIR/users/<id>/skill.db` and is exposed as MCP tools over
+Streamable HTTP. A built-in OAuth 2.1 authorization server federates login to an OIDC provider
+(Google by default); membership, tokens and sealed per-user secrets live in `DATA_DIR/auth.db`.
+Coaching topics are installable topic packs under `seed-template/topics/`. The bare `coaching-mcp`
+command is a single-user stdio server; `coaching-mcp serve` is the multi-user HTTP server.
 
 ## Commands
 
-Use `just` for everything (see `Justfile` for the full list):
-
 ```sh
-just build        # compile TypeScript (tsdown → dist/)
-just test         # vitest run (no external network; OIDC is mocked on 127.0.0.1)
-just check        # oxlint + oxfmt --check
-just fix          # oxlint + oxfmt --write (auto-format)
-just types        # tsc --noEmit
-just dev          # tsx src/index.ts (stdio single-user mode)
-just update-deps  # ncu -u && npm install
-just release X.Y.Z  # version stamp + gate + commit + tag + push + GitHub release (RELEASING.md)
+just build          # tsdown → dist/
+just test           # vitest run; no network, OIDC is mocked on 127.0.0.1
+just check          # oxlint + oxfmt --check
+just fix            # oxlint + oxfmt --write
+just types          # tsc --noEmit
+just dev            # stdio single-user server via tsx
+just serve          # multi-user HTTP server via tsx (needs PUBLIC_URL and OIDC_* env)
+just snapshot [dir] # build, then snapshot the local DB (default ./snapshots)
+just docker-build   # local image
+just update-deps    # npm-check-updates -u && npm install
+just release X.Y.Z  # stamp, gate, commit, tag, push, GitHub release (RELEASING.md)
 ```
 
-Direct npm equivalents if just is not installed: `npm run build|test|check|check:fix|check:types`.
+Without `just`: `npm run build|test|check|check:fix|check:types|dev`. Before calling a change
+done, run `just check`, `just types` and `just test`; `just release` runs the same gate and aborts
+on any failure.
 
-## Architecture
+The version lives in both `package.json` and `src/version.ts`. Let `just release` stamp them
+rather than editing either by hand, because a mismatch between them has happened before.
 
-```
-src/index.ts        bin `coaching-mcp` — stdio single-user server; `serve` arg dispatches to serve.ts
-src/serve.ts        bin path `coaching-mcp serve` — node:http server + router (multi-user mode)
-src/register.ts     registerCoreTools — the one core tool list shared by stdio, HTTP sessions, and the CLI
-src/cli.ts + cli-main.ts  bin `coaching-cli` — local shell access: the same McpServer driven in-process (no HTTP, no OAuth)
-src/mcp-http.ts     /mcp Streamable HTTP endpoint; per-session McpServer bound to the user's DB
-src/auth/oauth.ts   OAuth 2.1 AS: RFC 8414 metadata, RFC 7591 DCR, /authorize, /oidc/callback, /token
-src/auth/oidc.ts    openid-client wrapper (lazy discovery, PKCE toward the IdP, id_token verify)
-src/auth/allowlist.ts  ADMIN_EMAILS + bootstrap ALLOWED_EMAILS / ALLOWED_EMAILS_FILE (file re-read per login) + REGISTRATION toggle
-src/auth/db.ts      DATA_DIR/auth.db — users (with membership status/quota/telegram link), clients, pending auth, hashed tokens, web sessions, telegram_links, quota_requests
-src/membership.ts   resolveLogin decision tree + status transitions (approve/reject/disable/enable/grantQuota/purgeUser) shared by /admin and Telegram
-src/admin.ts        /admin operator console (ADMIN_EMAILS-gated, 404 otherwise, English-only): requests, quotas, users
-src/notify.ts       NotifyService: best-effort Telegram + NOTIFY_URL webhook fan-out; never blocks logins/writes
-src/telegram.ts     minimal Bot API client; per-boot webhook secret, setWebhook/getMe on boot
-src/telegram-webhook.ts  POST /telegram/webhook: secret header + admin-chat check → membership callbacks; /start deep-link linking; quick-capture (linked user's text → journal)
-src/quota.ts        storage limits: content_bytes counter access, caps, checkWrite ladder, usage warnings
-src/tenancy.ts      TenantManager: DATA_DIR/users/<id>/skill.db, lazy open/cache, delete
-src/account.ts      /account router (session + CSRF for all account routes): profile, zip export (fflate), delete
-src/account-data.ts /account/data browse & edit: sections/refs/routines (create/edit/delete, optimistic concurrency), journal, open items
-src/auth/secrets.ts encrypted per-user secret store (AES-256-GCM under SECRETS_KEY; AAD binds user+slot)
-src/integrations/hevy.ts  Hevy API client + MCP tools, registered per-session only for users with a key
-src/integrations/intervals.ts  Intervals.icu client + lean CSV export tools (activities, wellness, weekly summary), same opt-in pattern
-src/apps-proxy.ts   /apps/<name> authenticated reverse proxy (per-app email allowlist, HTML prefix rewriting)
-src/gateways.ts     per-user MCP gateway: users attach upstream MCP servers on /account; sessions mount their tools verbatim
-src/ratelimit.ts    fixed-window per-IP limiter guarding the auth endpoints
-src/telemetry.ts    tool-usage counters (auth.db tool_usage) + per-session tools/call instrumentation
-src/db.ts           coaching DB schema: sections, refs, journal, open_items, routines, changes + FTS5 (per user)
-src/history.ts      change-history delta log: schema, logEdit/logReplace, block diff, retention pruning
-src/seed-updates.ts seed-update ledger (SEED_DIR/UPDATES.md) parser + per-user applied-watermark
-src/tools/*.ts      the MCP tools — take (server, db); deliberately user-agnostic
-src/topics.ts       topic-pack loader (SEED_DIR/topics/<id>/) + list_topic_packs/get_topic_pack
-src/snapshot.ts / restore.ts / backup-db.ts + *-cli.ts   operational CLIs
-src/http-util.ts    tiny node:http helpers (no express — keep deps lean)
-src/web/            page shell for all rendered pages (layout.ts: design tokens, dark mode, session-aware site nav; i18n.ts: sticky EN/DE preference via lang cookie; ui.ts: badge) — still zero JS
-seed-template/      generic core SKILL.md + core references + topics/ packs, baked into the image as /seed
-```
+## Finding things
 
-Seed data flow (per user, first login only): `/seed/SKILL.md` → sections(name='main'),
-`/seed/references/*.md` → refs. After that, all writes go through the MCP tools.
-`/seed/topics/**` is **never auto-seeded** — packs are delivered by `get_topic_pack` and
-instantiated by the assistant through the normal write tools during onboarding.
-**Editing `seed-template/` content that onboarded users should receive requires a matching
-entry in `seed-template/UPDATES.md` in the same commit** (see "Seed updates propagate
-agent-mediated" below) — seeding never re-runs, so the ledger is the only path to existing
-users.
+- Entry points: `src/index.ts` is the `coaching-mcp` bin and hands the `serve` argument to
+  `src/serve.ts`; `src/cli-main.ts` is `coaching-cli`; the other bins are `src/*-cli.ts`. The
+  `bin` map in `package.json` is authoritative.
+- Current tool list with descriptions:
+  `SEED_DIR=seed-template npx tsx src/cli-main.ts --db <scratch dir> tools`. It omits the
+  per-session tools registered in `src/mcp-http.ts` (`request_quota_increase`, `notify_user`,
+  `refresh_connected_servers`, the Hevy and Intervals.icu tools from `src/integrations/`, and
+  gateway-mounted upstream tools).
+- Environment variables: the table in `README.md` ("Environment variables (serve mode)"). It
+  leaves out the change-history retention vars `HISTORY_MAX_AGE_DAYS` (90), `HISTORY_MAX_PER_DOC`
+  (40) and `HISTORY_MAX_BYTES` (10 MiB) read in `src/history.ts`, and `TELEGRAM_API_BASE`, which
+  exists for tests. Stdio mode reads only `DATA_DIR`, `SEED_DIR`, the `HISTORY_*` vars and
+  `INDEX_BUDGET_BYTES`. Tuning values such as `MAX_SESSIONS_TOTAL` and the heap thresholds are
+  constants in `src/mcp-http.ts` and `src/serve.ts`, not env vars.
+- Operator-facing docs: `README.md`. Release steps: `RELEASING.md`.
 
-`coaching-mcp-restore` (inverse of `coaching-mcp-snapshot`) upserts `sections`/`refs` from a seed
-dir into a live DB; it preserves `journal` + `open_items` and has a timestamp clobber guard
-(`seed-manifest.json`; conflicts abort unless `--force`; `--dry-run` previews read-only).
+## Conventions
 
-`coaching-mcp-backup-db <src> <dest>` makes a consistent, WAL-safe copy of an arbitrary SQLite
-file via SQLite's online backup API. Use it for opaque operational DBs the schema-aware snapshot
-doesn't cover — notably the auth/registry DB (identity → user-id map + sealed per-user secrets),
-which must be backed up alongside per-user snapshots or a restore can't reconstruct users.
+**Tools**
 
-## MCP tools
+- Give every tool registration a `title` and MCP `annotations`, because connector UIs group
+  tools by them and an unannotated tool lands in a flat "other tools" bucket with pessimistic
+  defaults. Reads set `readOnlyHint: true`. Writes set `destructiveHint` explicitly: `false` only
+  for purely additive writes like `append_journal`, `true` for replaces and deletes.
+  `idempotentHint: true` where a repeat call is a no-op; `openWorldHint: true` only for tools that
+  call an external service. `tests/annotations.test.ts` checks every registered tool except
+  gateway-mounted upstream tools, whose metadata passes through verbatim.
+- Add core tools to `registerCoreTools` in `src/register.ts`. Stdio, HTTP sessions and
+  `coaching-cli` all build from that one list, so the three stay identical.
+- Keep `src/tools/` user-agnostic: a tool gets `(server, db)` and optional `WriteLimits`, never a
+  user id. Tools that need identity or the notifier register per session in `src/mcp-http.ts`.
+  Per-user isolation is structural (one DB file per user), and threading identity into tools
+  would undo that.
+- Features that depend on configuration register their tools only when the configuration exists
+  (a stored API key, a linked Telegram chat, a `SEED_DIR/UPDATES.md`), instead of checking inside
+  the tool.
 
-| Tool                                  | Direction | Description                                                                        |
-| ------------------------------------- | --------- | ---------------------------------------------------------------------------------- |
-| `start_session`                       | read      | Composite session start: context + open items + recent journal in one call         |
-| `get_coaching_context`                | read      | Full SKILL.md — session start on servers without `start_session`                   |
-| `search_knowledge`                    | read      | FTS5 full-text search, `ORDER BY rank` (sections, refs, journal, routines)         |
-| `get_section` / `list_sections`       | read      | One section / all sections with metadata                                           |
-| `section_outline`                     | read      | Heading-level outline of a section with per-heading byte counts (index budget aid) |
-| `get_reference` / `list_references`   | read      | One reference doc / all references with metadata                                   |
-| `get_journal`                         | read      | Journal entries newest first; corrections attached, archived ones as headlines     |
-| `update_section`                      | write     | Create or fully rewrite a knowledge section (use `main` for SKILL.md)              |
-| `update_reference`                    | write     | Create or fully rewrite a reference doc                                            |
-| `edit_section` / `edit_reference`     | write     | Exact-string replacement inside a doc (old_string must match exactly once)         |
-| `append_journal`                      | write     | Append a coaching journal entry                                                    |
-| `correct_journal`                     | write     | Attach a correction to an entry; the original text is never changed                |
-| `archive_journal`                     | write     | Flag entries as archived: headlines at session start, full text still by `ids`     |
-| `delete_section` / `delete_reference` | write     | Delete a doc (confirm=true; `main` protected; recoverable via change history)      |
-| `list_changes` / `get_change`         | read      | Change history: what edits/overwrites/deletes removed — for content recovery       |
-| `add_open_item`                       | write     | Record a commitment (if-then next action) or a de-duplicated flag                  |
-| `list_open_items`                     | read      | List commitments/flags with opened dates + OVERDUE markers (status incl. all)      |
-| `resolve_open_item`                   | write     | Close an open item; note stored in `resolved_note`, content preserved verbatim     |
-| `record_metric` / `get_metrics`       | r/w       | Numeric series; 'state' kinds supersede via validity windows (`as_of` history)     |
-| `delete_metric`                       | write     | Remove one data point (confirm=true; not covered by change history)                |
-| `list_topic_packs` / `get_topic_pack` | read      | Installable coaching topics: interview + skeletons + routine templates             |
-| `get_seed_updates`                    | read      | Pending seed-template updates: curated merge instructions for the assistant        |
-| `mark_seed_updates_applied`           | write     | Advance the per-user seed-update watermark after merging (partial ok)              |
-| `list_routines` / `get_routine`       | read      | Stored scheduled-routine prompts (users copy them into Claude scheduled tasks)     |
-| `save_routine`                        | write     | Upsert a routine (name, cadence, prompt, status; status kept when omitted)         |
-| `delete_routine`                      | write     | Delete a stored routine (confirm=true)                                             |
-| `request_quota_increase`              | write     | Ask the operator for more storage with a reason (serve mode, per-session)          |
-| `notify_user`                         | write     | Telegram message to the user (per-session, only when their chat is linked)         |
-| `refresh_connected_servers`           | write     | Re-read attached gateways' tools past the cache (per-session, only if mounted)     |
-| `get_version`                         | read      | Build info + per-table statistics + storage usage vs. quota                        |
+**Writes and history**
 
-**Every tool registration carries a `title` and MCP tool `annotations`** — connector UIs group
-tools by these hints (an unannotated tool lands in a flat "other tools" bucket with the most
-pessimistic defaults). Convention: `readOnlyHint: true` for reads; writes always set
-`destructiveHint` explicitly (`false` only for purely additive writes like `append_journal` —
-document replaces and deletes are `true`); `idempotentHint: true` where a repeat call is a no-op;
-`openWorldHint: true` only for tools that talk to an external service (Hevy, Telegram).
-`tests/annotations.test.ts` enforces this for every registered tool — gateway-mounted upstream
-tools are exempt (their metadata passes through verbatim).
+- Every path that overwrites a document calls `logReplace` (or `logEdit` for exact-string edits)
+  from `src/history.ts` in the same transaction as the write. Deletes are captured by triggers,
+  but overwrites can't be diffed in SQL, so a new write path that skips this loses the only
+  recovery copy. Current callers: `src/tools/write.ts`, `src/tools/edit.ts`,
+  `src/tools/routines.ts`, `src/account-data.ts`, `src/restore.ts`.
+- Write to a coaching DB through the tool handlers (or `coaching-cli call`), not raw SQL. FTS
+  sync is triggers, but change-history diffs and seed semantics live in application code.
+- The journal is append-only over MCP: fixes go through `correct_journal`, and every read path
+  renders the correction next to the entry. Render entries with the shared helpers in
+  `src/utils/journal.ts`, and call them through an arrow (`(r) => journalListed(r)`), because
+  their optional cap parameter turns an `Array.map` index into a length cap.
+- A metric series is `state` or `event`, fixed at first use. Keep it fixed. `state` reads return
+  the current value by validity window and `event` reads count rows, so a series that switched
+  kind would answer both kinds of question wrong.
+- Hoist prepared statements used in loops out of the loop.
+- Schema and trigger rules load from `.claude/rules/schema.md` when you open `src/db.ts`,
+  `src/history.ts` or `src/quota.ts`.
 
-## Environment variables (serve mode)
+**Auth, membership, notifications**
 
-`PUBLIC_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` required (fail-fast); `OIDC_ISSUER`
-(default Google), `ADMIN_EMAILS` (implicitly allowed + gates /admin), `REGISTRATION`
-(default open; `closed` = invite-only), `ALLOWED_EMAILS`/`ALLOWED_EMAILS_FILE` (bootstrap,
-skips approval), `TELEGRAM_BOT_TOKEN`/`TELEGRAM_ADMIN_CHAT_ID` (+ `TELEGRAM_API_BASE`
-tests-only), `NOTIFY_URL`, `QUOTA_DEFAULT_MB` (50), `DATA_DIR` (/data), `SEED_DIR` (/seed),
-`PORT` (8000), `ACCESS_TOKEN_TTL` (3600), `REFRESH_TOKEN_TTL` (7776000), change-history
-retention `HISTORY_MAX_AGE_DAYS` (90) / `HISTORY_MAX_PER_DOC` (40) / `HISTORY_MAX_BYTES`
-(10 MiB), telemetry retention `TOOL_USAGE_MAX_AGE_DAYS` (180), index-size warning threshold
-`INDEX_BUDGET_BYTES` (30000). Stdio mode uses only `DATA_DIR`/`SEED_DIR` (+ the `HISTORY_*`
-retention vars and `INDEX_BUDGET_BYTES`).
+- Change a user's status only through the transitions in `src/membership.ts`. `/admin` and the
+  Telegram buttons share them, and disabling a user revokes all tokens and web sessions in the
+  same call; flipping `users.status` directly skips that.
+- Tokens are random values stored as SHA-256 hashes; don't introduce JWTs or signing keys.
+- Never log or render a user secret back. The account page shows only "connected since".
+- Telegram and `NOTIFY_URL` sends are fire-and-forget. A failed notification is logged and never
+  fails a login or a write.
 
-## Key design decisions
+**HTTP and runtime**
 
-**The index budget is a warning, never a cap**: `main` is loaded in full on every session
-start, so its size is fixed per-session overhead. `start_session` and `get_coaching_context`
-lead with a `[hub] main: … B of … B index budget` line (`INDEX_BUDGET_BYTES`, default
-30,000) that turns into an over-budget warning pointing at `section_outline`; `get_version`
-reports `main_bytes` + `largest_documents`. A hard cap would break writes mid-session, which
-is worse than a large index — the budget makes the cost visible, the model and user decide
-what moves out.
+- Use plain `node:http` and the helpers in `src/http-util.ts`. The dependency set is kept small
+  on purpose, so no express or similar framework.
+- Build advertised and page URLs from `PUBLIC_URL`, never from the Host header. The server runs
+  behind a prefix-stripping proxy.
+- Tear MCP sessions down through `dispose()` in `src/mcp-http.ts`. Removing a session from the map
+  directly leaks its upstream gateway connections.
+- `/health` is public: add counts to it, never identities.
+- The `main` index budget (`INDEX_BUDGET_BYTES`) is a warning, not a cap. Keep it that way; a
+  cap would refuse writes mid-session.
 
-**Everything besides `main` in `start_session` fits a hard byte budget**:
-`SESSION_EXTRAS_BUDGET_BYTES` (12,000) covers open items plus the journal slice, so a
-full-scope payload is `main` plus at most that. Clients cap tool output in tokens and spill an
-oversized result to a file the model then reads back in pieces, and dense non-English markdown
-measured about 2 bytes per token, so a byte count that looks safe can still cross a client's
-token cap. `fitSessionExtras` walks a ladder, cheapest loss first: demote full journal entries
-to headlines (oldest first), shorten item bodies (500 → 200 → 80 chars), drop the oldest
-headlines. Open items are never dropped, and a trimmed payload opens with a `[budget]` line
-naming what was cut. Unlike the index budget this one is a cap because it only shapes a read;
-no write is refused.
+**Build and tests**
 
-**`coaching-cli` drives the real handlers, never raw SQL**: the CLI builds the same
-McpServer as stdio mode and talks to it over the SDK's linked in-memory transports, so a
-shell write keeps FTS sync, change history and seed semantics — overwrite diffs live in
-application code, not triggers, and a direct SQL write would silently skip them. It exists
-for shell-native callers (agents included): tool discovery via `tools` / `tool <name>`,
-execution via `call <name> '<json>'`, no server, no OAuth, no tool definitions in anyone's
-context. `registerCoreTools` is the single shared tool list, so the three surfaces (stdio,
-HTTP session, CLI) can never drift.
+- tsdown runs with `fixedExtension: false`, so output is `dist/*.js` (not `.mjs`) to match the
+  `bin` entries.
+- Tests never touch the network. `tests/serve.test.ts` runs a mock OIDC issuer on 127.0.0.1 and
+  drives the redirect chain with `fetch`; MCP round-trips use the SDK's Streamable HTTP client
+  against the in-process server. Mock new external services the same way on 127.0.0.1.
 
-**Tool usage is counted, never inspected**: every session's final `tools/call` handler is
-wrapped (`instrumentToolCalls`, installed after `attachGatewayTools` so native, integration
-AND gateway-proxied calls count through one choke point — the same pinned-SDK-internals
-pattern as the gateway passthrough) into per-day aggregated counters in auth.db
-(`tool_usage(day, user_id, tool, calls, errors, empty)`, pruned past
-`TOOL_USAGE_MAX_AGE_DAYS`, default 180). Counts-only is a privacy line: arguments and
-results are user content and never reach the operator. `search_knowledge` splits by scope
-(`search_knowledge:journal` etc.) and counts zero-hit results in `empty` — the
-retrieval-miss log that decides whether semantic search is ever justified. `/admin` renders
-the 90-day summary; a recording failure never breaks a tool call. Tools that never appear
-are the reduction candidates — removal itself stays a deliberate, versioned change.
+## Seed data
 
-**Metric series are 'state' or 'event', and the two must never be conflated**: in a plain
-append log a changed fact sits next to its old value and the two compete at read time. A
-`state` series (FTP, thresholds, baselines) closes the previous row's validity window on
-every recording — `get_metrics` returns exactly the current value, `as_of` answers "what was
-it then?", `include_superseded` shows the trail; an `event` series (weekly volume,
-adherence) never supersedes, so counting questions keep working. Kind is set on first use
-and fixed (`metric_series` registry; windows are rebuilt idempotently per write/delete, the
-recompute-over-increment spirit). `stale_after_days` on a state series makes
-`start_session` flag an overdue value — a retest reminder that lives in schema, not prose.
+New users are seeded once, on first login: `/seed/SKILL.md` becomes section `main`,
+`/seed/references/*.md` become references. After that every write goes through the tools.
+`seed-template/` is end-user product content; `.claude/rules/seed-template.md` loads when you open
+a file there and covers the `UPDATES.md` ledger that template changes need.
 
-**The journal is append-only, and stays that way — corrections attach, archiving bounds
-cost**: an entry must still read exactly as written a year later, so there is no journal
-delete tool and no rewrite path over MCP. The two problems that creates are solved without
-touching stored text. A wrong entry gets `correct_journal`, which writes the `correction`
-column and is rendered by every read path (`journalListed`/`journalHeadline`/`journalFull` in
-`src/utils/journal.ts`, plus the search-hit `correction` field and the account pages) — the
-invariant is that no path returns a corrected entry alone, which is why the renderers are
-shared rather than reimplemented per tool, and why a correction is never truncated outside
-search snippets. Growth is the second problem: the journal loads at every session start, so
-`archive_journal` sets `archived_at` and archived entries collapse to headlines there and in
-`get_journal` listings, while `get_journal ids:[…]` still returns them in full and the FTS
-index is untouched — archiving costs nothing in findability, which is the whole reason old
-entries are worth keeping. Archive only what has already been condensed into a reference; the
-flag is a load-time decision, never a retention one. Archiving is curation and curation gets
-forgotten, so the mechanical half sits next to it: `start_session` caps each inlined entry body
-at `JOURNAL_INLINE_MAX` (1200 chars) with a marker naming `get_journal ids:[…]`, the same shape
-as the open-item cap. Together they bound the payload by construction — count (`journal_full`),
-per-entry size (the cap), and curation (the flag). The cap never touches a correction: a
-truncated correction would restore exactly the statement it overrules. Note the trap these
-optional cap parameters create: pass such a renderer to `Array.map` directly and the index
-becomes the cap (caught in review by a two-entry listing test) — always call it through an
-arrow.
+## Design rationale
 
-**The script store is retired (v3)**: analysis code lives in the assistant's own
-environment (a versioned repository), not in the coaching DB — the server keeps data exports
-and durable _results_ (journal, metrics, references). `migrateDropScripts` retires v2
-databases on open without losing content: every stored script lands in change history as a
-`script` delete record (recoverable via `list_changes`/`get_change` for the retention
-window), then the table, FTS index and all seven trigger family members are dropped and the
-quota recomputes. The `changes.kind` CHECK and the history tools keep accepting `script` so
-legacy history stays readable. The ruff-WASM dependency left with the feature.
+`docs/design-decisions.md` holds the reasoning behind the non-obvious mechanisms, one section per
+decision. Read the matching section before you:
 
-**FTS5 external content tables**: `sections_fts`, `refs_fts`, `journal_fts` and
-`routines_fts` are
-external-content virtual tables. All four require INSERT + UPDATE + DELETE triggers to stay in
-sync with their base tables (`journal_au` arrived with web journal editing in v2.1 — the journal
-is append-only over MCP but editable on the account page). `journal_fts` indexes two columns
-(`entry, correction`) and its whole trigger family, the quota counters and the delete-capture
-trigger live in one `JOURNAL_INDEX_SQL` string, because widening it was not expressible as
-`CREATE ... IF NOT EXISTS`: an FTS5 table cannot gain a column and a trigger body cannot be
-altered, so `migrateJournalIndex` drops and recreates the family once and `rebuild`s the index
-from the base table. Any further change to what the journal indexes goes the same way — edit
-the shared string, extend the migration probe. Do not remove any trigger from
-`db.ts`; because `createSchema()` uses `CREATE TABLE/TRIGGER IF NOT EXISTS` on every open, new
-tables and triggers self-apply to existing per-user DBs (this is how v2 DBs gained `routines`
-and later `metrics`). Column additions have no IF NOT EXISTS, so `createSchema()` probes
-`pragma table_info` before `ALTER TABLE ADD COLUMN` (how `open_items` gained `resolved_note`) —
-new columns land at the end of the column list. The `metrics` table is deliberately outside FTS
-(structured, queried by name) and outside change history (a measurement log, not authored
-prose); its `*_bytes_*` triggers count `name`+`unit`+`note` toward the quota.
+- change the schema, triggers, change history, quotas or the journal/metrics model;
+- change what `start_session` returns or how its byte budgets trim it;
+- touch login, tokens, membership, Telegram linking or the secret store;
+- change MCP session lifecycle, eviction, `/health` or the heap detector;
+- change gateway passthrough or caching, or the `/apps` proxy;
+- change snapshot, restore or backup behaviour;
+- propose replacing one of these designs (a JWT, a per-user session cap, a shared DB, an HTTP
+  framework, page JavaScript).
 
-**Change history is a delta log, captured at two levels**: the per-user `changes` table records
-what every write REMOVED (edit → the verbatim old/new strings, overwrite → a block diff of the
-previous version, delete → the full old content). Deletes are captured by the `*_hist_ad`
-triggers in `db.ts` (same do-not-remove rule as the FTS/bytes trigger families — no code path
-can bypass them). Overwrites cannot be diffed in SQL, so **every overwrite path must call
-`logReplace` from `src/history.ts` in the same transaction as the write** — currently the write
-tools, the edit tools (`logEdit`), the account-data editor, and the restore CLI;
-keep that list complete when adding write paths. Databases predating the `script` change kind
-get their `changes.kind` CHECK rebuilt once on open (`migrateChangesKindCheck`).
-History rows are deliberately NOT counted in `content_bytes`
-(the safety net must not eat the quota) and are bounded instead by `pruneChanges` on every DB
-open (`HISTORY_*` env vars). The MCP surface is read-only (`list_changes`/`get_change`);
-recovery re-applies content through the normal write tools, and purging history is a
-human-only account-page action.
-
-**Seed updates propagate agent-mediated, never mechanically**: seeded documents are
-personalized instantiations, so template changes cannot be pushed server-side. The seed dir's
-`UPDATES.md` ledger (monotonic integer ids, `Apply: auto|propose`, instructions written FOR the
-assistant) is compared against the per-user `meta['seed_updates_applied']` watermark —
-**stamped to the latest id inside the seeding transaction**, so fresh users start current and
-pre-feature DBs (no key → 0) see every entry exactly once. The protocol is self-carrying:
-guidance lives in the `get_coaching_context` pending notice and the `get_seed_updates`
-preamble, never in seeded docs (which predate the updates they deliver). No `UPDATES.md` →
-feature dormant (tools unregistered — the structural-opt-in pattern). Merges go through the
-normal write tools, so change history makes them recoverable.
-
-**Web edits mirror the MCP tool semantics**: the account editor enforces the same rules as the
-tools (`main` undeletable, open-item statuses open/done/dismissed, routine statuses
-active/paused/retired) and adds an optimistic-concurrency token (`updated_at`) on
-section/reference/routine saves so a browser save can never silently clobber a concurrent
-coaching-session write.
-
-**Topic packs are read-only content, not a write path**: `list_topic_packs`/`get_topic_pack`
-only deliver markdown from `SEED_DIR/topics/`; instantiation happens through the existing
-`update_section`/`update_reference`/`save_routine` writes so the assistant tailors skeletons to
-the user and everything stays visible in the account editor. Operators customize packs by
-mounting their own seed dir.
-
-**Routines are runtime state, like journal/open items**: stored per user, exported and
-snapshotted (`routines.md`), never touched by `coaching-mcp-restore` or seeding. Routine
-templates are English masters inside topic packs; the stored per-user routine is generated in
-the user's language. The server never schedules anything — users paste prompts into scheduled
-tasks in their own Claude account, and `status` is bookkeeping for that.
-
-**Seed idempotency**: `seedFromDirectory()` checks `COUNT(*) FROM sections` before seeding — safe
-to call on every start. Wrapped in a `db.transaction()` to prevent partial state.
-
-**Per-user SQLite files, not one DB with user columns**: isolation is structural, export is "zip
-the directory contents", deletion is "remove the directory", v1 migration is "move the file". The
-tool layer receives only a DB handle and must stay user-agnostic — never thread identity into
-`src/tools/`.
-
-**Tokens are opaque and stored hashed**: auth codes, access and refresh tokens are random values
-whose SHA-256 hashes live in auth.db — possession of the DB yields no usable credential, and
-revocation (account deletion, refresh-reuse theft detection) is exact. No JWTs, no signing keys.
-Refresh tokens rotate on every use; reuse of a rotated token revokes the user+client chain.
-
-**Login is fully delegated to the IdP**: this server never sees passwords; it verifies the
-id_token (issuer, audience, nonce, signature via JWKS — `openid-client`) and applies the
-membership check. The OAuth endpoint surface (metadata + DCR + authorize + token, PKCE S256
-only) matches what MCP connector clients negotiate.
-
-**Membership lives in auth.db, env lists are bootstrap**: `users.status`
-(active/pending/rejected/disabled) is the source of truth; `ADMIN_EMAILS` and the optional
-`ALLOWED_EMAILS` bootstrap deliberately _win over_ stored status (lockout recovery — adding an
-email there auto-approves). Unknown verified logins become `pending` rows (no tenant DB until
-approval, backstop `MAX_PENDING_USERS`); the decision tree is `resolveLogin()` and every status
-transition goes through `membership.ts`, shared by `/admin` forms and Telegram callbacks so the
-two surfaces can never diverge. Disable revokes all tokens + web sessions in the same call —
-never flip status without the side effects.
-
-**Telegram is an optional convenience layer, never load-bearing**: all notifications are
-fire-and-forget (a failed send is logged, never breaks a login or write) and `/admin` can do
-everything the buttons can. Webhook auth is two-layered: a per-boot random `secret_token`
-announced via `setWebhook` (no persisted secret) proves the sender is Telegram, and membership
-actions additionally require `callback_query.from.id` to equal `TELEGRAM_ADMIN_CHAT_ID`.
-User-side messages are strictly opt-in via `/start` deep-link tokens (stored hashed, single
-use) — bots cannot initiate chats, and this design keeps it that way. Once linked, the channel
-carries three things: server notifications, the per-session `notify_user` tool (registered only
-for linked users, daily budget `TELEGRAM_NOTIFY_PER_DAY`), and **quick capture** — a linked
-active user's plain text becomes a `[via Telegram] …` journal entry (LLM-free, quota-checked,
-`TELEGRAM_CAPTURES_PER_HOUR` budget); everything else gets a short explanatory reply, never
-silence. The seeded coaching-method reference instructs the assistant to mirror routine pushes
-via `notify_user` when present and never mention it when absent.
-
-**Quotas count stored content, transactionally**: the per-user `meta.content_bytes` counter is
-maintained by `*_bytes_*` triggers (same pattern as the FTS triggers — do not remove them) and
-recomputed on every DB open, so drift self-heals and pre-quota DBs initialize themselves. Write
-tools take an optional `WriteLimits` (quota bytes + rate budget) — identity never enters
-`src/tools/`; stdio mode passes none and stays unlimited. `request_quota_increase` is
-registered per-session in `mcp-http.ts` (needs identity + notifier — the integrations pattern).
-The refusal ladder is rate → per-doc cap → quota, shrinking writes always pass, and the
-account-page editor mirrors the same checks minus the rate limit.
-
-**No express**: the HTTP layer is plain `node:http` + ~100 lines of helpers (`http-util.ts`);
-the MCP SDK's `StreamableHTTPServerTransport` consumes Node req/res directly. Keep it that way —
-the dependency budget of this package is deliberately small.
-
-**MCP sessions expire on their own clock — `transport.onclose` is never the bound**: real
-connector clients abandon sessions without sending the spec's `DELETE`, so nothing external
-frees them. Each session is expensive (an `McpServer` with every tool registered plus one live
-upstream client per attached gateway), so `McpSessionManager` stamps `lastSeen` on every request
-and reaps: an idle sweeper (`SESSION_IDLE_TIMEOUT_MS`, timer runs only while sessions exist)
-plus one server-wide ceiling (`MAX_SESSIONS_TOTAL`) enforced when a session opens.
-Every teardown path goes through `dispose()` — dropping a session from the map without closing
-its gateway clients leaks connections with no session left to account for them. Without this the
-process climbs to the V8 heap ceiling over days and then spends every core in mark-compact GC:
-still "up", still passing a TCP check, answering trivial requests seconds late.
-
-**There is deliberately no per-user session cap — contention is resolved by fair share**: a fixed
-per-user limit punishes a single user on an otherwise idle server while doing nothing to make
-contention fair. Instead one user may use the whole budget when nobody else needs it, and once
-`MAX_SESSIONS_TOTAL` is exceeded `pickFairShareVictim` takes the least recently used session from
-whoever holds the **most**. That converges on max-min fairness with no configuration: a user
-holding one session is never evicted while another holds two, a client looping on initialize only
-evicts itself, and when all users hold an equal share it degrades to global LRU. The victim
-selection is a pure exported function precisely so the fairness properties are unit-testable
-without standing up dozens of real sessions. Size the ceiling by `sessions × ~3 MB` (measured, with
-one gateway mounted) against the deployed heap.
-
-**Runtime state is observable without a repro**: `/health` carries deliberately non-identifying
-counters (`sessions`, `gateways`, `heap_used_mb`/`heap_limit_mb`/`heap_pct`, `rss_mb`,
-`uptime_s`) — it is public, so counts only, never identities — and `serve` logs the same set as
-a heartbeat every 15 min (shouting past `HEAP_WARN_PCT`), plus one line per request slower than
-`SLOW_REQUEST_MS` (SSE streams excluded — they are long-lived by design). Counts that never fall
-back to zero while nobody is connected, or a heap share that only climbs, name a leak from the
-log alone.
-
-**`/health` returns 503 on sustained heap pressure, and judges the post-GC floor**: an
-orchestrator can only recycle a wedged-but-alive process if the process says it is unwell —
-probe latency can't tell "GC spiral" from "small host under load". V8 routinely fills the heap
-to ~90% just before a major GC, so an instantaneous reading is meaningless; the detector keeps
-the last `HEAP_WINDOW_SAMPLES` readings and tests their MINIMUM (the floor collection actually
-recovers to) against `HEAP_CRITICAL_PCT`. Samples come from `/health` calls themselves, spaced by
-`HEAP_SAMPLE_MIN_GAP_MS` so a burst of probes cannot fill the window, and a partial window yields
-no verdict — a freshly booted process is never reported unhealthy.
-
-Deployments should bound this process twice, in this order: cap the heap in-process
-(`--max-old-space-size`) so a runaway crashes and restarts long before it can starve its host, and
-set any container memory limit **above** that ceiling — not below it. Below, and the supervisor
-kills the process mid-write instead of letting V8 hit its own clean heap OOM. The in-process cap is
-also the only one that always works: a container limit silently does nothing on a host whose kernel
-ships without the memory cgroup controller.
-
-**All advertised URLs come from `PUBLIC_URL`**: routes mount at `/` behind a prefix-stripping
-reverse proxy; never build absolute URLs from Host headers. HTML forms/links on the account page
-must use absolute `PUBLIC_URL`-based URLs for the same reason.
-
-**Clobber guard (snapshot/restore)**: `coaching-mcp-snapshot` writes `seed-manifest.json` (raw
-SQLite `datetime('now')` strings — fixed-width UTC, string compare = chronological); the `.md`
-files stay byte-identical to DB `content`. `coaching-mcp-restore` treats content changes where
-live `updated_at` is newer than the manifest as conflicts: abort-all unless `--force`;
-`--dry-run` reports `STALE SEED` but exits 0. No manifest → legacy mode (guard off, warns).
-
-**User secrets are sealed, not just stored**: AES-256-GCM under `SECRETS_KEY` with the
-`userId:name` pair as AAD — a leaked auth.db yields nothing and a ciphertext cannot be replayed
-onto another user or slot. Secrets are never logged and never rendered back (the UI shows only
-"connected since"). Integration tools register per session, only for users with a stored key —
-opt-in is structural, not a permission check inside the tool.
-
-**Pages contain zero JavaScript, and CSP enforces it**: `script-src 'none'` on every rendered
-page. Never add inline handlers (`onsubmit=` etc.) — if a page ever needs JS, the CSP decision
-has to be revisited deliberately. Proxied app responses keep their own headers.
-
-**Gateway passthrough is verbatim and protocol-level (pinned SDK internals)**: upstream tools
-must reach Claude with their exact JSON schemas and annotations — a curated upstream's
-per-endpoint guidance is its value. Tool names get a mandatory per-server prefix (derived from
-the gateway name, unique per user) and descriptions/titles a "Server: " attribution, so every
-tool stays traceable to its server in tool lists and permission UIs. `registerTool` is zod-only in SDK 1.29 and would
-re-serialize schemas, so `attachGatewayTools` wraps the underlying `Server`'s stored `tools/list`
-and `tools/call` handlers (private `_requestHandlers` / `_registeredTools`, guarded by a test
-that fails loudly on SDK upgrades). Gateway URLs are SSRF-guarded (https-only, no
-private/internal targets, re-checked per request and per redirect hop;
-`GATEWAY_ALLOW_INSECURE=1` relaxes this for 127.0.0.1 mock upstreams in tests only). Upstream
-credentials (OAuth tokens, DCR client info, static bearer) live in the sealed per-user secret
-store; a failed upstream is skipped for the session and surfaced on the account page, never
-breaking coaching.
-
-**Gateway tool lists are cached; gateway connections never are**: mounting used to connect to
-every upstream and page through `tools/list` on _every_ session, synchronously ahead of the
-session being usable — measured at ~4 s of a live deployment's own `initialize`, paid again per
-concurrent session, for data that changes when an upstream ships a release. So `mountUserGateways`
-serves tools from a per-gateway cache (`GATEWAY_TOOLS_TTL_MS`, 12 h) and `MountedGateway.getClient`
-defers the socket until a `tools/call` actually routes upstream — a session that never invokes an
-upstream tool never opens one. The split is the correctness argument: a stale tool _list_ costs at
-worst a confusing description until the TTL lapses, whereas a stale _connection_ would break calls.
-Invalidate (`invalidateGatewayTools`) on anything that changes what an upstream exposes — the
-account page's Connect refreshes it, `deleteGateway` drops it. The escape hatch is the
-`refresh_connected_servers` tool, registered per session only when gateways mounted: it re-mounts
-with `force`, swaps the exposed set via the `rebuild` returned by `attachGatewayTools` (the SDK
-cannot re-register handlers mid-session, so the tool list behind them is mutable by design), and
-must call `sendToolListChanged()` — without that notification the client keeps serving its cached
-`tools/list` and the refresh is invisible.
-
-**App proxy authorization is allowlist-per-app**: a Google login alone must never expose a
-protected app; the user's email must be on that app's own list (`PROTECTED_APP_<NAME>_EMAILS`).
-
-**App proxy prefix rewriting must stay idempotent**: the proxy moves root-absolute URLs in HTML
-bodies and `Location` headers onto `/apps/<name>` for apps that only emit `href="/…"`. But we also
-send `X-Forwarded-Prefix`, so a well-behaved app prefixes its own URLs — rewriting those again
-yields `/apps/x/apps/x/…` and breaks every link and redirect on the page. `isUnderPrefix` does the
-boundary-checked skip (`/apps` must not swallow `/appstore`); route any new prefixing through
-`withPrefix`/`rewriteHtmlPrefix` rather than concatenating.
-
-**Prepared statements**: SQL statements used in loops are hoisted outside the loop.
-
-**tsdown + fixedExtension**: output is `dist/*.js` (not `.mjs`), matching `bin` entries.
-
-**Tests never touch the network**: `tests/serve.test.ts` runs a mock OIDC issuer on 127.0.0.1
-(RS256 JWKS, authorize/token endpoints) and drives the full redirect chain with `fetch`; MCP
-round-trips use the SDK's Streamable HTTP client against the in-process server.
+Directory-specific rules for rendered pages and for gateways/the app proxy load automatically from
+`.claude/rules/` when you open files they cover.

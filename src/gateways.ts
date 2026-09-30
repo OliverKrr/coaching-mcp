@@ -727,7 +727,7 @@ type ServerInternals = { _requestHandlers: Map<string, StoredHandler> };
 type McpServerInternals = { _registeredTools: Record<string, unknown> };
 
 /**
- * Pinned-SDK internals check (@modelcontextprotocol/sdk 1.29): verbatim
+ * Pinned-SDK internals check (@modelcontextprotocol/sdk, see package.json): verbatim
  * passthrough needs the underlying Server's stored tools/list + tools/call
  * handlers and the McpServer's registered-tool names. A unit test calls this
  * so an SDK upgrade that moves these fails loudly, not silently.
