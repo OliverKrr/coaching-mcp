@@ -38,34 +38,38 @@ coaching-mcp serve (one container)
 
 ## Tools
 
-| Tool                                  | Description                                                                                                |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `start_session`                       | Session start: context + items + journal (items + journal capped at 12 KB); `scope` picks a slice          |
-| `get_coaching_context`                | Returns the full `SKILL.md` content                                                                        |
-| `search_knowledge`                    | FTS5 full-text search (relevance-ranked) across sections, references, journal, and routines                |
-| `get_section` / `list_sections`       | One knowledge section / all sections with metadata                                                         |
-| `section_outline`                     | Heading-level outline of a section with per-heading byte counts — picks what to offload when over budget   |
-| `get_reference` / `list_references`   | One reference document / all references with metadata                                                      |
-| `get_journal`                         | Journal entries newest-first: by count, date range, specific ids, full or one-line headlines               |
-| `update_section`                      | Upserts a knowledge section                                                                                |
-| `update_reference`                    | Upserts a reference document                                                                               |
-| `append_journal`                      | Appends a coaching journal entry                                                                           |
-| `correct_journal`                     | Attaches a correction to an entry — original text untouched, both returned by every read                   |
-| `archive_journal`                     | Flags entries as archived: headlines at session start, full text still via `ids`, search unaffected        |
-| `delete_section` / `delete_reference` | Deletes a document (confirm required; `main` protected)                                                    |
-| `add_open_item`                       | Records a commitment (if-then next action) or a de-duplicated flag                                         |
-| `list_open_items`                     | Lists commitments/flags with OVERDUE markers — bounded (`limit`), `headlines` format for cheap scans       |
-| `resolve_open_item`                   | Closes an open item (done/dismissed); the note is stored beside the preserved content                      |
-| `record_metric` / `get_metrics`       | Numeric series: 'event' kinds accumulate, 'state' kinds supersede via validity windows (`as_of` history)   |
-| `delete_metric`                       | Removes one mistyped data point (confirm required)                                                         |
-| `list_topic_packs`                    | Lists installable coaching topics (training, nutrition, custom, …)                                         |
-| `get_topic_pack`                      | Full pack: interview, section/reference skeletons, routine templates                                       |
-| `list_routines` / `get_routine`       | The user's stored scheduled-routine prompts                                                                |
-| `save_routine`                        | Upserts a routine; partial updates keep the stored prompt — no retyping to change cadence/status           |
-| `delete_routine`                      | Deletes a stored routine (confirm required)                                                                |
-| `request_quota_increase`              | Asks the operator for more storage, with a reason (multi-user mode)                                        |
-| `notify_user`                         | Sends the user a Telegram message — e.g. a routine's check-in summary (only for users who linked Telegram) |
-| `get_version`                         | Build info + per-table statistics incl. storage usage vs. quota                                            |
+| Tool                                             | Description                                                                                                                   |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `start_session`                                  | Session start: context + items + journal (items + journal capped at 12 KB); `scope` picks a slice                             |
+| `get_coaching_context`                           | Returns the full `SKILL.md` content                                                                                           |
+| `search_knowledge`                               | FTS5 full-text search (relevance-ranked) across sections, references, journal, and routines                                   |
+| `get_section` / `list_sections`                  | One knowledge section / all sections with metadata                                                                            |
+| `section_outline`                                | Heading-level outline of a section with per-heading byte counts — picks what to offload when over budget                      |
+| `get_reference` / `list_references`              | One reference document / all references with metadata                                                                         |
+| `get_journal`                                    | Journal entries newest-first: by count, date range, specific ids, full or one-line headlines                                  |
+| `update_section`                                 | Upserts a knowledge section                                                                                                   |
+| `update_reference`                               | Upserts a reference document                                                                                                  |
+| `edit_section` / `edit_reference`                | Replaces one exact passage in a section / reference; the rest of the document can't change. The preferred way to edit         |
+| `append_journal`                                 | Appends a coaching journal entry                                                                                              |
+| `correct_journal`                                | Attaches a correction to an entry — original text untouched, both returned by every read                                      |
+| `archive_journal`                                | Flags entries as archived: headlines at session start, full text still via `ids`, search unaffected                           |
+| `delete_section` / `delete_reference`            | Deletes a document (confirm required; `main` protected)                                                                       |
+| `list_changes` / `get_change`                    | Change history: what each edit, overwrite or delete removed, so lost content can be found and re-applied                      |
+| `add_open_item`                                  | Records a commitment (if-then next action) or a de-duplicated flag                                                            |
+| `list_open_items`                                | Lists commitments/flags with OVERDUE markers — bounded (`limit`), `headlines` format for cheap scans                          |
+| `resolve_open_item`                              | Closes an open item (done/dismissed); the note is stored beside the preserved content                                         |
+| `record_metric` / `get_metrics`                  | Numeric series: 'event' kinds accumulate, 'state' kinds supersede via validity windows (`as_of` history)                      |
+| `delete_metric`                                  | Removes one mistyped data point (confirm required)                                                                            |
+| `list_topic_packs`                               | Lists installable coaching topics (training, nutrition, custom, …)                                                            |
+| `get_topic_pack`                                 | Full pack: interview, section/reference skeletons, routine templates                                                          |
+| `get_seed_updates` / `mark_seed_updates_applied` | Operator's pending seed-template improvements for this user, and marking them merged (only when the seed has an `UPDATES.md`) |
+| `list_routines` / `get_routine`                  | The user's stored scheduled-routine prompts                                                                                   |
+| `save_routine`                                   | Upserts a routine; partial updates keep the stored prompt — no retyping to change cadence/status                              |
+| `delete_routine`                                 | Deletes a stored routine (confirm required)                                                                                   |
+| `request_quota_increase`                         | Asks the operator for more storage, with a reason (multi-user mode)                                                           |
+| `notify_user`                                    | Sends the user a Telegram message — e.g. a routine's check-in summary (only for users who linked Telegram)                    |
+| `refresh_connected_servers`                      | Re-reads the tool lists of the user's connected gateway servers, bypassing the cache                                          |
+| `get_version`                                    | Build info + per-table statistics incl. storage usage vs. quota                                                               |
 
 ## Quick start (multi-user, Docker Compose)
 
@@ -325,34 +329,36 @@ from `/account/data/routines`. Topic packs ship English master templates as raw 
 
 ## Environment variables (serve mode)
 
-| Variable                      | Default                        | Description                                                                                               |
-| ----------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| `PUBLIC_URL`                  | — (required)                   | External base URL incl. any path prefix; OAuth issuer identity                                            |
-| `OIDC_CLIENT_ID`              | — (required)                   | OAuth client registered at the identity provider                                                          |
-| `OIDC_CLIENT_SECRET`          | — (required)                   | …and its secret                                                                                           |
-| `OIDC_ISSUER`                 | `https://accounts.google.com`  | Any OIDC-discoverable issuer                                                                              |
-| `ADMIN_EMAILS`                | —                              | Comma-separated admins: implicitly allowed, gate `/admin`                                                 |
-| `REGISTRATION`                | `open`                         | `closed` disables self-registration (invite-only mode)                                                    |
-| `ALLOWED_EMAILS`              | —                              | Comma-separated bootstrap allowlist (skips approval)                                                      |
-| `ALLOWED_EMAILS_FILE`         | —                              | Newline-separated allowlist file; merged, hot-reloaded                                                    |
-| `TELEGRAM_BOT_TOKEN`          | —                              | Bot token (BotFather) — enables Telegram notifications + chat actions                                     |
-| `TELEGRAM_ADMIN_CHAT_ID`      | —                              | Operator's chat id — the only chat allowed to drive membership actions                                    |
-| `NOTIFY_URL`                  | —                              | Send-only webhook: plain-text POST per signup/quota request                                               |
-| `QUOTA_DEFAULT_MB`            | `50`                           | Default per-user storage quota (admins can override per user)                                             |
-| `DATA_DIR`                    | `/data`                        | auth.db + per-user DBs (persistent volume)                                                                |
-| `SEED_DIR`                    | `/seed`                        | Seed template for new users                                                                               |
-| `PORT`                        | `8000`                         | HTTP listen port                                                                                          |
-| `ACCESS_TOKEN_TTL`            | `3600`                         | Access-token lifetime (seconds)                                                                           |
-| `REFRESH_TOKEN_TTL`           | `7776000`                      | Refresh-token lifetime (seconds, rotated on use)                                                          |
-| `SECRETS_KEY`                 | —                              | 32-byte base64 master key for per-user secrets (`openssl rand -base64 32`); unset → integrations disabled |
-| `PROTECTED_APPS`              | —                              | `name=http://host:port[/base],…` internal tools served at `/apps/<name>/` behind the login                |
-| `PROTECTED_APP_<NAME>_EMAILS` | —                              | Per-app email allowlist (required for anyone to reach the app)                                            |
-| `PROTECTED_APP_<NAME>_HEADER` | —                              | `Name: value` header added to every request forwarded to that app (a client-sent copy is replaced)        |
-| `HEVY_API_BASE`               | `https://api.hevyapp.com/v1`   | Hevy API base (override for tests)                                                                        |
-| `INTERVALS_API_BASE`          | `https://intervals.icu/api/v1` | Intervals.icu API base (override for tests)                                                               |
-| `GATEWAY_ALLOW_INSECURE`      | —                              | `1` relaxes the gateway SSRF policy (http + private hosts) — tests only, never production                 |
-| `INDEX_BUDGET_BYTES`          | `30000`                        | Size 'main' should stay under; session starts warn when over (never a hard cap)                           |
-| `TOOL_USAGE_MAX_AGE_DAYS`     | `180`                          | Retention for the aggregated per-tool usage counters shown on `/admin` (counts only, no payloads)         |
+| Variable                      | Default                       | Description                                                                                               |
+| ----------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `PUBLIC_URL`                  | — (required)                  | External base URL incl. any path prefix; OAuth issuer identity                                            |
+| `OIDC_CLIENT_ID`              | — (required)                  | OAuth client registered at the identity provider                                                          |
+| `OIDC_CLIENT_SECRET`          | — (required)                  | …and its secret                                                                                           |
+| `OIDC_ISSUER`                 | `https://accounts.google.com` | Any OIDC-discoverable issuer                                                                              |
+| `ADMIN_EMAILS`                | —                             | Comma-separated admins: implicitly allowed, gate `/admin`                                                 |
+| `REGISTRATION`                | `open`                        | `closed` disables self-registration (invite-only mode)                                                    |
+| `ALLOWED_EMAILS`              | —                             | Comma-separated bootstrap allowlist (skips approval)                                                      |
+| `ALLOWED_EMAILS_FILE`         | —                             | Newline-separated allowlist file; merged, hot-reloaded                                                    |
+| `TELEGRAM_BOT_TOKEN`          | —                             | Bot token (BotFather) — enables Telegram notifications + chat actions                                     |
+| `TELEGRAM_ADMIN_CHAT_ID`      | —                             | Operator's chat id — the only chat allowed to drive membership actions                                    |
+| `NOTIFY_URL`                  | —                             | Send-only webhook: plain-text POST per signup/quota request                                               |
+| `QUOTA_DEFAULT_MB`            | `50`                          | Default per-user storage quota (admins can override per user)                                             |
+| `DATA_DIR`                    | `/data`                       | auth.db + per-user DBs (persistent volume)                                                                |
+| `SEED_DIR`                    | `/seed`                       | Seed template for new users                                                                               |
+| `PORT`                        | `8000`                        | HTTP listen port                                                                                          |
+| `ACCESS_TOKEN_TTL`            | `3600`                        | Access-token lifetime (seconds)                                                                           |
+| `REFRESH_TOKEN_TTL`           | `7776000`                     | Refresh-token lifetime (seconds, rotated on use)                                                          |
+| `SECRETS_KEY`                 | —                             | 32-byte base64 master key for per-user secrets (`openssl rand -base64 32`); unset → integrations disabled |
+| `PROTECTED_APPS`              | —                             | `name=http://host:port[/base],…` internal tools served at `/apps/<name>/` behind the login                |
+| `PROTECTED_APP_<NAME>_EMAILS` | —                             | Per-app email allowlist (required for anyone to reach the app)                                            |
+| `PROTECTED_APP_<NAME>_HEADER` | —                             | `Name: value` header added to every request forwarded to that app (a client-sent copy is replaced)        |
+| `HEVY_API_BASE`               | `https://api.hevyapp.com/v1`  | Hevy API base (override for tests)                                                                        |
+| `GATEWAY_ALLOW_INSECURE`      | —                             | `1` relaxes the gateway SSRF policy (http + private hosts) — tests only, never production                 |
+| `INDEX_BUDGET_BYTES`          | `30000`                       | Size 'main' should stay under; session starts warn when over (never a hard cap)                           |
+| `TOOL_USAGE_MAX_AGE_DAYS`     | `180`                         | Retention for the aggregated per-tool usage counters shown on `/admin` (counts only, no payloads)         |
+| `HISTORY_MAX_AGE_DAYS`        | `90`                          | Change-history retention: entries older than this are pruned                                              |
+| `HISTORY_MAX_PER_DOC`         | `40`                          | Change-history entries kept per document                                                                  |
+| `HISTORY_MAX_BYTES`           | `10485760`                    | Total change-history size per user DB (10 MiB)                                                            |
 
 ## Single-user stdio mode
 
