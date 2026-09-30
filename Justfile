@@ -7,7 +7,7 @@ build:
 dev:
     npm run dev
 
-# Run the multi-user HTTP server locally (requires PUBLIC_URL / OIDC_* / ALLOWED_EMAILS env)
+# Run the multi-user HTTP server locally (requires PUBLIC_URL / OIDC_* env)
 serve:
     npx tsx src/index.ts serve
 
@@ -32,7 +32,7 @@ update-deps:
 docker-build:
     docker build -t coaching-mcp .
 
-# Build for arm64 (Raspberry Pi 4 / aarch64)
+# Build for arm64 (aarch64 hosts)
 docker-build-arm64:
     docker buildx build --platform linux/arm64 -t coaching-mcp:arm64 .
 
