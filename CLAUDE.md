@@ -54,9 +54,7 @@ rather than editing either by hand, because a mismatch between them has happened
   `refresh_connected_servers`, the Hevy and Intervals.icu tools from `src/integrations/`, and
   gateway-mounted upstream tools).
 - Environment variables: the table in `README.md` ("Environment variables (serve mode)"). It
-  leaves out the change-history retention vars `HISTORY_MAX_AGE_DAYS` (90), `HISTORY_MAX_PER_DOC`
-  (40) and `HISTORY_MAX_BYTES` (10 MiB) read in `src/history.ts`, and `TELEGRAM_API_BASE`, which
-  exists for tests. Stdio mode reads only `DATA_DIR`, `SEED_DIR`, the `HISTORY_*` vars and
+  leaves out only `TELEGRAM_API_BASE`, which exists for tests. Stdio mode reads only `DATA_DIR`, `SEED_DIR`, the `HISTORY_*` vars and
   `INDEX_BUDGET_BYTES`. Tuning values such as `MAX_SESSIONS_TOTAL` and the heap thresholds are
   constants in `src/mcp-http.ts` and `src/serve.ts`, not env vars.
 - Operator-facing docs: `README.md`. Release steps: `RELEASING.md`.
