@@ -1427,6 +1427,23 @@ describe("user secrets & Hevy integration", () => {
       expect(rSet.rep_range).toEqual({ start: 5, end: 5 }); // routine sets: rep_range, no rpe
       expect(rSet).not.toHaveProperty("rpe");
 
+      // Routine update: folder_id only when asked, since null means the default folder.
+      const update = async (extra: Record<string, unknown>): Promise<Record<string, unknown>> => {
+        await client.callTool({
+          name: "hevy_update_routine",
+          arguments: {
+            routineId: "r1",
+            title: "5x5",
+            exercises: [{ exerciseTemplateId: "t2", sets: [{ reps: 5 }] }],
+            ...extra,
+          },
+        });
+        return (lastHevyBody as { routine: Record<string, unknown> }).routine;
+      };
+      expect(await update({})).not.toHaveProperty("folder_id");
+      expect((await update({ folderId: 7 })).folder_id).toBe(7);
+      expect(await update({ folderId: null })).toHaveProperty("folder_id", null);
+
       await client.callTool({
         name: "hevy_create_body_measurement",
         arguments: { date: "2026-07-06", weightKg: 81.5 },

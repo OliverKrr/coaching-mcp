@@ -15,7 +15,9 @@ import { toolError, toolText } from "../utils/errors.js";
  * their payload (`{workout:…}`, `{routine:…}`, `{routine_folder:…}`,
  * `{exercise:…}`) EXCEPT body measurements, which are flat and reject null
  * for omitted fields. Workout sets support `rpe`; routine sets support
- * `rep_range` instead. A routine's folder cannot be changed via update.
+ * `rep_range` instead. On routine update, `folder_id` is sent only when the
+ * caller passes one: null means the default "My Routines" folder, so sending
+ * it unasked could move a routine out of its folder.
  */
 
 const DEFAULT_API_BASE = "https://api.hevyapp.com/v1";
@@ -528,19 +530,25 @@ export function registerHevyTools(server: McpServer, client: HevyClient): void {
     {
       title: "Hevy: replace routine",
       description:
-        "Replace an existing Hevy routine's title/notes/exercises (the folder cannot be changed via update).",
+        'Replace an existing Hevy routine\'s title/notes/exercises. Pass folderId to move it (null = default "My Routines" folder); omit it to leave the folder alone.',
       annotations: HEVY_REPLACE,
       inputSchema: {
         routineId: z.string(),
         title: z.string().min(1),
+        folderId: z
+          .number()
+          .int()
+          .nullish()
+          .describe("From hevy_get_routine_folders; null = default folder; omit to keep"),
         notes: z.string().nullish(),
         exercises: z.array(routineExerciseSchema).min(1),
       },
     },
-    ({ routineId, title, notes, exercises }) =>
+    ({ routineId, title, folderId, notes, exercises }) =>
       run("hevy_update_routine", () =>
         client.updateRoutine(routineId, {
           title,
+          ...(folderId !== undefined ? { folder_id: folderId } : {}),
           notes: notes ?? "",
           exercises: toApiRoutineExercises(exercises, { omitNullRepRange: true }),
         }),
