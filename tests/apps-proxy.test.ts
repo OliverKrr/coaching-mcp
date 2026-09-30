@@ -147,6 +147,12 @@ describe("upstreamRequest", () => {
     expect(headers.host).toBe("d:1");
   });
 
+  it("forwards the app's root as the bare base path, so a trailing-slash redirect cannot loop", () => {
+    expect(upstreamRequest(app, "/apps/d", "/", {}).path).toBe("/base");
+    expect(upstreamRequest(app, "/apps/d", "/?x=1", {}).path).toBe("/base?x=1");
+    expect(upstreamRequest({ ...app, basePath: "" }, "/apps/d", "/", {}).path).toBe("/");
+  });
+
   it("replaces a client-sent copy of the app header", () => {
     const { headers } = upstreamRequest(app, "/apps/d", "/", { "x-proxy-secret": "forged" });
     expect(headers["x-proxy-secret"]).toBe("real");

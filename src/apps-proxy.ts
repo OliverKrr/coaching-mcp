@@ -133,7 +133,14 @@ export function upstreamRequest(
   headers["x-forwarded-prefix"] = prefixPath;
   headers["accept-encoding"] = "identity"; // we rewrite HTML — no compressed bodies
   if (app.header) headers[app.header.name] = app.header.value;
-  return { path: app.basePath + targetPath, headers };
+  // The app's root is the bare base path. Frameworks redirect "<base>/" to
+  // "<base>", which the browser sends back here as "/apps/<name>", which would
+  // become "<base>/" again: an endless redirect.
+  const path =
+    app.basePath && (targetPath === "/" || targetPath.startsWith("/?"))
+      ? app.basePath + targetPath.slice(1)
+      : app.basePath + targetPath;
+  return { path, headers };
 }
 
 export function appsForEmail(ctx: ServeContext, email: string): ProtectedApp[] {
