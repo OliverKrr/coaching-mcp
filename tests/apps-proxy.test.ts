@@ -4,7 +4,13 @@
 // X-Forwarded-Prefix we send and prefixes its own URLs must not be prefixed a
 // second time: /apps/x/apps/x/… breaks every link and redirect on the page.
 import { describe, expect, it } from "vitest";
-import { isUnderPrefix, rewriteHtmlPrefix, withPrefix } from "../src/apps-proxy.js";
+import {
+  isUnderPrefix,
+  parseProtectedApps,
+  rewriteHtmlPrefix,
+  upstreamRequest,
+  withPrefix,
+} from "../src/apps-proxy.js";
 
 const PREFIX = "/apps/dashboard";
 
@@ -83,5 +89,66 @@ describe("rewriteHtmlPrefix", () => {
   it("rewrites every occurrence, not just the first", () => {
     const out = rewriteHtmlPrefix('<a href="/a"><a href="/b"><a href="/c">', PREFIX);
     expect(out.match(new RegExp(PREFIX, "g"))?.length).toBe(3);
+  });
+});
+
+describe("parseProtectedApps", () => {
+  it("takes no base path and no header by default", () => {
+    const [app] = parseProtectedApps({ PROTECTED_APPS: "dash=http://dash:8080/" });
+    expect(app).toMatchObject({ name: "dash", url: "http://dash:8080", basePath: "" });
+    expect(app?.header).toBeUndefined();
+  });
+
+  it("reads a base path from the target URL", () => {
+    const [app] = parseProtectedApps({ PROTECTED_APPS: "dash=http://dash:8080/tools/dash/" });
+    expect(app?.basePath).toBe("/tools/dash");
+  });
+
+  it("rejects a query or fragment on the target", () => {
+    expect(() => parseProtectedApps({ PROTECTED_APPS: "dash=http://dash:8080/x?y=1" })).toThrow();
+  });
+
+  it("reads the per-app header, lowercasing its name", () => {
+    const [app] = parseProtectedApps({
+      PROTECTED_APPS: "my-dash=http://dash:8080",
+      PROTECTED_APP_MY_DASH_HEADER: "X-Proxy-Secret: a:b c",
+    });
+    expect(app?.header).toEqual({ name: "x-proxy-secret", value: "a:b c" });
+  });
+
+  it("refuses headers it must control itself, and malformed ones", () => {
+    for (const bad of [
+      "Host: x",
+      "X-Forwarded-Prefix: /x",
+      "Connection: close",
+      "no-colon",
+      "X-A:",
+    ]) {
+      expect(() =>
+        parseProtectedApps({ PROTECTED_APPS: "d=http://d:1", PROTECTED_APP_D_HEADER: bad }),
+      ).toThrow();
+    }
+  });
+});
+
+describe("upstreamRequest", () => {
+  const app = {
+    name: "d",
+    url: "http://d:1/base",
+    basePath: "/base",
+    header: { name: "x-proxy-secret", value: "real" },
+    emails: new Set<string>(),
+  };
+
+  it("prepends the base path and sets the prefix", () => {
+    const { path, headers } = upstreamRequest(app, "/apps/d", "/x?q=1", {});
+    expect(path).toBe("/base/x?q=1");
+    expect(headers["x-forwarded-prefix"]).toBe("/apps/d");
+    expect(headers.host).toBe("d:1");
+  });
+
+  it("replaces a client-sent copy of the app header", () => {
+    const { headers } = upstreamRequest(app, "/apps/d", "/", { "x-proxy-secret": "forged" });
+    expect(headers["x-proxy-secret"]).toBe("real");
   });
 });

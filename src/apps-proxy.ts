@@ -17,6 +17,13 @@ import { page } from "./web/layout.js";
  * and emits its own prefixed URLs is the better-behaved case, not a broken one:
  * prefixing those again would produce /prefix/prefix/… and break every link, so
  * anything already under the prefix is left alone.
+ *
+ * An app built to live under a fixed path (a framework base path) gets it as the
+ * path of its target URL: `name=http://host:port/base` forwards `/apps/name/x`
+ * as `/base/x`. `PROTECTED_APP_<NAME>_HEADER="Name: value"` adds one request
+ * header to everything forwarded, so the app can tell the proxy apart from any
+ * other local client; a client-sent header of that name is replaced, never
+ * passed through.
  */
 
 const HOP_BY_HOP = new Set([
@@ -69,19 +76,64 @@ export function parseProtectedApps(env: NodeJS.ProcessEnv): ProtectedApp[] {
       .replace(/\/+$/, "");
     if (eq === -1 || !/^[a-z0-9-]+$/.test(name) || !/^https?:\/\//.test(url)) {
       throw new Error(
-        `PROTECTED_APPS entry not understood: "${trimmed}" (want name=http://host:port)`,
+        `PROTECTED_APPS entry not understood: "${trimmed}" (want name=http://host:port[/base])`,
       );
     }
-    const emailsVar = `PROTECTED_APP_${name.toUpperCase().replaceAll("-", "_")}_EMAILS`;
+    const target = new URL(url);
+    if (target.search || target.hash) {
+      throw new Error(`PROTECTED_APPS entry "${name}": the target URL takes no query or fragment`);
+    }
+    const basePath = target.pathname === "/" ? "" : target.pathname;
+    const envName = name.toUpperCase().replaceAll("-", "_");
+    const header = parseAppHeader(name, env[`PROTECTED_APP_${envName}_HEADER`]);
+    const emailsVar = `PROTECTED_APP_${envName}_EMAILS`;
     const emails = new Set(
       (env[emailsVar] ?? "")
         .split(",")
         .map((e) => e.trim().toLowerCase())
         .filter(Boolean),
     );
-    apps.push({ name, url, emails });
+    apps.push({ name, url, basePath, emails, ...(header ? { header } : {}) });
   }
   return apps;
+}
+
+function parseAppHeader(
+  name: string,
+  spec: string | undefined,
+): { name: string; value: string } | undefined {
+  if (!spec?.trim()) return undefined;
+  const colon = spec.indexOf(":");
+  const headerName = spec.slice(0, colon).trim().toLowerCase();
+  const value = spec.slice(colon + 1).trim();
+  if (colon === -1 || !/^[a-z0-9-]+$/.test(headerName) || !value) {
+    throw new Error(`PROTECTED_APP header for "${name}" not understood (want "Name: value")`);
+  }
+  if (headerName === "host" || headerName === "x-forwarded-prefix" || HOP_BY_HOP.has(headerName)) {
+    throw new Error(`PROTECTED_APP header for "${name}" may not set ${headerName}`);
+  }
+  return { name: headerName, value };
+}
+
+/** Path and headers of the upstream request for one proxied request. */
+export function upstreamRequest(
+  app: ProtectedApp,
+  prefixPath: string,
+  targetPath: string,
+  reqHeaders: IncomingMessage["headers"],
+): { path: string; headers: Record<string, string | string[]> } {
+  const target = new URL(app.url);
+  const headers: Record<string, string | string[]> = {};
+  for (const [k, v] of Object.entries(reqHeaders)) {
+    if (v === undefined || HOP_BY_HOP.has(k) || k === "host" || k === "content-length") continue;
+    if (app.header && k === app.header.name) continue;
+    headers[k] = v;
+  }
+  headers.host = target.host;
+  headers["x-forwarded-prefix"] = prefixPath;
+  headers["accept-encoding"] = "identity"; // we rewrite HTML — no compressed bodies
+  if (app.header) headers[app.header.name] = app.header.value;
+  return { path: app.basePath + targetPath, headers };
 }
 
 export function appsForEmail(ctx: ServeContext, email: string): ProtectedApp[] {
@@ -134,20 +186,13 @@ function proxy(
   res: ServerResponse,
 ): void {
   const target = new URL(app.url);
-  const headers: Record<string, string | string[]> = {};
-  for (const [k, v] of Object.entries(req.headers)) {
-    if (v === undefined || HOP_BY_HOP.has(k) || k === "host" || k === "content-length") continue;
-    headers[k] = v;
-  }
-  headers.host = target.host;
-  headers["x-forwarded-prefix"] = prefixPath;
-  headers["accept-encoding"] = "identity"; // we rewrite HTML — no compressed bodies
+  const { path, headers } = upstreamRequest(app, prefixPath, targetPath, req.headers);
 
   const upstream = httpRequest(
     {
       hostname: target.hostname,
       port: target.port,
-      path: targetPath,
+      path,
       method: req.method,
       headers,
     },

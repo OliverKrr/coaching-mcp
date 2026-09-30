@@ -6,6 +6,10 @@ import type { TenantManager } from "./tenancy.js";
 export type ProtectedApp = {
   name: string;
   url: string;
+  /** Path part of `url` ("" for none), put in front of every forwarded path. */
+  basePath: string;
+  /** Extra request header sent upstream on every request, e.g. a shared secret. */
+  header?: { name: string; value: string };
   /** Lowercased emails allowed to reach this app — login alone is not enough. */
   emails: Set<string>;
 };

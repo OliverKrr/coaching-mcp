@@ -255,6 +255,13 @@ every coached user. HTML responses get root-absolute references (`href/src/actio
 unmodified; other content streams through untouched. Authorized users see their tools linked on
 the account page. WebSockets are not supported.
 
+An app built for a fixed base path (a framework `basePath`) takes it as the path of its target:
+`name=http://host:port/base` forwards `/apps/<name>/x` as `/base/x`. Build the app with the
+same public path it is served under, and its own prefixed URLs pass through unchanged.
+`PROTECTED_APP_<NAME>_HEADER="Name: value"` adds one header to every forwarded request, for
+example a shared secret that lets the app refuse clients that bypass the proxy. A client-sent
+header of that name is replaced.
+
 ## Security posture
 
 Per-user isolation is structural (one SQLite file per user; per-session MCP servers; tools never
@@ -338,8 +345,9 @@ from `/account/data/routines`. Topic packs ship English master templates as raw 
 | `ACCESS_TOKEN_TTL`            | `3600`                         | Access-token lifetime (seconds)                                                                           |
 | `REFRESH_TOKEN_TTL`           | `7776000`                      | Refresh-token lifetime (seconds, rotated on use)                                                          |
 | `SECRETS_KEY`                 | —                              | 32-byte base64 master key for per-user secrets (`openssl rand -base64 32`); unset → integrations disabled |
-| `PROTECTED_APPS`              | —                              | `name=http://host:port,…` internal tools served at `/apps/<name>/` behind the login                       |
+| `PROTECTED_APPS`              | —                              | `name=http://host:port[/base],…` internal tools served at `/apps/<name>/` behind the login                |
 | `PROTECTED_APP_<NAME>_EMAILS` | —                              | Per-app email allowlist (required for anyone to reach the app)                                            |
+| `PROTECTED_APP_<NAME>_HEADER` | —                              | `Name: value` header added to every request forwarded to that app (a client-sent copy is replaced)        |
 | `HEVY_API_BASE`               | `https://api.hevyapp.com/v1`   | Hevy API base (override for tests)                                                                        |
 | `INTERVALS_API_BASE`          | `https://intervals.icu/api/v1` | Intervals.icu API base (override for tests)                                                               |
 | `GATEWAY_ALLOW_INSECURE`      | —                              | `1` relaxes the gateway SSRF policy (http + private hosts) — tests only, never production                 |

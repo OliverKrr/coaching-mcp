@@ -98,6 +98,15 @@ const mockHevy = createServer((req, res) => {
 
 const mockApp = createServer((req, res) => {
   const url = new URL(req.url ?? "/", "http://app");
+  if (url.pathname.startsWith("/base/")) {
+    // An app that owns a fixed base path: it sees the full path and emits it.
+    res.writeHead(200, {
+      "content-type": "application/json",
+      "set-cookie": "sid=1; Path=/base/apps/baseapp",
+    });
+    res.end(JSON.stringify({ path: url.pathname, secret: req.headers["x-app-secret"] ?? null }));
+    return;
+  }
   if (url.pathname === "/" && req.method === "GET") {
     res.writeHead(200, {
       "content-type": "text/html; charset=utf-8",
@@ -178,7 +187,16 @@ beforeAll(async () => {
     accessTokenTtlSec: 3600,
     refreshTokenTtlSec: 7776000,
     secretsKey: Buffer.alloc(32, 7),
-    apps: [{ name: "testapp", url: mockAppUrl, emails: new Set([ALICE]) }],
+    apps: [
+      { name: "testapp", url: mockAppUrl, basePath: "", emails: new Set([ALICE]) },
+      {
+        name: "baseapp",
+        url: `${mockAppUrl}/base/apps/baseapp`,
+        basePath: "/base/apps/baseapp",
+        header: { name: "x-app-secret", value: "s3cret" },
+        emails: new Set([ALICE]),
+      },
+    ],
     quotaDefaultMb: 50,
   };
   const { ctx, mcpSessions } = createContext(cfg, {
@@ -1499,6 +1517,25 @@ describe("protected app proxy", () => {
     // the account page lists the tool for authorized users
     const account = await (await fetch(`${base}/account`, { headers: { cookie } })).text();
     expect(account).toContain("/apps/testapp/");
+  });
+
+  it("forwards under the target's base path and replaces a client-sent app header", async () => {
+    const cookie = await accountLogin(ALICE);
+    const res = await fetch(`${base}/apps/baseapp/dashboard?x=1`, {
+      headers: { cookie, "x-app-secret": "forged" },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ path: "/base/apps/baseapp/dashboard", secret: "s3cret" });
+  });
+
+  it("sends no app header to an app that has none configured", async () => {
+    const cookie = await accountLogin(ALICE);
+    const echo = await fetch(`${base}/apps/testapp/echo`, {
+      method: "POST",
+      headers: { cookie, "content-type": "text/plain", "x-app-secret": "forged" },
+      body: "x",
+    });
+    expect(echo.status).toBe(200);
   });
 
   it("404s for unknown apps", async () => {
