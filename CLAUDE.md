@@ -166,6 +166,17 @@ reports `main_bytes` + `largest_documents`. A hard cap would break writes mid-se
 is worse than a large index — the budget makes the cost visible, the model and user decide
 what moves out.
 
+**Everything besides `main` in `start_session` fits a hard byte budget**:
+`SESSION_EXTRAS_BUDGET_BYTES` (12,000) covers open items plus the journal slice, so a
+full-scope payload is `main` plus at most that. Clients cap tool output in tokens and spill an
+oversized result to a file the model then reads back in pieces, and dense non-English markdown
+measured about 2 bytes per token, so a byte count that looks safe can still cross a client's
+token cap. `fitSessionExtras` walks a ladder, cheapest loss first: demote full journal entries
+to headlines (oldest first), shorten item bodies (500 → 200 → 80 chars), drop the oldest
+headlines. Open items are never dropped, and a trimmed payload opens with a `[budget]` line
+naming what was cut. Unlike the index budget this one is a cap because it only shapes a read;
+no write is refused.
+
 **`coaching-cli` drives the real handlers, never raw SQL**: the CLI builds the same
 McpServer as stdio mode and talks to it over the SDK's linked in-memory transports, so a
 shell write keeps FTS sync, change history and seed semantics — overwrite diffs live in

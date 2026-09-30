@@ -40,7 +40,7 @@ coaching-mcp serve (one container)
 
 | Tool                                  | Description                                                                                                |
 | ------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `start_session`                       | One-call session start: context + open items + journal; `scope` trims to a slice for scheduled runs        |
+| `start_session`                       | Session start: context + items + journal (items + journal capped at 12 KB); `scope` picks a slice          |
 | `get_coaching_context`                | Returns the full `SKILL.md` content                                                                        |
 | `search_knowledge`                    | FTS5 full-text search (relevance-ranked) across sections, references, journal, and routines                |
 | `get_section` / `list_sections`       | One knowledge section / all sections with metadata                                                         |
