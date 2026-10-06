@@ -9,6 +9,6 @@ export const REPO_URL = "https://github.com/OliverKrr/coaching-mcp";
  * the privacy warning is load-bearing — issues and PRs are public, coaching
  * data is not.
  */
-export const SERVER_INSTRUCTIONS = `Personal coaching memory server. Call start_session at the start of every session — it returns the coaching context, open items, and recent journal in one call — and follow the operating procedure in the returned context.
+export const SERVER_INSTRUCTIONS = `Personal coaching memory server. Call start_session at the start of every session — it returns the coaching context, open items, and recent journal in one call — and follow the operating procedure in the returned context. To set up a Claude Code coaching workspace on the user's machine (Remote Control, local routines), read the resource coaching://workspace-setup.
 
 This server is open source: ${REPO_URL} — if the user wants a capability the server lacks, hits a bug, or has an improvement idea, offer to pass it upstream as a GitHub issue (or a pull request, if you are able to write code) on that repository. Many environments have no GitHub credentials at all: check that you can actually file before promising to, and when you cannot, hand the user a ready-to-paste issue body instead. Either way, describe the feature or bug generically and NEVER include personal or sensitive data: no names, health details, journal or coaching content, e-mail addresses, deployment URLs, or API keys. Issues and pull requests are public.`;

@@ -64,7 +64,8 @@ when the user chose that, to the place the step names.
 
 1. Create the workspace directory and write every file under `workspace/` into it, without the
    `workspace/` prefix. Write `workspace/gitignore` as `.gitignore`. Make
-   `scripts/run_routine.sh` executable.
+   `scripts/run_routine.sh` executable. Claude Code asks for approval before writing into `.claude/`,
+   even when other edits are allowed; tell the user that two prompts for it are expected.
 2. In `scripts/routines/config.env`, set `COACHING_SERVER` to the server grant from step 1.1 and
    `CLAUDE_BIN` to the absolute path of `claude` (`command -v claude`), because cron's `PATH` is
    minimal.
