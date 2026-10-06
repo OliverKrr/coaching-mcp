@@ -13,6 +13,7 @@ import { registerSeedUpdateTools } from "./tools/seed-updates.js";
 import { registerSessionTools } from "./tools/session.js";
 import { registerWriteTools } from "./tools/write.js";
 import { registerTopicTools } from "./topics.js";
+import { registerWorkspaceSetup } from "./workspace-setup.js";
 
 /**
  * The core (user-agnostic) tool set, shared by every entry point: the stdio
@@ -36,6 +37,8 @@ export function registerCoreTools(
   registerOpenItemsTools(server, db, limits);
   registerMetricsTools(server, db, limits);
   registerRoutineTools(server, db, limits);
+  // Not a tool: the Claude Code workspace setup guide, as a prompt and a resource.
+  registerWorkspaceSetup(server);
   // Seed-dir-dependent tools: absent without a seed dir (the structural-
   // opt-in pattern) — a CLI pointed at a bare DB has no packs or ledger.
   if (seedDir !== undefined) {

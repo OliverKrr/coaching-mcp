@@ -16,6 +16,7 @@ RUN NPM_CONFIG_MIN_RELEASE_AGE=0 npm ci --no-audit --no-fund
 
 COPY src/ ./src/
 COPY seed-template/ ./seed-template/
+COPY workspace-template/ ./workspace-template/
 COPY tsconfig.json tsdown.config.ts ./
 RUN npm run build
 

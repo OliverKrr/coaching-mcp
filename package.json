@@ -20,6 +20,7 @@
   "files": [
     "dist",
     "seed-template",
+    "workspace-template",
     "README.md"
   ],
   "type": "module",

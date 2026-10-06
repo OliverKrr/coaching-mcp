@@ -180,6 +180,20 @@ updates they deliver). No `UPDATES.md` → feature dormant (tools unregistered, 
 structural-opt-in pattern). Merges go through the normal write tools, so change history makes
 them recoverable.
 
+### The Claude Code workspace setup ships as a prompt and a resource, not a tool
+
+`workspace-template/` (guide plus starter files) is served whole by `src/workspace-setup.ts` as
+the `setup_workspace` prompt and the `coaching://workspace-setup` resource, both registered from
+`registerCoreTools`. Not a tool, because it is a one-time setup step: a tool would cost every
+claude.ai chat its definition for nothing. Both surfaces, because MCP prompts are user-initiated
+only (a slash command in Claude Code), while an agent can read a resource on its own when the user
+merely asks for the setup. The template files are inlined into the guide rather than fetched from
+the repository, so the agent needs no network beyond its MCP connection and always gets the
+version matching the running server. `workspace/gitignore` carries no dot because npm drops
+`.gitignore` files from packages; the guide tells the agent to write it as `.gitignore`. The
+routine runner runs the server-stored routine when no local prompt file exists, so routines
+designed in chat need no copy on the host.
+
 ### Topic packs are read-only content, not a write path
 
 `list_topic_packs`/`get_topic_pack` only deliver markdown from `SEED_DIR/topics/`; `/seed/topics/**`

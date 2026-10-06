@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"systemMessage\":\"Context is about to be compacted: run the capture skill for durable findings before detail is compressed.\"}'",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

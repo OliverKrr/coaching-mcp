@@ -1,0 +1,11 @@
+# Install with `crontab -e` as the workspace user. Replace /path/to/workspace and /path/to/autosave.sh.
+# Times are in the system timezone unless CRON_TZ is set (cronie and Debian cron honour it).
+CRON_TZ=Europe/Berlin
+
+# Safety net: commit and push what a dead session left behind (only when the repo has a remote).
+*/30 * * * * /path/to/autosave.sh /path/to/workspace >/dev/null 2>&1
+
+# One line per routine. The name is the routine's name on the coaching server (list_routines), or
+# a file scripts/routines/<name>.md. Space starts a few minutes apart.
+# 45 7 * * *  /path/to/workspace/scripts/run_routine.sh readiness
+# 0 18 * * 0  /path/to/workspace/scripts/run_routine.sh weekly-review

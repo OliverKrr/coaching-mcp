@@ -327,6 +327,28 @@ user's language, and the user pastes the prompt into a Claude scheduled task —
 from `/account/data/routines`. Topic packs ship English master templates as raw material;
 `<PUBLIC_URL>/routines` explains the flow and renders them.
 
+## Claude Code workspace on the user's own machine
+
+Besides claude.ai chat, a user can coach from **Claude Code** on a machine of their own: a git
+workspace where sessions run real analyses (pandas, charts) while every coaching fact stays in this
+server. On a machine that stays on, the same setup adds **Remote Control** (the Claude app on the
+phone opens sessions there) and **scheduled routines** run headless from cron, which execute the
+routines the user stored with `save_routine`.
+
+The server ships the whole setup, so the user needs nothing but Claude Code connected to it:
+
+- the MCP prompt **`setup_workspace`**, which the user starts from the client's prompt menu (in
+  Claude Code: `/mcp__<server>__setup_workspace`, e.g. `/mcp__claude_ai_Coaching__setup_workspace`
+  for a claude.ai connector named "Coaching");
+- the MCP resource **`coaching://workspace-setup`**, the same text, which Claude Code reads on its
+  own when the user just asks it to set up the coaching workspace.
+
+Both return an agent-facing guide (preconditions, the questions to ask, what needs the user's
+approval, verification) followed by the template files: the workspace's `CLAUDE.md`, a `capture`
+skill, the routine runner `scripts/run_routine.sh`, and for Linux hosts a Remote Control systemd
+unit, an autosave script and a crontab example. Sources: `workspace-template/` in this repo; the
+guide always matches the server version that serves it.
+
 ## Environment variables (serve mode)
 
 | Variable                      | Default                       | Description                                                                                               |
