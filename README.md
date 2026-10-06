@@ -337,11 +337,12 @@ routines the user stored with `save_routine`.
 
 The server ships the whole setup, so the user needs nothing but Claude Code connected to it:
 
-- the MCP prompt **`setup_workspace`**, which the user starts from the client's prompt menu (in
-  Claude Code: `/mcp__<server>__setup_workspace`, e.g. `/mcp__claude_ai_Coaching__setup_workspace`
-  for a claude.ai connector named "Coaching");
-- the MCP resource **`coaching://workspace-setup`**, the same text, which Claude Code reads on its
-  own when the user just asks it to set up the coaching workspace.
+- the MCP resource **`coaching://workspace-setup`**, which Claude Code reads on its own when the
+  user asks it to set up the coaching workspace (the server instructions point there). This is
+  the path for users who connect through a claude.ai connector: Claude Code passes such a
+  connector's resources through, but not its prompts;
+- the MCP prompt **`setup_workspace`**, the same text, for clients that list server prompts (in
+  Claude Code with a directly added server: `/mcp__<server>__setup_workspace`).
 
 Both return an agent-facing guide (preconditions, the questions to ask, what needs the user's
 approval, verification) followed by the template files: the workspace's `CLAUDE.md`, a `capture`

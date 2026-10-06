@@ -186,8 +186,11 @@ them recoverable.
 the `setup_workspace` prompt and the `coaching://workspace-setup` resource, both registered from
 `registerCoreTools`. Not a tool, because it is a one-time setup step: a tool would cost every
 claude.ai chat its definition for nothing. Both surfaces, because MCP prompts are user-initiated
-only (a slash command in Claude Code), while an agent can read a resource on its own when the user
-merely asks for the setup. The template files are inlined into the guide rather than fetched from
+only, while an agent can read a resource on its own when the user merely asks for the setup, and
+because Claude Code passes a claude.ai connector's resources through but not its prompts (no slash
+command appears; checked with Claude Code 2.1.x), so for connector users the resource is the only
+way in. The server instructions name the resource; without that line an agent searched the coaching
+documents first. The template files are inlined into the guide rather than fetched from
 the repository, so the agent needs no network beyond its MCP connection and always gets the
 version matching the running server. `workspace/gitignore` carries no dot because npm drops
 `.gitignore` files from packages; the guide tells the agent to write it as `.gitignore`. The

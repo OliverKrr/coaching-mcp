@@ -247,8 +247,7 @@ const EN = {
     "Coach from <strong>Claude Code</strong> too: a workspace on your computer where Claude runs real analyses of your data (charts, statistics) while everything it learns stays here. On a computer that is always on, your phone can open sessions there through Remote Control, and your routines can run on a schedule. Claude Code sets it up itself: install it, sign in with the same Claude account that has this connector, and tell it:",
   codeAsk:
     "Set up my coaching workspace on this computer, using the setup guide from my coaching server.",
-  codeNote:
-    "Or type / in Claude Code and choose setup_workspace from the coaching server. Claude asks before anything outside the workspace folder.",
+  codeNote: "Claude asks before it changes anything outside the workspace folder.",
   routinesTitle: "Automatic check-ins (optional)",
   routinesBody:
     "Let the coach come to you: a weekly review, a meal-planning check-in, a morning readiness check — as scheduled tasks in your own Claude account. How it works:",
@@ -321,8 +320,7 @@ const DE: typeof EN = {
     "Coache auch aus <strong>Claude Code</strong>: ein Arbeitsordner auf deinem Rechner, in dem Claude echte Auswertungen deiner Daten rechnet (Diagramme, Statistik), während alles Gelernte hier gespeichert bleibt. Auf einem Rechner, der immer läuft, öffnet dein Handy dort per Remote Control Sitzungen, und deine Routinen laufen nach Zeitplan. Claude Code richtet das selbst ein: installieren, mit demselben Claude-Konto anmelden, das diesen Connector hat, und schreiben:",
   codeAsk:
     "Richte meinen Coaching-Workspace auf diesem Rechner ein, nach der Setup-Anleitung meines Coaching-Servers.",
-  codeNote:
-    "Oder in Claude Code / tippen und beim Coaching-Server setup_workspace wählen. Claude fragt, bevor es etwas außerhalb des Workspace-Ordners ändert.",
+  codeNote: "Claude fragt, bevor es etwas außerhalb des Workspace-Ordners ändert.",
   routinesTitle: "Automatische Check-ins (optional)",
   routinesBody:
     "Lass den Coach auf dich zukommen: Weekly Review, Meal-Planning-Check-in, Morgen-Readiness-Check — als geplante Aufgaben in deinem eigenen Claude-Konto. So funktioniert es:",
