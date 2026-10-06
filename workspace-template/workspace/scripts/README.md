@@ -18,8 +18,9 @@ shows them). Each run appends to `data/routines.log`.
   Telegram on the coaching server) or, failing that, a journal entry the next session sees.
 - **Watchdog.** Optional: one healthchecks.io check per routine, its ping URL in `healthchecks.env`
   as `<name>=<url>`. A dead machine stops every routine silently; this is how you notice.
-- **Scheduling.** One crontab line per routine, in the user's timezone if the crontab sets
-  `CRON_TZ`, e.g. `45 7 * * * /path/to/workspace/scripts/run_routine.sh readiness`.
+- **Scheduling.** One crontab line per routine, e.g.
+  `45 7 * * * /path/to/workspace/scripts/run_routine.sh readiness`. cron uses the system timezone
+  (Debian's cron ignores `CRON_TZ`), so keep that set to the user's.
 - **Login.** All runs share the interactive claude.ai login, so the runner spaces starts at least
   20 s apart (needs `flock`). When the login dies, every run fails within seconds with an auth
   error in the log; the fix is an interactive `claude` then `/login`.

@@ -18,6 +18,10 @@ sessions in the workspace, and scheduled routines that run headless from cron.
 - Never print, commit or echo secrets: API keys, tokens, `~/.claude/.credentials.json`, `.env`.
 - Do not write to the coaching server during setup, except where a step below says so.
 - Write template files exactly as given. Change only the placeholders a step names.
+- Claude Code protects `.claude/` directories and `~/.claude/settings.json`: writing there asks for
+  approval even when other edits are allowed, and is refused outright when nobody can answer (an
+  unattended run), whatever the user approved beforehand. Do not work around a refusal; hand the
+  user the exact content or command and list it in the hand-over.
 
 ## 1. Check the preconditions
 
@@ -30,7 +34,9 @@ Check each one and report the result to the user in one short list before you go
    stop: the user connects the server first, either as a connector in their claude.ai account (and
    Claude Code logged in with that account) or with `claude mcp add --scope user` (the default scope ties the server to one directory, and
    routines run from `$HOME`). A healthy reply is the open-items list; a `[hub]` budget line at its
-   top is normal.
+   top is normal. If more than one server offers `start_session` (a claude.ai connector and a
+   directly added server, say), ask the user which one holds their coaching, and use that grant
+   everywhere below.
 2. **Login type.** Remote Control and claude.ai connectors in headless runs need Claude Code logged
    in with a claude.ai account, not an API key. Ask the user if unsure.
 3. **Tools.** `git` is required. `uv` is needed for the analysis toolchain
@@ -74,7 +80,10 @@ when the user chose that, to the place the step names.
    minutes; say so before starting. `uv.lock` is committed with the rest.
 4. `git init -b main`, then commit everything as the first commit. With a remote: add it and push.
    Without one, delete the "Git" section's push rules from the workspace `CLAUDE.md` (keep the
-   commit rules) so sessions do not try to push. A fresh account has no git identity, and every commit (the autosave's too) then fails: if
+   commit rules) so sessions do not try to push. A bare repo the user created by hand
+   (`git init --bare`) may point its `HEAD` at `master`; set it to `main`
+   (`git --git-dir=<remote> symbolic-ref HEAD refs/heads/main`) so later clones check out the
+   branch. Hosted remotes (GitHub and the like) take the first pushed branch on their own. A fresh account has no git identity, and every commit (the autosave's too) then fails: if
    `git config --global user.email` is empty, ask the user for a name and email (a noreply
    address is fine) and set both globally for the workspace user.
 5. Optional `.env`: copy `.env.example` to `.env` with mode 0600 only if the user wants scripts to
@@ -102,7 +111,9 @@ Skip this step unless the user chose Remote Control.
 1. **One-time interactive login and consent.** The user does this in a terminal on the machine, as
    the workspace user; you cannot answer these prompts for them. Hand them the steps:
    - `cd <workspace> && claude`, then `/login` if not logged in, accept the workspace trust dialog,
-     `/exit`.
+     `/exit`. Trust is per directory and the workspace must exist first (step 3): trust accepted
+     anywhere else, even in `$HOME`, does not count, and the service then restarts in a loop with
+     "Workspace not trusted" in its journal while `systemctl` shows only `activating`.
    - `claude remote-control --name <device name> --spawn same-dir`, answer the "Enable Remote
      Control?" prompt with `y`, wait for "Connected", then Ctrl+C.
 2. **Keep it running.**
@@ -110,7 +121,7 @@ Skip this step unless the user chose Remote Control.
      user the result and the install commands:
      `sudo cp claude-remote-control.service /etc/systemd/system/`,
      `sudo systemctl daemon-reload`, `sudo systemctl enable --now claude-remote-control`.
-     Verify with `systemctl is-active claude-remote-control` and
+     Verify with `systemctl is-active claude-remote-control` (`active`, not `activating`) and
      `journalctl -u claude-remote-control -n 20`.
    - macOS: offer a LaunchAgent in `~/Library/LaunchAgents/` that runs the same command with
      `KeepAlive` and `WorkingDirectory` set to the workspace, and remind the user that a sleeping
@@ -131,10 +142,16 @@ Skip this step unless the user chose routines. Read the workspace's `scripts/REA
 3. Run one routine by hand: `scripts/run_routine.sh <name>`, then read the tail of
    `data/routines.log`. It must end on a `DELIVERED`, `SILENT` or `FAILED` line. A run that fails
    within seconds with an authentication error means the claude.ai login is missing or expired.
+   This is a real run: it may write a journal entry or message the user. Say so, and pick the
+   routine with the user, before you start it.
    If the routine needs more than the coaching server (a shell, file writes, web search), list
    those tools in `scripts/routines/<name>.tools`; a headless run silently denies everything not
    granted.
-4. Install the crontab from `host/crontab.example` with the user's routines, timezone and paths.
+4. Install the crontab from `host/crontab.example` with the user's routines and paths. cron runs
+   in the system timezone (`timedatectl` shows it), and Debian's and Raspberry Pi OS's cron ignore
+   `CRON_TZ`. If the system timezone is not the user's, ask before setting it
+   (`sudo timedatectl set-timezone <Area/City>`); otherwise convert the times, and note that a
+   fixed UTC time drifts by an hour at each daylight-saving change.
    With a git remote, also install `host/autosave.sh` (outside the repo, e.g. `~/bin/`) and its
    cron line. Show the final crontab and ask before running `crontab`.
 5. Optional watchdog: a healthchecks.io check per routine, its ping URL in the workspace's

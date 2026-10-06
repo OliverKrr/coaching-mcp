@@ -1,6 +1,6 @@
 # Install with `crontab -e` as the workspace user. Replace /path/to/workspace and /path/to/autosave.sh.
-# Times are in the system timezone unless CRON_TZ is set (cronie and Debian cron honour it).
-CRON_TZ=Europe/Berlin
+# Times are in the system timezone (`timedatectl`). Debian's cron ignores CRON_TZ, so set the system
+# timezone to the user's instead of relying on it.
 
 # Safety net: commit and push what a dead session left behind (only when the repo has a remote).
 */30 * * * * /path/to/autosave.sh /path/to/workspace >/dev/null 2>&1

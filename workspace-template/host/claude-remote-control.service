@@ -1,11 +1,11 @@
 # Claude Code Remote Control server: lets the Claude app on a phone (same claude.ai account as the
 # CLI login) open sessions in the workspace. Outbound HTTPS only, no inbound ports.
 #
-# Replace @USER@, @HOME@, @WORKSPACE@, @CLAUDE@ (absolute path of the claude binary) and @NAME@
-# (the device name shown in the app), then install as /etc/systemd/system/claude-remote-control.service.
-# Prerequisite, once and interactively as @USER@: `claude` in @WORKSPACE@ → /login → accept the
-# trust dialog; then `claude remote-control --name @NAME@ --spawn same-dir` → answer the consent
-# prompt with y, wait for "Connected", Ctrl+C. The unit cannot answer prompts.
+# Install as /etc/systemd/system/claude-remote-control.service after filling the at-sign
+# placeholders below (the claude path is absolute; the name is the device name shown in the app).
+# Prerequisite, once and interactively as the service user: `claude` in the workspace, /login,
+# accept the trust dialog there; then `claude remote-control --name <device> --spawn same-dir`,
+# answer the consent prompt with y, wait for "Connected", Ctrl+C. The unit cannot answer prompts.
 
 [Unit]
 Description=Claude Code Remote Control server (@USER@)
