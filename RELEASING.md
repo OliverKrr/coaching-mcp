@@ -16,6 +16,9 @@ Requires: a clean working tree, `main` checked out and in sync with `origin/main
    matches `origin/main`.
 2. **Version stamp** — sets `X.Y.Z` in `package.json` (+ lockfile) _and_ `src/version.ts`.
    These two must always match; the recipe guarantees it (the drift has happened by hand).
+   In `package-lock.json` it edits only the two `"version"` fields and aborts if the lockfile
+   diff is anything else, because `npm install --package-lock-only` drops the `libc` fields of
+   optional native packages.
 3. **Quality gate** — `npm run check`, `npm run check:types`, `npm test`, `npm run build`.
    Any failure aborts before anything is committed.
 4. **Commit** — `release: vX.Y.Z`.

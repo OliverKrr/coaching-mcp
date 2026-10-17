@@ -52,7 +52,11 @@ release version:
     [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || { echo "abort: main is not in sync with origin/main" >&2; exit 1; }
     git rev-parse "v$v" >/dev/null 2>&1 && { echo "abort: tag v$v already exists" >&2; exit 1; }
     npm pkg set version="$v"
-    npm install --package-lock-only --no-audit --no-fund >/dev/null
+    # Stamp only the lockfile's two version fields: npm install --package-lock-only drops the libc fields of optional native packages
+    node -e 'const fs=require("fs");const p="package-lock.json";const v=process.argv[1];const l=JSON.parse(fs.readFileSync(p,"utf8"));l.version=v;l.packages[""].version=v;fs.writeFileSync(p,JSON.stringify(l,null,2)+"\n");' "$v"
+    lock="$(git diff --numstat -- package-lock.json)"
+    stamped="$(git diff -U0 -- package-lock.json | grep -c "^+ *\"version\": \"$v\",$" || true)"
+    [ -z "$lock" ] || { [ "$lock" = "$(printf '2\t2\tpackage-lock.json')" ] && [ "$stamped" = 2 ]; } || { echo "abort: package-lock.json changed beyond its two version lines" >&2; git diff --stat -- package-lock.json >&2; exit 1; }
     node -e 'const fs=require("fs");const p="src/version.ts";const v=process.argv[1];const s=fs.readFileSync(p,"utf8").replace(/export const VERSION = "[^"]+"/, `export const VERSION = "${v}"`);fs.writeFileSync(p,s);' "$v"
     grep -q "\"$v\"" src/version.ts || { echo "abort: src/version.ts stamp failed" >&2; exit 1; }
     npm run check && npm run check:types && npm test && npm run build
