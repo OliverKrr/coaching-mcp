@@ -14,6 +14,11 @@ training, nutrition/meal planning, or any custom topic), and each user picks one
 during a conversational onboarding. Users connect from their own Claude accounts via the
 standard custom-connector flow; nobody handles tokens or secrets.
 
+> Coaching one athlete in Claude Code, on a machine of your own? [coachctl](https://github.com/OliverKrr/coachctl)
+> is the single-user alternative: the record as plain files in a git workspace, a CLI instead of a
+> server, and an importer for snapshots of this server. This server stays the choice for claude.ai
+> chat, several users, or coaching without a machine of your own.
+
 The same container serves a small human-facing site — setup guide, routines, and a full
 self-service account area — server-rendered, bilingual (English/German), dark-mode aware, and
 with **zero JavaScript** (`script-src 'none'`):

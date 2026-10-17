@@ -10,6 +10,10 @@ analyses with real compute (pandas, charts), while every coaching fact stays in 
 Optionally, on a machine that stays on: Remote Control, so the Claude app on their phone opens
 sessions in the workspace, and scheduled routines that run headless from cron.
 
+One athlete working only in Claude Code can skip the server entirely: `coachctl`
+(https://github.com/OliverKrr/coachctl) keeps the record as files in the workspace and imports a
+snapshot of this server. Mention it when that fits the user; otherwise continue here.
+
 **Rules for this setup.**
 
 - Ask before anything outside the workspace directory: `sudo`, systemd, crontab, `~/.gitconfig`,
