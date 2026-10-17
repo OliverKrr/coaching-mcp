@@ -140,7 +140,81 @@ describe("runSnapshot", () => {
   });
 });
 
+describe("records.json", () => {
+  it("exports every record with ids, corrections, series kinds and item fields", async () => {
+    const src = makeSourceDb();
+    const db = new Database(src);
+    db.prepare(
+      "UPDATE journal SET correction = 'fixed', corrected_at = '2026-02-02 08:00:00', archived_at = '2026-03-01 09:00:00' WHERE entry = 'first entry'",
+    ).run();
+    db.prepare(
+      "INSERT INTO open_items(kind, content, source, dedup_key, relevant_date) VALUES ('flag', 'hrv low', 'readiness', 'hrv-1', '2026-02-03')",
+    ).run();
+    db.prepare(
+      "INSERT INTO metric_series(name, kind, stale_after_days) VALUES ('ftp', 'state', 120)",
+    ).run();
+    db.prepare(
+      "INSERT INTO metrics(name, value, unit, measured_at) VALUES ('ftp', 250, 'W', '2026-01-15')",
+    ).run();
+    db.close();
+
+    const out = mkdtempSync(join(tmpdir(), "snap-records-"));
+    await runSnapshot({ db: src, outDir: out });
+    const records = JSON.parse(readFileSync(join(out, "records.json"), "utf8"));
+    expect(records.format).toBe("coaching-mcp-records/1");
+    expect(records.journal.map((j: { id: number }) => j.id)).toEqual([1, 2]);
+    expect(records.journal[0]).toMatchObject({
+      entry: "first entry",
+      created_at: "2026-01-01 10:00:00",
+      correction: "fixed",
+      corrected_at: "2026-02-02 08:00:00",
+      archived_at: "2026-03-01 09:00:00",
+    });
+    expect(records.open_items[0]).toMatchObject({
+      id: 1,
+      kind: "flag",
+      status: "open",
+      source: "readiness",
+      dedup_key: "hrv-1",
+      relevant_date: "2026-02-03",
+      resolved_note: null,
+    });
+    expect(records.metric_series[0]).toMatchObject({
+      name: "ftp",
+      kind: "state",
+      stale_after_days: 120,
+    });
+    expect(records.metrics[0]).toMatchObject({
+      id: 1,
+      name: "ftp",
+      value: 250,
+      unit: "W",
+      measured_at: "2026-01-15",
+    });
+    expect(records.routines).toEqual([]);
+
+    const seedOut = mkdtempSync(join(tmpdir(), "snap-records-seed-"));
+    await runSnapshot({ db: src, outDir: seedOut, seedOnly: true });
+    expect(existsSync(join(seedOut, "records.json"))).toBe(false);
+  });
+});
+
 describe("snapshotDocuments on a pre-migration database", () => {
+  it("exports records.json with NULL for columns the database predates", () => {
+    const db = new Database(":memory:");
+    createSchema(db);
+    db.exec("DROP TABLE metrics");
+    db.exec("DROP TABLE metric_series");
+    db.exec("ALTER TABLE open_items DROP COLUMN resolved_note");
+    db.prepare("INSERT INTO sections(name, content) VALUES ('main', 'x')").run();
+    db.prepare("INSERT INTO open_items(kind, content) VALUES ('flag', 'legacy item')").run();
+    const doc = snapshotDocuments(db).find((d) => d.path === "records.json");
+    const records = JSON.parse(doc?.content ?? "{}");
+    expect(records.open_items[0].resolved_note).toBeNull();
+    expect(records.metrics).toEqual([]);
+    expect(records.metric_series).toEqual([]);
+  });
+
   it("does not throw when the metrics table and resolved_note column are absent", () => {
     const db = new Database(":memory:");
     db.pragma("journal_mode = WAL");

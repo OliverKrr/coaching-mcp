@@ -111,6 +111,69 @@ function formatRoutines(rows: RoutineRow[]): string {
   return `# Routines\n\n${blocks.join("\n---\n\n")}`;
 }
 
+/** Version tag of `records.json`; bump it when a field changes meaning or disappears. */
+export const RECORDS_FORMAT = "coaching-mcp-records/1";
+
+function columns(db: Database.Database, table: string): Set<string> {
+  return new Set((db.pragma(`table_info(${table})`) as Array<{ name: string }>).map((c) => c.name));
+}
+
+/** Select `wanted` columns, NULL for any the (possibly pre-migration) table lacks. */
+function selectList(db: Database.Database, table: string, wanted: string[]): string {
+  const have = columns(db, table);
+  return wanted.map((c) => (have.has(c) ? c : `NULL AS ${c}`)).join(", ");
+}
+
+/**
+ * `records.json`: every non-document record with its id and raw SQLite timestamps — journal,
+ * open items, metric series definitions and points, routines. The markdown files are for
+ * reading and drop fields (ids, series kinds, dedup keys); this one is the lossless,
+ * machine-readable export a migration to another tool needs. Read-only probes keep it working
+ * on a database no server has migrated yet.
+ */
+function recordsDocument(db: Database.Database, snapshotAt: string): SnapshotDoc {
+  const tableExists = (name: string) =>
+    db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !==
+    undefined;
+  const journal = db
+    .prepare(
+      `SELECT ${selectList(db, "journal", ["id", "entry", "created_at", "correction", "corrected_at", "archived_at"])} FROM journal ORDER BY id`,
+    )
+    .all();
+  const openItems = db
+    .prepare(
+      `SELECT ${selectList(db, "open_items", ["id", "kind", "content", "status", "source", "dedup_key", "relevant_date", "resolved_note", "created_at", "updated_at"])} FROM open_items ORDER BY id`,
+    )
+    .all();
+  const metricSeries = tableExists("metric_series")
+    ? db
+        .prepare("SELECT name, kind, stale_after_days, created_at FROM metric_series ORDER BY name")
+        .all()
+    : [];
+  const metrics = tableExists("metrics")
+    ? db
+        .prepare(
+          "SELECT id, name, value, unit, note, measured_at, created_at FROM metrics ORDER BY id",
+        )
+        .all()
+    : [];
+  const routines = db
+    .prepare(
+      "SELECT name, cadence, prompt, status, created_at, updated_at FROM routines ORDER BY name",
+    )
+    .all();
+  const records = {
+    format: RECORDS_FORMAT,
+    exported_at: snapshotAt,
+    journal,
+    open_items: openItems,
+    metric_series: metricSeries,
+    metrics,
+    routines,
+  };
+  return { path: "records.json", content: `${JSON.stringify(records, null, 2)}\n` };
+}
+
 /**
  * Produce the markdown documents (with relative paths) that make up a snapshot
  * of the given live DB handle. Shared by `runSnapshot` (writes them to disk)
@@ -217,6 +280,8 @@ export function snapshotDocuments(db: Database.Database, seedOnly = false): Snap
         docs.push({ path: "metrics.md", content: formatMetrics(metrics) });
       }
     }
+
+    docs.push(recordsDocument(db, manifest.snapshot_at));
   }
 
   return docs;

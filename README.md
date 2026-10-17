@@ -424,15 +424,16 @@ node dist/snapshot-cli.js ./snapshots --db /data/users/<id>/skill.db
 
 Output (full mode):
 
-| File                   | What                                                                                 |
-| ---------------------- | ------------------------------------------------------------------------------------ |
-| `skill.db`             | Lossless online backup — the recovery artifact (FTS, triggers, timestamps, journal). |
-| `SKILL.md`             | The `main` knowledge section.                                                        |
-| `sections/<name>.md`   | Other sections.                                                                      |
-| `references/<name>.md` | Reference documents.                                                                 |
-| `journal.md`           | All journal entries, newest first, with timestamps (inspection only).                |
-| `open-items.md`        | All open items with kind/status (inspection only).                                   |
-| `routines.md`          | All stored routines with cadence/status (inspection only).                           |
+| File                   | What                                                                                                                                                     |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skill.db`             | Lossless online backup — the recovery artifact (FTS, triggers, timestamps, journal).                                                                     |
+| `SKILL.md`             | The `main` knowledge section.                                                                                                                            |
+| `sections/<name>.md`   | Other sections.                                                                                                                                          |
+| `references/<name>.md` | Reference documents.                                                                                                                                     |
+| `journal.md`           | All journal entries, newest first, with timestamps (inspection only).                                                                                    |
+| `open-items.md`        | All open items with kind/status (inspection only).                                                                                                       |
+| `routines.md`          | All stored routines with cadence/status (inspection only).                                                                                               |
+| `records.json`         | Journal, open items, metric series and points, routines with ids and raw timestamps: the machine-readable export for migrating a record to another tool. |
 
 `--seed-only` emits just `SKILL.md` + `references/*.md` (the files the seed loader reads).
 
