@@ -1,4 +1,4 @@
-export const VERSION = "3.9.2";
+export const VERSION = "3.10.0";
 
 /** Upstream home of this server — the public feedback & contribution channel. */
 export const REPO_URL = "https://github.com/OliverKrr/coaching-mcp";
