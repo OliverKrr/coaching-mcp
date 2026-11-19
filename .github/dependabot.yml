@@ -5,12 +5,11 @@ updates:
     schedule:
       interval: "weekly"
     cooldown:
-      default-days: 7
-      semver-major-days: 14
+      default-days: 3
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
     cooldown:
-      default-days: 7
+      default-days: 3
